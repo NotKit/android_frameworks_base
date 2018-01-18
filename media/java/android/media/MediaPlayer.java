@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,6 +24,7 @@ package android.media;
 import android.annotation.IntDef;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
+import android.os.SystemProperties;
 import android.app.ActivityThread;
 import android.content.ContentResolver;
 import android.content.Context;
@@ -74,6 +80,10 @@ import java.util.Scanner;
 import java.util.Set;
 import java.util.Vector;
 import java.lang.ref.WeakReference;
+
+import com.mediatek.common.MPlugin;
+import com.mediatek.common.media.IOmaSettingHelper;
+
 
 /**
  * MediaPlayer class can be used to control playback
@@ -984,7 +994,10 @@ public class MediaPlayer extends PlayerBase
                     SecurityException, IllegalStateException {
         final ContentResolver resolver = context.getContentResolver();
         final String scheme = uri.getScheme();
-        if (ContentResolver.SCHEME_FILE.equals(scheme)) {
+        if (scheme == null) {
+            setDataSource(uri.toString());
+            return;
+        } else if (ContentResolver.SCHEME_FILE.equals(scheme)) {
             setDataSource(uri.getPath());
             return;
         } else if (ContentResolver.SCHEME_CONTENT.equals(scheme)
@@ -1006,6 +1019,13 @@ public class MediaPlayer extends PlayerBase
             if (attemptDataSource(resolver, uri)) {
                 return;
             } else {
+                IOmaSettingHelper helper = MPlugin.createInstance(IOmaSettingHelper.class.getName(),
+                        context);
+                if (helper != null) {
+                    headers = helper.setSettingHeader(context, uri, headers);
+                } else {
+                    Log.w(TAG, "IOmaSettingHelper plugin returns null, uses default headers");
+                }
                 setDataSource(uri.toString(), headers);
             }
         }
@@ -1686,6 +1706,9 @@ public class MediaPlayer extends PlayerBase
         mOnInfoListener = null;
         mOnVideoSizeChangedListener = null;
         mOnTimedTextListener = null;
+        /// M: update duration dynamically @{
+        mOnDurationUpdateListener = null;
+        /// @}
         if (mTimeProvider != null) {
             mTimeProvider.close();
             mTimeProvider = null;
@@ -1718,7 +1741,7 @@ public class MediaPlayer extends PlayerBase
         if (mTimeProvider != null) {
             mTimeProvider.close();
             mTimeProvider = null;
-        }
+          }
 
         stayAwake(false);
         _reset();
@@ -1878,10 +1901,97 @@ public class MediaPlayer extends PlayerBase
      */
     public native void attachAuxEffect(int effectId);
 
+    /* Do not change these values (starting with KEY_PARAMETER) without updating
+     * their counterparts in include/media/mediaplayer.h!
+     */
+
+    // There are currently no defined keys usable from Java with get*Parameter.
+    // But if any keys are defined, the order must be kept in sync with include/media/mediaplayer.h.
+    // private static final int KEY_PARAMETER_... = ...;
+
 
     /**
      * Sets the send level of the player to the attached auxiliary effect.
      * See {@link #attachAuxEffect(int)}. The level value range is 0 to 1.0.
+     * @param key key indicates the parameter to be set.
+     * @param value value of the parameter to be set.
+     * @return true if the parameter is set successfully, false otherwise
+     * {@hide}
+     */
+    public boolean setParameter(int key, String value) {
+        Parcel p = Parcel.obtain();
+        p.writeString(value);
+        boolean ret = setParameter(key, p);
+        p.recycle();
+        return ret;
+    }
+
+    /**
+     * Sets the parameter indicated by key.
+     * @param key key indicates the parameter to be set.
+     * @param value value of the parameter to be set.
+     * @return true if the parameter is set successfully, false otherwise
+     * {@hide}
+     */
+    public boolean setParameter(int key, int value) {
+        Parcel p = Parcel.obtain();
+        p.writeInt(value);
+        boolean ret = setParameter(key, p);
+        p.recycle();
+        return ret;
+    }
+
+    /**
+     * Gets the value of the parameter indicated by key.
+     * @param key key indicates the parameter to get.
+     * @param reply value of the parameter to get.
+     */
+    private native void getParameter(int key, Parcel reply);
+
+    /**
+     * Gets the value of the parameter indicated by key.
+     * The caller is responsible for recycling the returned parcel.
+     * @param key key indicates the parameter to get.
+     * @return value of the parameter.
+     * {@hide}
+     */
+    public Parcel getParcelParameter(int key) {
+        Parcel p = Parcel.obtain();
+        getParameter(key, p);
+        return p;
+    }
+
+    /**
+     * Gets the value of the parameter indicated by key.
+     * @param key key indicates the parameter to get.
+     * @return value of the parameter.
+     * {@hide}
+     */
+    public String getStringParameter(int key) {
+        Parcel p = Parcel.obtain();
+        getParameter(key, p);
+        String ret = p.readString();
+        p.recycle();
+        return ret;
+    }
+
+    /**
+     * Gets the value of the parameter indicated by key.
+     * @param key key indicates the parameter to get.
+     * @return value of the parameter.
+     * {@hide}
+     */
+    public int getIntParameter(int key) {
+        Parcel p = Parcel.obtain();
+        getParameter(key, p);
+        int ret = p.readInt();
+        p.recycle();
+        return ret;
+    }
+
+    /**
+     * Sets the send level of the player to the attached auxiliary effect
+     * {@see #attachAuxEffect(int)}. The level value range is 0 to 1.0.
      * <p>By default the send level is 0, so even if an effect is attached to the player
      * this method must be called for the effect to be applied.
      * <p>Note that the passed level value is a raw scalar. UI controls should be scaled
@@ -2274,6 +2384,7 @@ public class MediaPlayer extends PlayerBase
     public void addSubtitleSource(InputStream is, MediaFormat format)
             throws IllegalStateException
     {
+        Log.d(TAG, "addSubtitleSource: MediaFormat = " + format);
         final InputStream fIs = is;
         final MediaFormat fFormat = format;
 
@@ -2297,11 +2408,13 @@ public class MediaPlayer extends PlayerBase
         handler.post(new Runnable() {
             private int addTrack() {
                 if (fIs == null || mSubtitleController == null) {
+                    Log.e(TAG, "addSubtitleSource: MEDIA_INFO_UNSUPPORTED_SUBTITLE");
                     return MEDIA_INFO_UNSUPPORTED_SUBTITLE;
                 }
 
                 SubtitleTrack track = mSubtitleController.addTrack(fFormat);
                 if (track == null) {
+                    Log.e(TAG, "addSubtitleSource: MEDIA_INFO_UNSUPPORTED_SUBTITLE");
                     return MEDIA_INFO_UNSUPPORTED_SUBTITLE;
                 }
 
@@ -2433,12 +2546,15 @@ public class MediaPlayer extends PlayerBase
             ContentResolver resolver = context.getContentResolver();
             fd = resolver.openAssetFileDescriptor(uri, "r");
             if (fd == null) {
+                Log.e(TAG, "addTimedTextSource: Null fd! uri=" + uri);
                 return;
             }
             addTimedTextSource(fd.getFileDescriptor(), mimeType);
             return;
         } catch (SecurityException ex) {
+            Log.e(TAG, "addTimedTextSource: SecurityException! uri=" + uri, ex);
         } catch (IOException ex) {
+            Log.e(TAG, "addTimedTextSource: IOException! uri=" + uri);
         } finally {
             if (fd != null) {
                 fd.close();
@@ -2829,6 +2945,10 @@ public class MediaPlayer extends PlayerBase
     private static final int MEDIA_INFO = 200;
     private static final int MEDIA_SUBTITLE_DATA = 201;
     private static final int MEDIA_META_DATA = 202;
+    /// M: Native layer adds 2 states to implement asyn pause and play. @{
+    private static final int MEDIA_PAUSE_COMPLETE = 600;
+    private static final int MEDIA_PLAY_COMPLETE = 601;
+    /// @}
 
     private TimeProvider mTimeProvider;
 
@@ -2855,6 +2975,7 @@ public class MediaPlayer extends PlayerBase
                 Log.w(TAG, "mediaplayer went away with unhandled events");
                 return;
             }
+            Log.d(TAG, "handleMessage msg:(" + msg.what + ", " + msg.arg1 + ", " + msg.arg2 + ")");
             switch(msg.what) {
             case MEDIA_PREPARED:
                 try {
@@ -3026,6 +3147,32 @@ public class MediaPlayer extends PlayerBase
                 }
                 return;
 
+            case MEDIA_PAUSE_COMPLETE:
+                if (mOnInfoListener != null) {
+                    if (msg.arg1 != 0) {
+                        Log.e(TAG, "MEDIA_PAUSE_COMPLETE failed " + msg.arg1);
+                    }
+                        /// M: fix ALPS00787395
+                        mOnInfoListener.onInfo(mMediaPlayer, MEDIA_INFO_PAUSE_COMPLETED, msg.arg1);
+                }
+                break;
+            case MEDIA_PLAY_COMPLETE:
+                if (mOnInfoListener != null) {
+                    if (msg.arg1 != 0) {
+                        Log.e(TAG, "MEDIA_PLAY_COMPLETE failed " + msg.arg1);
+                    }
+                    /// M: fix ALPS00787395
+                        mOnInfoListener.onInfo(mMediaPlayer, MEDIA_INFO_PLAY_COMPLETED, msg.arg1);
+                }
+                break;
+            /// M: update duration dynamically @{
+            case MEDIA_DURATION_UPDATE:
+                Log.v(TAG, "Duration update (duration=" + msg.arg1 + ")");
+                if (mOnDurationUpdateListener != null) {
+                    mOnDurationUpdateListener.onDurationUpdate(mMediaPlayer, msg.arg1);
+                }
+                break;
+            /// @}
             case MEDIA_NOP: // interface test message - ignore
                 break;
 
@@ -3048,6 +3195,7 @@ public class MediaPlayer extends PlayerBase
     {
         MediaPlayer mp = (MediaPlayer)((WeakReference)mediaplayer_ref).get();
         if (mp == null) {
+            Log.e(TAG, "postEventFromNative: Null mp! what=" + what + ", arg1=" + arg1 + ", arg2=" + arg2);
             return;
         }
 
@@ -3339,6 +3487,42 @@ public class MediaPlayer extends PlayerBase
      * @hide
      */
     public static final int MEDIA_ERROR_SYSTEM = -2147483648;
+
+    /**
+     * M: Constant used to notify the client pause completed.
+     *
+     * {@hide}
+     * @internal
+     */
+    public static final int MEDIA_INFO_PAUSE_COMPLETED = 858;
+
+    /**
+     * M: Contant used to notify the client play completed.
+     *
+     * {@hide}
+     * @internal
+     */
+    public static final int MEDIA_INFO_PLAY_COMPLETED = 859;
+
+    /**
+     * M: The video size of media file is too large for decoder(or other reason),
+     * so decoder can not decode the video.
+     * @see android.media.MediaPlayer.OnInfoListener
+     *
+     * {@hide}
+     * @internal
+     */
+    public static final int MEDIA_INFO_VIDEO_NOT_SUPPORTED = 860;
+
+    /**
+     * M: The decoder can't support the audio format of media file ,
+     * so decoder can not decode the audio.
+     * @see android.media.MediaPlayer.OnInfoListener
+     *
+     * {@hide}
+     * @internal
+     */
+    public static final int MEDIA_INFO_AUDIO_NOT_SUPPORTED = 862;
 
     /**
      * Interface definition of a callback to be invoked when there
@@ -3939,4 +4123,37 @@ public class MediaPlayer extends PlayerBase
             }
         }
     }
+
+    /// M: update duration dynamically @{
+    /**
+     * Interface definition to notify application when a new(accurate)
+     * duration is available from lower layers
+     *
+     * @hide
+     */
+    public interface OnDurationUpdateListener {
+        /**
+         * Called when a new duration is available from lower layers
+         *
+         * @param duration accurate duration of the currently playing track
+         */
+        void onDurationUpdate(MediaPlayer mp, int duration);
+    }
+
+    /**
+     * Register a callback to be invoked when a new duration is available from
+     * lower layers
+     *
+     * @param listener the callback used to notify application
+     * @hide
+     * @internal
+     */
+    public void setOnDurationUpdateListener(OnDurationUpdateListener listener) {
+        mOnDurationUpdateListener = listener;
+    }
+
+    private static final int MEDIA_DURATION_UPDATE = 300;
+    private OnDurationUpdateListener mOnDurationUpdateListener;
+    /// @}
+
 }

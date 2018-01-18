@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -1674,6 +1679,33 @@ public final class Debug
      */
     public static native long getPss();
 
+
+    /**
+     * Retrieves the PSwap memory used by the process as given by the
+     * smaps. @hide
+     */
+    public static native long getPswap(int pid);
+
+    /**
+     * Retrieves the compressed zram size. @hide
+     */
+    public static native long getCompZram();
+
+    /**
+     * Retrieves the uncompressed zram size. @hide
+     */
+    public static native long getOrigZram();
+
+    /**
+     * Retrieves the total zram size. @hide
+     */
+    public static native long getTotalZram();
+
+    /**
+     * Retrieves the zram compress method. @hide
+     */
+    public static native short getZramCompressMethod();
+
     /**
      * Retrieves the PSS memory used by the process as given by the
      * smaps.  Optionally supply a long array of 2 entries to also
@@ -1710,7 +1742,17 @@ public final class Debug
     /** @hide */
     public static final int MEMINFO_KERNEL_STACK = 12;
     /** @hide */
-    public static final int MEMINFO_COUNT = 13;
+    public static final int MEMINFO_ION_CACHED = 13;
+    /** @hide */
+    public static final int MEMINFO_GPU_CACHED = 14;
+    /** @hide */
+    public static final int MEMINFO_ION_DISP = 15;
+    /** @hide */
+    public static final int MEMINFO_TRACE = 16;
+    /** @hide */
+    public static final int MEMINFO_CMA_USAGE = 17;
+    /** @hide */
+    public static final int MEMINFO_COUNT = 18;
 
     /**
      * Retrieves /proc/meminfo.  outSizes is filled with fields
@@ -1718,6 +1760,13 @@ public final class Debug
      * @hide
      */
     public static native void getMemInfo(long[] outSizes);
+
+    /**
+     * Retrieves ion, gpu info.  outSizes is filled with fields
+     * as defined by MEMINFO_* offsets.
+     * @hide
+     */
+    public static native void getExtraMemInfo(long[] outSizes);
 
     /**
      * Establish an object allocation limit in the current thread.

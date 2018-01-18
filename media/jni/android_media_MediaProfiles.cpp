@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -165,12 +170,23 @@ android_media_MediaProfiles_native_get_audio_encoder_cap(JNIEnv *env, jobject /*
 
 static bool isCamcorderQualityKnown(int quality)
 {
+#ifdef ANDROID_DEFAULT_CODE
     return ((quality >= CAMCORDER_QUALITY_LIST_START &&
              quality <= CAMCORDER_QUALITY_LIST_END) ||
             (quality >= CAMCORDER_QUALITY_TIME_LAPSE_LIST_START &&
              quality <= CAMCORDER_QUALITY_TIME_LAPSE_LIST_END) ||
              (quality >= CAMCORDER_QUALITY_HIGH_SPEED_LIST_START &&
               quality <= CAMCORDER_QUALITY_HIGH_SPEED_LIST_END));
+#else
+    return ((quality >= CAMCORDER_QUALITY_LIST_START &&
+             quality <= CAMCORDER_QUALITY_LIST_END) ||
+            (quality >= CAMCORDER_QUALITY_TIME_LAPSE_LIST_START &&
+             quality <= CAMCORDER_QUALITY_TIME_LAPSE_LIST_END) ||
+             (quality >= CAMCORDER_QUALITY_HIGH_SPEED_LIST_START &&
+              quality <= CAMCORDER_QUALITY_HIGH_SPEED_LIST_END) ||
+             (quality >= CAMCORDER_QUALITY_MTK_CAM_FEATURE_LIST_START &&
+              quality <= CAMCORDER_QUALITY_MTK_CAM_FEATURE_LIST_END));
+#endif
 }
 
 static jobject

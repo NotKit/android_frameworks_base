@@ -452,10 +452,10 @@ public class TaskPersister {
                                 if (mStackSupervisor.anyTaskForIdLocked(taskId,
                                         /* restoreFromRecents= */ false, 0) != null) {
                                     // Should not happen.
-                                    Slog.wtf(TAG, "Existing task with taskId " + taskId + "found");
+                                    Slog.e(TAG, "Existing task with taskId " + taskId + "found");
                                 } else if (userId != task.userId) {
                                     // Should not happen.
-                                    Slog.wtf(TAG, "Task with userId " + task.userId + " found in "
+                                    Slog.e(TAG, "Task with userId " + task.userId + " found in "
                                             + userTasksDir.getAbsolutePath());
                                 } else {
                                     // Looks fine.

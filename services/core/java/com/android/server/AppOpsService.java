@@ -44,6 +44,7 @@ import android.content.pm.PackageManager;
 import android.media.AudioAttributes;
 import android.os.AsyncTask;
 import android.os.Binder;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
@@ -71,6 +72,7 @@ import com.android.internal.util.ArrayUtils;
 import com.android.internal.util.FastXmlSerializer;
 import com.android.internal.util.Preconditions;
 import com.android.internal.util.XmlUtils;
+import com.mediatek.cta.CtaUtils;
 
 import libcore.util.EmptyArray;
 import org.xmlpull.v1.XmlPullParser;
@@ -79,10 +81,12 @@ import org.xmlpull.v1.XmlSerializer;
 
 public class AppOpsService extends IAppOpsService.Stub {
     static final String TAG = "AppOps";
-    static final boolean DEBUG = false;
+    static final boolean DEBUG = true;
+    static final boolean DEBUG_WRITEFILE = false;
+    static final boolean ENG_LOAD = "eng".equals(Build.TYPE) ;
 
     // Write at most every 30 minutes.
-    static final long WRITE_DELAY = DEBUG ? 1000 : 30*60*1000;
+    static final long WRITE_DELAY = DEBUG_WRITEFILE ? 1000 : 30*60*1000;
 
     Context mContext;
     final AtomicFile mFile;
@@ -478,6 +482,14 @@ public class AppOpsService extends IAppOpsService.Stub {
 
     @Override
     public void setUidMode(int code, int uid, int mode) {
+        /// M: Log enhancement @{
+        String callingApp = mContext.getPackageManager().getNameForUid(Binder.getCallingUid());
+        if (DEBUG) Log.d(TAG, "setUidMode() - code = " + code +
+            " target uid = " + uid +
+            " mode = " + mode +
+            " requested from pid = " + Binder.getCallingPid() +
+            " (pkg = " + callingApp) ;
+        /// @}
         if (Binder.getCallingPid() != Process.myPid()) {
             mContext.enforcePermission(android.Manifest.permission.UPDATE_APP_OPS_STATS,
                     Binder.getCallingPid(), Binder.getCallingUid(), null);
@@ -589,6 +601,14 @@ public class AppOpsService extends IAppOpsService.Stub {
 
     @Override
     public void setMode(int code, int uid, String packageName, int mode) {
+        /// M: Log enhancement @{
+        String callingApp = mContext.getPackageManager().getNameForUid(Binder.getCallingUid());
+        if (DEBUG) Log.d(TAG, "setMode() - code = " + code +
+            " targetPkgName = " + packageName +
+            " mode = " + mode +
+            " requested from pid = " + Binder.getCallingPid() +
+            " (pkg = " + callingApp) ;
+        /// @}
         if (Binder.getCallingPid() != Process.myPid()) {
             mContext.enforcePermission(android.Manifest.permission.UPDATE_APP_OPS_STATS,
                     Binder.getCallingPid(), Binder.getCallingUid(), null);
@@ -883,14 +903,42 @@ public class AppOpsService extends IAppOpsService.Stub {
             if (uidState != null && uidState.opModes != null) {
                 final int uidMode = uidState.opModes.get(code);
                 if (uidMode != AppOpsManager.MODE_ALLOWED) {
-                    return uidMode;
+                    if (!operationFallBackCheck(uidState, code, uid, packageName)) {
+                        if (DEBUG && ENG_LOAD) {
+                            Log.d(TAG, "checkOperation(code = " + code + " uid = " + uid
+                                + " pkgName = " + packageName
+                                + ") - return uidMode = " + uidMode) ;
+                        }
+                        return uidMode;
+                    }
                 }
             }
             Op op = getOpLocked(code, uid, resolvedPackageName, false);
             if (op == null) {
+                /// M: Log enhancement @{
+                if (DEBUG && ENG_LOAD) {
+                    Log.d(TAG, "checkOperation(code = " + code +
+                            " uid = " + uid + " pkgName = " + packageName +
+                            ") - op == null, return default mode = " +
+                            AppOpsManager.opToDefaultMode(code)) ;
+                }
+                /// @}
                 return AppOpsManager.opToDefaultMode(code);
             }
-            return op.mode;
+
+            if (op.mode != AppOpsManager.MODE_ALLOWED) {
+                Ops ops = getOpsRawLocked(uid, packageName, false);
+                if (!operationFallBackCheck(ops, code, uid, packageName)) {
+                    /// M: Log enhancement @{
+                    if (DEBUG && ENG_LOAD) {
+                        Log.d(TAG, "checkOperation(code = " + code + " uid = " + uid
+                            + " pkgName = " + packageName + ") - return op.mode = " + op.mode) ;
+                    }
+                    /// @}
+                    return op.mode;
+                }
+            }
+            return AppOpsManager.MODE_ALLOWED;
         }
     }
 
@@ -1039,24 +1087,36 @@ public class AppOpsService extends IAppOpsService.Stub {
             if (uidState.opModes != null && uidState.opModes.indexOfKey(switchCode) >= 0) {
                 final int uidMode = uidState.opModes.get(switchCode);
                 if (uidMode != AppOpsManager.MODE_ALLOWED) {
-                    if (DEBUG) Log.d(TAG, "noteOperation: reject #" + op.mode + " for code "
-                            + switchCode + " (" + code + ") uid " + uid + " package "
-                            + packageName);
-                    op.rejectTime = System.currentTimeMillis();
-                    return uidMode;
+                    if (!operationFallBackCheck(uidState, switchCode, uid, packageName)) {
+                        if (DEBUG && ENG_LOAD) {
+                            Log.d(TAG, "noteOperation: reject #" + op.mode + " for code "
+                                + switchCode + " (" + code + ") uid " + uid + " package "
+                                + packageName);
+                        }
+                        op.rejectTime = System.currentTimeMillis();
+                        return uidMode;
+                    }
                 }
             } else {
                 final Op switchOp = switchCode != code ? getOpLocked(ops, switchCode, true) : op;
                 if (switchOp.mode != AppOpsManager.MODE_ALLOWED) {
-                    if (DEBUG) Log.d(TAG, "noteOperation: reject #" + op.mode + " for code "
-                            + switchCode + " (" + code + ") uid " + uid + " package "
-                            + packageName);
-                    op.rejectTime = System.currentTimeMillis();
-                    return switchOp.mode;
+                    if (!operationFallBackCheck(ops, switchOp.op, uid, packageName)) {
+                        if (DEBUG && ENG_LOAD) {
+                            Log.d(TAG, "noteOperation: reject #" + op.mode + " for code "
+                                + switchCode + " (" + code + ") uid " + uid + " package "
+                                + packageName);
+                        }
+                        op.rejectTime = System.currentTimeMillis();
+                        return switchOp.mode;
+                    }
                 }
             }
-            if (DEBUG) Log.d(TAG, "noteOperation: allowing code " + code + " uid " + uid
-                    + " package " + packageName);
+
+            ///M: fix ALPS02814702 too much log issue
+            if (DEBUG && ENG_LOAD) {
+                Log.d(TAG, "noteOperation: allowing code " + code +
+                    " uid " + uid + " package " + packageName);
+            }
             op.time = System.currentTimeMillis();
             op.rejectTime = 0;
             op.proxyUid = proxyUid;
@@ -1090,20 +1150,28 @@ public class AppOpsService extends IAppOpsService.Stub {
             if (uidState.opModes != null) {
                 final int uidMode = uidState.opModes.get(switchCode);
                 if (uidMode != AppOpsManager.MODE_ALLOWED) {
-                    if (DEBUG) Log.d(TAG, "noteOperation: reject #" + op.mode + " for code "
-                            + switchCode + " (" + code + ") uid " + uid + " package "
-                            + resolvedPackageName);
-                    op.rejectTime = System.currentTimeMillis();
-                    return uidMode;
+                    if (!operationFallBackCheck(uidState, switchCode, uid, packageName)) {
+                        if (DEBUG && ENG_LOAD) {
+                            Log.d(TAG, "noteOperation: reject #" + op.mode + " for code "
+                                + switchCode + " (" + code + ") uid " + uid + " package "
+                                + resolvedPackageName);
+                        }
+                        op.rejectTime = System.currentTimeMillis();
+                        return uidMode;
+                    }
                 }
             }
             final Op switchOp = switchCode != code ? getOpLocked(ops, switchCode, true) : op;
             if (switchOp.mode != AppOpsManager.MODE_ALLOWED) {
-                if (DEBUG) Log.d(TAG, "startOperation: reject #" + op.mode + " for code "
-                        + switchCode + " (" + code + ") uid " + uid + " package "
-                        + resolvedPackageName);
-                op.rejectTime = System.currentTimeMillis();
-                return switchOp.mode;
+                if (!operationFallBackCheck(ops, switchOp.op, uid, packageName)) {
+                    if (DEBUG && ENG_LOAD) {
+                        Log.d(TAG, "startOperation: reject #" + op.mode + " for code "
+                            + switchCode + " (" + code + ") uid " + uid + " package "
+                            + resolvedPackageName);
+                    }
+                    op.rejectTime = System.currentTimeMillis();
+                    return switchOp.mode;
+                }
             }
             if (DEBUG) Log.d(TAG, "startOperation: allowing code " + code + " uid " + uid
                     + " package " + resolvedPackageName);
@@ -1313,20 +1381,33 @@ public class AppOpsService extends IAppOpsService.Stub {
         final int restrictionSetCount = mOpUserRestrictions.size();
 
         for (int i = 0; i < restrictionSetCount; i++) {
-            // For each client, check that the given op is not restricted, or that the given
-            // package is exempt from the restriction.
-            ClientRestrictionState restrictionState = mOpUserRestrictions.valueAt(i);
-            if (restrictionState.hasRestriction(code, packageName, userHandle)) {
-                if (AppOpsManager.opAllowSystemBypassRestriction(code)) {
-                    // If we are the system, bypass user restrictions for certain codes
-                    synchronized (this) {
-                        Ops ops = getOpsRawLocked(uid, packageName, true);
-                        if ((ops != null) && ops.isPrivileged) {
-                            return false;
+            ///M: [ALPS02828774] add the protection to avoid we access the
+            ///   element out of the array.
+            if (i < mOpUserRestrictions.size()) {
+                // For each client, check that the given op is not restricted, or that the given
+                // package is exempt from the restriction.
+                ClientRestrictionState restrictionState = mOpUserRestrictions.valueAt(i);
+                if (restrictionState.hasRestriction(code, packageName, userHandle)) {
+                    if (AppOpsManager.opAllowSystemBypassRestriction(code)) {
+                        // If we are the system, bypass user restrictions for certain codes
+                        synchronized (this) {
+                            Ops ops = getOpsRawLocked(uid, packageName, true);
+                            if ((ops != null) && ops.isPrivileged) {
+                                return false;
+                            }
                         }
                     }
+                    /// M: Log enhancement @{
+                    if (DEBUG) Log.d(TAG, "Op is restricted(code = " + code +
+                            " uid = " + uid + " pkgName = " + packageName +
+                            "), return MODE_IGNORED") ;
+                    /// @}
+                    return true;
                 }
-                return true;
+            } else {
+                Log.d(TAG, "isOpRestricted() - i = " + i +
+                        " >= mOpUserRestrictions.size() = " +
+                        mOpUserRestrictions.size() + ", skip this round");
             }
         }
         return false;
@@ -2439,5 +2520,54 @@ public class AppOpsService extends IAppOpsService.Stub {
             }
             return true;
         }
+    }
+
+
+    boolean operationFallBackCheck(Ops ops, int oriCode, int uid, String pkg) {
+         return isOpAllowed(null, ops, oriCode, uid, pkg);
+    }
+
+    boolean operationFallBackCheck(UidState uidState, int oriCode,
+        int uid, String pkg) {
+        return isOpAllowed(uidState, null, oriCode, uid, pkg);
+    }
+
+    boolean isOpAllowed(UidState uidState, Ops ops, int oriCode,
+        int uid, String pkg) {
+        boolean result = false;
+        int mode = AppOpsManager.MODE_IGNORED;
+
+        if (CtaUtils.isCtaSupported() && !callerIsPkgInstaller(Binder.getCallingUid())
+            && (oriCode == AppOpsManager.OP_COARSE_LOCATION)) {
+            if (uidState != null) {
+                mode = uidState.opModes.get(AppOpsManager.OP_FINE_LOCATION);
+            } else if (ops != null) {
+                Op op = getOpLocked(ops, AppOpsManager.OP_FINE_LOCATION, false);
+                mode = op.mode;
+            }
+            result = (mode == AppOpsManager.MODE_ALLOWED);
+            if (DEBUG && ENG_LOAD) {
+                Log.d(TAG, "operationFallBackCheck() - FINE_LOC of " + " pkg = " + pkg +
+                    " uid = " + uid + "is allowed? result = " + result) ;
+            }
+        }
+
+        return result;
+    }
+
+    boolean callerIsPkgInstaller(int callingUid) {
+        boolean result = false;
+        if (CtaUtils.isCtaSupported()) {
+            String callingPkg = mContext.getPackageManager().getNameForUid(Binder.getCallingUid());
+            if (callingPkg != null) {
+                String permCtrlPkgName = mContext.getPackageManager().
+                    getPermissionControllerPackageName();
+                if (callingPkg.equals(permCtrlPkgName)) {
+                    result = true;
+                }
+            }
+        }
+
+        return result;
     }
 }

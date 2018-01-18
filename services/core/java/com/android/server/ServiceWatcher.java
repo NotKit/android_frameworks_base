@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2015 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2012 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -49,7 +54,7 @@ import java.util.Objects;
  * Handles run-time package changes.
  */
 public class ServiceWatcher implements ServiceConnection {
-    private static final boolean D = false;
+    private static final boolean D = LocationManagerService.D;
     public static final String EXTRA_SERVICE_VERSION = "serviceVersion";
     public static final String EXTRA_SERVICE_IS_MULTIUSER = "serviceIsMultiuser";
 
@@ -58,6 +63,11 @@ public class ServiceWatcher implements ServiceConnection {
     private final PackageManager mPm;
     private final List<HashSet<Signature>> mSignatureSets;
     private final String mAction;
+
+    /// M: added for preferred binding network location package name
+    private static final String GMS_PACKAGE_NAME = "com.google.android.gms";
+    private int mPreferPackageNameResId = 0;
+    String[] mPreferPkgs = null;
 
     /**
      * If mServicePackageName is not null, only this package will be searched for the service that
@@ -92,8 +102,11 @@ public class ServiceWatcher implements ServiceConnection {
             String pkg = initialPackageNames.get(i);
             try {
                 HashSet<Signature> set = new HashSet<Signature>();
-                Signature[] sigs = pm.getPackageInfo(pkg, PackageManager.MATCH_SYSTEM_ONLY
-                        | PackageManager.GET_SIGNATURES).signatures;
+                /// M: allow vendor packages to be binded
+                //Signature[] sigs = pm.getPackageInfo(pkg, PackageManager.MATCH_SYSTEM_ONLY
+                //        | PackageManager.GET_SIGNATURES).signatures;
+                Signature[] sigs = pm.getPackageInfo(pkg, PackageManager.GET_SIGNATURES).signatures;
+
                 set.addAll(Arrays.asList(sigs));
                 sigSets.add(set);
             } catch (NameNotFoundException e) {
@@ -123,14 +136,14 @@ public class ServiceWatcher implements ServiceConnection {
             String[] pkgs = resources.getStringArray(initialPackageNamesResId);
             if (pkgs != null) initialPackageNames.addAll(Arrays.asList(pkgs));
             mServicePackageName = null;
-            if (D) Log.d(mTag, "Overlay enabled, packages=" + Arrays.toString(pkgs));
+            Log.d(mTag, "Overlay enabled, packages=" + Arrays.toString(pkgs));
         } else {
             // The default package name that is searched for service implementation when overlay is
             // disabled.
             String servicePackageName = resources.getString(defaultServicePackageNameResId);
             if (servicePackageName != null) initialPackageNames.add(servicePackageName);
             mServicePackageName = servicePackageName;
-            if (D) Log.d(mTag, "Overlay disabled, default package=" + servicePackageName);
+            Log.d(mTag, "Overlay disabled, default package=" + servicePackageName);
         }
         mSignatureSets = getSignatureSets(context, initialPackageNames);
     }
@@ -176,6 +189,76 @@ public class ServiceWatcher implements ServiceConnection {
 
         return true;
     }
+
+    ///MTK add start
+    public ServiceWatcher(Context context, String logTag, String action,
+            int overlaySwitchResId, int defaultServicePackageNameResId,
+            int initialPackageNamesResId, int vendorPackageNamesResId, int preferPackageNamesResId,
+            Runnable newServiceWork, Handler handler) {
+        mContext = context;
+        mTag = logTag;
+        mAction = action;
+        mPm = mContext.getPackageManager();
+        mNewServiceWork = newServiceWork;
+        mHandler = handler;
+        Resources resources = context.getResources();
+
+        // Whether to enable service overlay.
+        boolean enableOverlay = resources.getBoolean(overlaySwitchResId);
+        ArrayList<String> initialPackageNames = new ArrayList<String>();
+        if (enableOverlay) {
+            // A list of package names used to create the signatures.
+            String[] pkgs = resources.getStringArray(initialPackageNamesResId);
+            if (pkgs != null) initialPackageNames.addAll(Arrays.asList(pkgs));
+            /// MTK added to merge vendor Package ResId
+            String[] vendorPkgs = resources.getStringArray(vendorPackageNamesResId);
+            if (vendorPkgs != null) initialPackageNames.addAll(Arrays.asList(vendorPkgs));
+            /// MTK add end
+
+            mServicePackageName = null;
+            Log.d(mTag, "Overlay enabled, packages=" + Arrays.toString(pkgs));
+        } else {
+            // The default package name that is searched for service implementation when overlay is
+            // disabled.
+            String servicePackageName = resources.getString(defaultServicePackageNameResId);
+            if (servicePackageName != null) initialPackageNames.add(servicePackageName);
+            mServicePackageName = servicePackageName;
+            Log.d(mTag, "Overlay disabled, default package=" + servicePackageName);
+        }
+        mSignatureSets = getSignatureSets(context, initialPackageNames);
+
+        mPreferPackageNameResId = preferPackageNamesResId;
+        if (mPreferPackageNameResId > 0) {
+            mPreferPkgs = resources.getStringArray(mPreferPackageNameResId);
+        } else {
+            mPreferPkgs = new String[1];
+            mPreferPkgs[0] = GMS_PACKAGE_NAME;
+        }
+        if (D) Log.d(mTag, "Constructed, mPreferPkgs[0] = " + mPreferPkgs[0]);
+    }
+    public void stop() {
+        if (D) Log.d(mTag, "Stop");
+        synchronized (mLock) {
+            unbindLocked();
+            try {
+                if (D) Log.d(mTag, "mPackageMonitor.unregister()");
+                mPackageMonitor.unregister();
+            } catch (Exception e) {
+            }
+        }
+    }
+
+    private boolean isPreferredPackage(String packageName) {
+        if (mPreferPkgs!= null) {
+            for (String s: mPreferPkgs) {
+                if (packageName != null && s.equals(packageName)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+    ///MTK add end
 
     /**
      * Check if any instance of this service is present on the device,
@@ -238,6 +321,13 @@ public class ServiceWatcher implements ServiceConnection {
                     isMultiuser = rInfo.serviceInfo.metaData.getBoolean(EXTRA_SERVICE_IS_MULTIUSER);
                 }
 
+                /// M: add to check preferred package name
+                if (isPreferredPackage(packageName)) {
+                    bestVersion = version;
+                    bestComponent = component;
+                    bestIsMultiuser = isMultiuser;
+                    break;
+                }
                 if (version > bestVersion) {
                     bestVersion = version;
                     bestComponent = component;
@@ -292,7 +382,7 @@ public class ServiceWatcher implements ServiceConnection {
         mBoundPackageName = component.getPackageName();
         mBoundVersion = version;
         mBoundUserId = userId;
-        if (D) Log.d(mTag, "binding " + component + " (v" + version + ") (u" + userId + ")");
+        Log.d(mTag, "binding " + component + " (v" + version + ") (u" + userId + ")");
         mContext.bindServiceAsUser(intent, this,
                 Context.BIND_AUTO_CREATE | Context.BIND_NOT_FOREGROUND | Context.BIND_NOT_VISIBLE,
                 new UserHandle(userId));
@@ -363,7 +453,7 @@ public class ServiceWatcher implements ServiceConnection {
     public void onServiceConnected(ComponentName component, IBinder binder) {
         synchronized (mLock) {
             if (component.equals(mBoundComponent)) {
-                if (D) Log.d(mTag, component + " connected");
+                Log.d(mTag, component + " connected");
                 mBoundService = binder;
                 if (mHandler !=null && mNewServiceWork != null) {
                     mHandler.post(mNewServiceWork);
@@ -377,7 +467,7 @@ public class ServiceWatcher implements ServiceConnection {
     @Override
     public void onServiceDisconnected(ComponentName component) {
         synchronized (mLock) {
-            if (D) Log.d(mTag, component + " disconnected");
+            Log.d(mTag, component + " disconnected");
 
             if (component.equals(mBoundComponent)) {
                 mBoundService = null;

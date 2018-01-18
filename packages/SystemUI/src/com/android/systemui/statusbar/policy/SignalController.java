@@ -36,8 +36,8 @@ public abstract class SignalController<T extends SignalController.State,
     // If RECORD_HISTORY how many to save, must be a power of 2.
     static final int HISTORY_SIZE = 64;
 
-    protected static final boolean DEBUG = NetworkControllerImpl.DEBUG;
-    protected static final boolean CHATTY = NetworkControllerImpl.CHATTY;
+    protected static final boolean DEBUG = true; //NetworkControllerImpl.DEBUG;
+    protected static final boolean CHATTY = true; //NetworkControllerImpl.CHATTY;
 
     protected final String mTag;
     protected final T mCurrentState;

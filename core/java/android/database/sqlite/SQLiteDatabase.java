@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,6 +33,9 @@ import android.database.sqlite.SQLiteDebug.DbStats;
 import android.os.CancellationSignal;
 import android.os.Looper;
 import android.os.OperationCanceledException;
+///M: log reduction in userdebug/user build
+import android.os.SystemProperties;
+
 import android.text.TextUtils;
 import android.util.EventLog;
 import android.util.Log;
@@ -68,6 +76,9 @@ import java.util.WeakHashMap;
  */
 public final class SQLiteDatabase extends SQLiteClosable {
     private static final String TAG = "SQLiteDatabase";
+
+    /// M: Debug
+    private static final boolean DEBUG_DETAIL_TRACE = Log.isLoggable("SQLiteDatabaseTrace", Log.VERBOSE);
 
     private static final int EVENT_DB_CORRUPT = 75004;
 
@@ -275,6 +286,12 @@ public final class SQLiteDatabase extends SQLiteClosable {
     }
 
     private void dispose(boolean finalized) {
+        /// M: Debug @{
+        if (DEBUG_DETAIL_TRACE) {
+            Log.d(TAG, "dispose database " + finalized, new Throwable("stacktrace"));
+        }
+        /// M: }@
+
         final SQLiteConnectionPool pool;
         synchronized (mLock) {
             if (mCloseGuardLocked != null) {
@@ -502,6 +519,10 @@ public final class SQLiteDatabase extends SQLiteClosable {
 
     private void beginTransaction(SQLiteTransactionListener transactionListener,
             boolean exclusive) {
+        /// M: Debug
+        if(SystemProperties.get("ro.build.type").equals("eng")) {
+           Log.d(TAG, "beginTransaction()");
+        }
         acquireReference();
         try {
             getThreadSession().beginTransaction(
@@ -519,6 +540,10 @@ public final class SQLiteDatabase extends SQLiteClosable {
      * are committed and rolled back.
      */
     public void endTransaction() {
+        /// M: Debug
+        if(SystemProperties.get("ro.build.type").equals("eng")) {
+            Log.d(TAG, "endTransaction()");
+        }
         acquireReference();
         try {
             getThreadSession().endTransaction(null);
@@ -752,6 +777,10 @@ public final class SQLiteDatabase extends SQLiteClosable {
                 }
             }
         }
+        ///M: For MTK debug, trace how db file is deleted
+        if (deleted) {
+            Log.d(TAG, "Db file is deleted", new Throwable("stacktrace"));
+        }
         return deleted;
     }
 
@@ -788,6 +817,12 @@ public final class SQLiteDatabase extends SQLiteClosable {
     }
 
     private void open() {
+        /// M: Debug @{
+        if (DEBUG_DETAIL_TRACE) {
+            Log.d(TAG, "Open database", new Throwable("stacktrace"));
+        }
+        /// M: }@
+
         try {
             try {
                 openInner();

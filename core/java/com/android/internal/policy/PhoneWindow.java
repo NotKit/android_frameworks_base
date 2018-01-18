@@ -81,6 +81,7 @@ import android.os.Parcel;
 import android.os.Parcelable;
 import android.os.RemoteException;
 import android.os.ServiceManager;
+import android.os.SystemProperties;
 import android.provider.Settings;
 import android.transition.Scene;
 import android.transition.Transition;
@@ -115,6 +116,15 @@ public class PhoneWindow extends Window implements MenuBuilder.Callback {
     private final static String TAG = "PhoneWindow";
 
     private static final boolean DEBUG = false;
+
+    /// M: enable log dynamically for debug motion.
+    private static final boolean DBG_MOTION = SystemProperties.getBoolean(
+            "debug.view.motionlog", false);
+
+    /// M: [APP launch time enhancenment feature] use property to control this feature. @{
+    private static final boolean DBG_APP_LAUNCH_ENHANCE =
+            (1 == SystemProperties.getInt("ro.mtk_perf_simple_start_win", 0)) ? true : false;
+    /// @}
 
     private final static int DEFAULT_BACKGROUND_FADE_DURATION_MS = 300;
 
@@ -786,6 +796,13 @@ public class PhoneWindow extends Window implements MenuBuilder.Callback {
             return;
         }
 
+        /// M: Make sure there is at least one visible non-action item,
+        /// or we will set not prepared and return
+        if (st.menu != null && st.menu.getNonActionItems().size() <= 0) {
+            st.isPrepared = false;
+            return;
+        }
+
         int width = WRAP_CONTENT;
         if (st.decorView == null || st.refreshDecorView) {
             if (st.decorView == null) {
@@ -899,10 +916,15 @@ public class PhoneWindow extends Window implements MenuBuilder.Callback {
             return;
         }
 
-        final ViewManager wm = getWindowManager();
+        final WindowManager wm = getWindowManager();
         if ((wm != null) && st.isOpen) {
             if (st.decorView != null) {
-                wm.removeView(st.decorView);
+                /// M: When close optionmenu panel, use removeViewImmediate
+                /// instead of removeView, this will make sure no delay when
+                /// closePanel is blocked by app but another openPanel comes,
+                /// which may cause OptionMenu's ListView detached from window
+                /// but still shown on screen
+                wm.removeViewImmediate(st.decorView);
                 // Log.v(TAG, "Removing main menu from window manager.");
                 if (st.isCompact) {
                     sRotationWatcher.removeWindow(this);
@@ -1795,7 +1817,11 @@ public class PhoneWindow extends Window implements MenuBuilder.Callback {
 
     @Override
     public boolean superDispatchKeyEvent(KeyEvent event) {
-        return mDecor.superDispatchKeyEvent(event);
+        boolean handled = mDecor.superDispatchKeyEvent(event);
+        if (DBG_MOTION) {
+            Log.d(TAG, "superDispatchKeyEvent = " + event + ", handled = " + handled);
+        }
+        return handled;
     }
 
     @Override
@@ -1805,7 +1831,11 @@ public class PhoneWindow extends Window implements MenuBuilder.Callback {
 
     @Override
     public boolean superDispatchTouchEvent(MotionEvent event) {
-        return mDecor.superDispatchTouchEvent(event);
+        boolean handled = mDecor.superDispatchTouchEvent(event);
+        if (DBG_MOTION) {
+            Log.d(TAG, "superDispatchTouchEvent = " + event + ", handled = " + handled);
+        }
+        return handled;
     }
 
     @Override
@@ -2493,7 +2523,13 @@ public class PhoneWindow extends Window implements MenuBuilder.Callback {
         int layoutResource;
         int features = getLocalFeatures();
         // System.out.println("Features: 0x" + Integer.toHexString(features));
-        if ((features & (1 << FEATURE_SWIPE_TO_DISMISS)) != 0) {
+
+        /// M: [APP launch time enhancenment feature] Simplified starting window.
+        final boolean mIsStartingWindow = DBG_APP_LAUNCH_ENHANCE
+            && (getAttributes().type == WindowManager.LayoutParams.TYPE_APPLICATION_STARTING);
+        if (mIsStartingWindow) {
+            layoutResource = R.layout.screen_simple;
+        } else if ((features & (1 << FEATURE_SWIPE_TO_DISMISS)) != 0) {
             layoutResource = R.layout.screen_swipe_dismiss;
         } else if ((features & ((1 << FEATURE_LEFT_ICON) | (1 << FEATURE_RIGHT_ICON))) != 0) {
             if (mIsFloating) {

@@ -45,7 +45,8 @@ import com.android.internal.util.FastPrintWriter;
  */
 public abstract class IntentResolver<F extends IntentFilter, R extends Object> {
     final private static String TAG = "IntentResolver";
-    final private static boolean DEBUG = false;
+    /// M: Dynamic enable debug log
+    final private static boolean DEBUG = Log.isLoggable(TAG, Log.DEBUG);
     final private static boolean localLOGV = DEBUG || false;
     final private static boolean localVerificationLOGV = DEBUG || false;
 

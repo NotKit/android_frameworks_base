@@ -210,7 +210,7 @@ public class MtpDocumentsProvider extends DocumentsProvider {
                 if (storageDocIds.length == 0) {
                     // Remote device does not provide storages. Maybe it is locked.
                     return createErrorCursor(projection, R.string.error_locked_device);
-                } else if (storageDocIds.length > 1) {
+                } else if (storageDocIds.length >= 1) {
                     // Returns storage list from database.
                     return mDatabase.queryChildDocuments(projection, parentDocumentId);
                 }

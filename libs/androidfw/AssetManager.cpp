@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -75,6 +80,11 @@ static const char* kExcludeExtension = ".EXCLUDE";
 static Asset* const kExcludedAsset = (Asset*) 0xd000000d;
 
 static volatile int32_t gCount = 0;
+///M:add the resource path
+static const char* kMediatekAssets = "/vendor/framework/mediatek-res/mediatek-res.apk";
+///M:for CIP feature
+static const char* kCIPSystemAssets = "customer/framework/framework-res.apk";
+static const char* kCIPMediatekAssets = "customer/framework/mediatek-res.apk";
 
 const char* AssetManager::RESOURCES_FILENAME = "resources.arsc";
 const char* AssetManager::IDMAP_BIN = "/system/bin/idmap";
@@ -82,6 +92,10 @@ const char* AssetManager::OVERLAY_DIR = "/vendor/overlay";
 const char* AssetManager::TARGET_PACKAGE_NAME = "android";
 const char* AssetManager::TARGET_APK_PATH = "/system/framework/framework-res.apk";
 const char* AssetManager::IDMAP_DIR = "/data/resource-cache";
+
+/// M: ALPS02521810, support mediatek-res runtime overlay
+const char* AssetManager::MEDIATEK_TARGET_PACKAGE_NAME = "com.mediatek";
+const char* AssetManager::MEDIATEK_TARGET_APK_PATH = "/vendor/framework/mediatek-res/mediatek-res.apk";
 
 namespace {
     String8 idmapPathForPackagePath(const String8& pkgPath)
@@ -322,10 +336,47 @@ bool AssetManager::addDefaultAssets()
     const char* root = getenv("ANDROID_ROOT");
     LOG_ALWAYS_FATAL_IF(root == NULL, "ANDROID_ROOT not set");
 
-    String8 path(root);
-    path.appendPath(kSystemAssets);
-
-    return addAssetPath(path, NULL, false /* appAsLib */, true /* isSystemAsset */);
+    ///M:add for CIP feature @{
+    String8 pathCip(root);
+    pathCip.appendPath(kCIPSystemAssets);
+    FILE *fp;
+    if((fp= fopen(pathCip,"w+"))!= NULL) {
+       ALOGW("AssetManager-->addDefaultAssets CIP path exsit!");
+       bool isOK1 = addAssetPath(pathCip, NULL, false, true);
+       if(!isOK1){
+           ALOGW("AssetManager-->addDefaultAssets CIP path isok1 is false");
+       }
+       String8 pathCip2(root);
+       pathCip2.appendPath(kCIPMediatekAssets);
+       bool isOK2 = addAssetPath(pathCip2, NULL, false, true);
+       if(!isOK2){
+           ALOGW("AssetManager-->addDefaultAssets CIP path isok2 is false");
+       }
+       return isOK1;
+    } else {
+       //ALOGD("AssetManager-->addDefaultAssets CIP path not exsit!");
+       String8 path(root);
+       path.appendPath(kSystemAssets);
+       ///M:add the new resource path into default path,so all the app can reference,@{
+       bool isOK1 = addAssetPath(path, NULL, false /* appAsLib */, true /* isSystemAsset */);
+       String8 path2(kMediatekAssets);
+       bool isOK2 = addAssetPath(path2, NULL, false, false);
+       if(!isOK2){
+          ALOGW("AssetManager-->addDefaultAssets isok2 is false");
+       } else {
+           /// M: ALPS02521810, support mediatek-res runtime overlay @{
+           const char* data = getenv("ANDROID_DATA");
+           LOG_ALWAYS_FATAL_IF(data == NULL, "ANDROID_DATA not set");
+           String8 overlaysListPath(data);
+           overlaysListPath.appendPath(kResourceCache);
+           overlaysListPath.appendPath("mediatek.overlays.list");
+           addMediatekOverlays(overlaysListPath.string());
+           /// @}
+       }
+       return isOK1;
+       ///@}
+    }
+    ///@}
 }
 
 int32_t AssetManager::nextAssetPath(const int32_t cookie) const
@@ -715,11 +766,22 @@ const ResTable* AssetManager::getResTable(bool required) const
     updateResourceParamsLocked();
 
     bool onlyEmptyResources = true;
-    const size_t N = mAssetPaths.size();
-    for (size_t i=0; i<N; i++) {
-        bool empty = appendPathToResTable(mAssetPaths.itemAt(i));
-        onlyEmptyResources = onlyEmptyResources && empty;
+    /// M: ALPS02521810, fix "ResourceNotFound" if using runtime overlay @{
+    Vector<asset_path> tmpAssetPaths;
+    while (mAssetPaths.size() > 0) {
+        tmpAssetPaths.add(mAssetPaths.itemAt(0));
+        ALOGV("Pop asset '%s'", mAssetPaths.itemAt(0).path.string());
+        const_cast<AssetManager*>(this)->mAssetPaths.removeAt(0);
     }
+
+    for (size_t i = 0; i < tmpAssetPaths.size(); i++) {
+        const asset_path& ap = tmpAssetPaths.itemAt(i);
+        const_cast<AssetManager*>(this)->mAssetPaths.add(ap);
+        bool empty = appendPathToResTable(ap);
+        onlyEmptyResources = onlyEmptyResources && empty;
+        ALOGV("Push asset '%s', size=%zd", ap.path.string(), mAssetPaths.size());
+    }
+    /// @}
 
     if (required && onlyEmptyResources) {
         ALOGW("Unable to find resources file resources.arsc");
@@ -813,6 +875,32 @@ void AssetManager::addSystemOverlays(const char* pathOverlaysList,
 #endif
     fclose(fin);
 }
+
+/// M: ALPS02521810, support mediatek-res runtime overlay @{
+void AssetManager::addMediatekOverlays(const char* pathOverlaysList)
+{
+    FILE* fin = fopen(pathOverlaysList, "r");
+    if (fin == NULL) {
+        return;
+    }
+
+    char buf[1024];
+    while (fgets(buf, sizeof(buf), fin)) {
+        // format of each line:
+        //   <path to apk><space><path to idmap><newline>
+        char* space = strchr(buf, ' ');
+        char* newline = strchr(buf, '\n');
+
+        if (space == NULL || newline == NULL || newline < space) {
+            continue;
+        }
+
+        int32_t cookie;
+        addOverlayPath(String8(buf, space - buf), &cookie);
+    }
+    fclose(fin);
+}
+/// @}
 
 const ResTable& AssetManager::getResources(bool required) const
 {

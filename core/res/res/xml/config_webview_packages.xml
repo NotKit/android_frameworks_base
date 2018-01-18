@@ -18,4 +18,7 @@
     <!-- The default WebView implementation -->
     <webviewprovider description="Android WebView" packageName="com.android.webview" availableByDefault="true">
     </webviewprovider>
+    <!-- M: add MTK WebView implementation  -->
+    <webviewprovider description="MTK WebView" packageName="com.mediatek.webview" availableByDefault="true">
+    </webviewprovider>
 </webviewproviders>

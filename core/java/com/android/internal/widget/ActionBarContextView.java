@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,13 +29,17 @@ import com.android.internal.view.menu.MenuBuilder;
 import android.content.Context;
 import android.content.res.TypedArray;
 import android.graphics.drawable.Drawable;
+import android.os.Handler;
+import android.os.Message;
 import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.view.ActionMode;
 import android.view.LayoutInflater;
+import android.view.MotionEvent;
+import android.view.accessibility.AccessibilityEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.accessibility.AccessibilityEvent;
+import android.view.ViewParent;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -54,6 +63,9 @@ public class ActionBarContextView extends AbsActionBarView {
     private boolean mTitleOptional;
     private int mCloseItemLayout;
 
+    private static final int MSG_RELAYOUT = 0;
+    private Handler mHandler;
+    
     public ActionBarContextView(Context context) {
         this(context, null);
     }
@@ -184,6 +196,18 @@ public class ActionBarContextView extends AbsActionBarView {
             if (mSubtitleStyleRes != 0) {
                 mSubtitleView.setTextAppearance(mSubtitleStyleRes);
             }
+
+            if (mHandler == null) {
+                mHandler = new Handler() {
+                    public void handleMessage(Message msg) {
+                        /// M: it may not have parent before attach window
+                        ViewParent viewParent = ActionBarContextView.this.getParent();
+                        if (viewParent != null) {
+                            viewParent.requestLayout();
+                        }
+                    }
+                };
+            }
         }
 
         mTitleView.setText(mTitle);
@@ -193,6 +217,11 @@ public class ActionBarContextView extends AbsActionBarView {
         final boolean hasSubtitle = !TextUtils.isEmpty(mSubtitle);
         mSubtitleView.setVisibility(hasSubtitle ? VISIBLE : GONE);
         mTitleLayout.setVisibility(hasTitle || hasSubtitle ? VISIBLE : GONE);
+
+        /// M: it can't re-layout during performTraversal
+        mHandler.removeMessages(MSG_RELAYOUT);
+        mHandler.sendMessage(mHandler.obtainMessage(MSG_RELAYOUT));
+
         if (mTitleLayout.getParent() == null) {
             addView(mTitleLayout);
         }
@@ -437,5 +466,12 @@ public class ActionBarContextView extends AbsActionBarView {
 
     public boolean isTitleOptional() {
         return mTitleOptional;
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        super.dispatchTouchEvent(event);
+        // M: consume touch event to prevent from dispatching it to parent or siblings
+        return true;
     }
 }

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +22,7 @@
 package android.webkit;
 
 import java.io.UnsupportedEncodingException;
+import java.net.URLDecoder;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -24,6 +30,7 @@ import java.util.regex.Pattern;
 import android.net.Uri;
 import android.net.ParseException;
 import android.net.WebAddress;
+import android.util.Base64;
 import android.util.Log;
 
 public final class URLUtil {
@@ -387,6 +394,31 @@ public final class URLUtil {
     private static final Pattern CONTENT_DISPOSITION_PATTERN =
             Pattern.compile("attachment;\\s*filename\\s*=\\s*(\"?)([^\"]*)\\1\\s*$",
             Pattern.CASE_INSENSITIVE);
+    /// M: base64 content-disposition support
+    private static final Pattern BASE64_CONTENT_DISPOSITION_PATTERN =
+            Pattern.compile("attachment;\\s*filename\\s*=\\s*(\"?)=\\?" +
+                "([a-zA-Z0-9-_]+)\\?B\\?([a-zA-Z0-9+/]*[=]{0,2})(\\?=)\\1\\s*$",
+                Pattern.CASE_INSENSITIVE);
+
+    /// M: add compacibility for extra content disposition @{
+    private static final Pattern CONTENT_DISPOSITION_EXTRA_PATTERN =
+            Pattern.compile("attachment;\\s*filename\\s*=\\s*(\"?)([^\"]*)\\1.*$",
+            Pattern.CASE_INSENSITIVE);
+    private static final Pattern CONTENT_DISPOSITION_EXTRA_INLINE_PATTERN =
+            Pattern.compile("inline;\\s*filename\\s*=\\s*(\"?)([^\"]*)\\1.*$",
+            Pattern.CASE_INSENSITIVE);
+    /// @}
+
+    /**
+     * M: add public interface for android webview layer.
+     * @hide
+     *
+     * @param contentDisposition Content-disposition header given by the server.
+     * @return The MIME type that should be used for this data.
+     */
+    public static String parseContentDispositionPublic(String contentDisposition) {
+        return parseContentDisposition(contentDisposition);
+    }
 
     /*
      * Parse the Content-Disposition HTTP Header. The format of the header
@@ -396,16 +428,80 @@ public final class URLUtil {
      * Note that RFC 2616 specifies the filename value must be double-quoted.
      * Unfortunately some servers do not quote the value so to maintain
      * consistent behaviour with other browsers, we allow unquoted values too.
+     *
+     * M: base64 content-disposition support
      */
     static String parseContentDisposition(String contentDisposition) {
+        String fileName = null;
+        Matcher m;
         try {
-            Matcher m = CONTENT_DISPOSITION_PATTERN.matcher(contentDisposition);
+            m = BASE64_CONTENT_DISPOSITION_PATTERN.matcher(contentDisposition);
             if (m.find()) {
-                return m.group(2);
+                try {
+                    String st = new String(Base64.decode(m.group(3), Base64.DEFAULT), m.group(2));
+                    fileName = URLDecoder.decode(st, m.group(2));
+                } catch (UnsupportedEncodingException unsupportEx) {
+                    Log.d(LOGTAG, "UnsupportedEncodingException: " + contentDisposition);
+                } catch (IllegalArgumentException illEx) {
+                    Log.d(LOGTAG, "IllegalArgumentException: " + contentDisposition);
+                }
+            }
+        } catch (IllegalStateException illBase64Ex) {
+            Log.d(LOGTAG, "IllegalStateException: illBase64Ex: " + contentDisposition);
+        }
+
+        if (fileName == null) {
+        try {
+                m = CONTENT_DISPOSITION_PATTERN.matcher(contentDisposition);
+            if (m.find()) {
+                    fileName = m.group(2);
             }
         } catch (IllegalStateException ex) {
              // This function is defined as returning null when it can't parse the header
+                Log.d(LOGTAG, "IllegalStateException: ex: " + contentDisposition);
         }
-        return null;
+        }
+        /// M: filter use extenstion pattern @{
+        if (fileName == null) {
+            try {
+                m = CONTENT_DISPOSITION_EXTRA_PATTERN.matcher(contentDisposition);
+                if (m.find()) {
+                    fileName = m.group(2);
+                }
+            } catch (IllegalStateException ex) {
+                Log.d(LOGTAG, "Extra IllegalStateException: ex: " + contentDisposition);
+            }
+        }
+        if (fileName == null) {
+            try {
+                m = CONTENT_DISPOSITION_EXTRA_INLINE_PATTERN.matcher(contentDisposition);
+                if (m.find()) {
+                    fileName = m.group(2);
+                }
+            } catch (IllegalStateException ex) {
+                Log.d(LOGTAG, "Extra inline IllegalStateException: ex: " + contentDisposition);
+            }
+        }
+
+        /// @}
+        return fileName;
+    }
+
+    /**
+     * M: base64 content-disposition support
+     * Add basic test for new case.
+     */
+    static void testParseContentDisposition() {
+        // image001.jpg
+        Log.d(LOGTAG, parseContentDisposition("attachment; filename=\"image001.jpg\""));
+        // image001.jpg
+        Log.d(LOGTAG, parseContentDisposition(
+            "attachment; filename=\"=?ISO-8859-1?B?aW1hZ2UwMDEuanBn?=\""));
+        // image001.jpg
+        Log.d(LOGTAG, parseContentDisposition(
+            "attachment; filename=\"=?UTF-8?B?aW1hZ2UwMDEuanBn?=\""));
+        // Chinese zhong wen han zi
+        Log.d(LOGTAG, parseContentDisposition(
+            "attachment; filename=\"=?GB2312?B?JWQ2JWQwJWNlJWM0JWJhJWJhJWQ3JWQ2?=\""));
     }
 }

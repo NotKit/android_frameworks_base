@@ -20,6 +20,7 @@ import static android.Manifest.permission.READ_NETWORK_USAGE_HISTORY;
 import static android.net.NetworkStats.UID_ALL;
 import static android.net.TrafficStats.UID_REMOVED;
 import static android.net.TrafficStats.UID_TETHERING;
+import static android.net.TrafficStats.UID_VILTE;
 
 import android.Manifest;
 import android.annotation.IntDef;
@@ -153,13 +154,13 @@ public final class NetworkStatsAccess {
                 // with some special uids (system, removed, or tethering) and
                 // anonymized uids
                 return uid == android.os.Process.SYSTEM_UID || uid == UID_REMOVED
-                        || uid == UID_TETHERING || uid == UID_ALL
+                        || uid == UID_TETHERING || uid == UID_ALL || uid == UID_VILTE
                         || UserHandle.getUserId(uid) == UserHandle.getUserId(callerUid);
             case NetworkStatsAccess.Level.USER:
                 // User-level access - can access usage for any app running in the same user, along
                 // with some special uids (system, removed, or tethering).
                 return uid == android.os.Process.SYSTEM_UID || uid == UID_REMOVED
-                        || uid == UID_TETHERING
+                        || uid == UID_TETHERING || uid == UID_VILTE
                         || UserHandle.getUserId(uid) == UserHandle.getUserId(callerUid);
             case NetworkStatsAccess.Level.DEFAULT:
             default:

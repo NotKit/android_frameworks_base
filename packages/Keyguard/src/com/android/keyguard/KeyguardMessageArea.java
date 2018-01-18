@@ -25,12 +25,14 @@ import android.util.AttributeSet;
 import android.view.View;
 import android.widget.TextView;
 
+import com.mediatek.keyguard.AntiTheft.AntiTheftManager;
+
 import java.lang.ref.WeakReference;
 
 /***
  * Manages a number of views inside of the given layout. See below for a list of widgets.
  */
-class KeyguardMessageArea extends TextView implements SecurityMessageDisplay {
+public class KeyguardMessageArea extends TextView implements SecurityMessageDisplay {
     /** Handler token posted with accessibility announcement runnables. */
     private static final Object ANNOUNCE_TOKEN = new Object();
 
@@ -41,7 +43,7 @@ class KeyguardMessageArea extends TextView implements SecurityMessageDisplay {
     private static final long ANNOUNCEMENT_DELAY = 250;
     private static final int DEFAULT_COLOR = -1;
 
-    private static final int SECURITY_MESSAGE_DURATION = 5000;
+    public static final int SECURITY_MESSAGE_DURATION = 5000;
 
     private final KeyguardUpdateMonitor mUpdateMonitor;
     private final Handler mHandler;
@@ -51,6 +53,9 @@ class KeyguardMessageArea extends TextView implements SecurityMessageDisplay {
     long mTimeout = SECURITY_MESSAGE_DURATION;
     CharSequence mMessage;
     private int mNextMessageColor = DEFAULT_COLOR;
+
+    private CharSequence mSeparator;
+    private KeyguardSecurityModel mSecurityModel;
 
     private final Runnable mClearMessageRunnable = new Runnable() {
         @Override
@@ -77,9 +82,13 @@ class KeyguardMessageArea extends TextView implements SecurityMessageDisplay {
         super(context, attrs);
         setLayerType(LAYER_TYPE_HARDWARE, null); // work around nested unclipped SaveLayer bug
 
+        mSecurityModel = new KeyguardSecurityModel(context) ;
         mUpdateMonitor = KeyguardUpdateMonitor.getInstance(getContext());
         mUpdateMonitor.registerCallback(mInfoCallback);
         mHandler = new Handler(Looper.myLooper());
+
+        mSeparator = getResources().getString(
+                com.android.internal.R.string.kg_text_message_separator);
 
         mDefaultColor = getCurrentTextColor();
         update();
@@ -159,7 +168,17 @@ class KeyguardMessageArea extends TextView implements SecurityMessageDisplay {
     private void update() {
         CharSequence status = mMessage;
         setVisibility(TextUtils.isEmpty(status) ? INVISIBLE : VISIBLE);
-        setText(status);
+        //setText(status);
+
+        /// M: fix ALPS01897062
+        /// M: If dm lock or PPL Lock is on, we should tell user here @{
+        if (mSecurityModel.getSecurityMode() == KeyguardSecurityModel.SecurityMode.AntiTheft) {
+            setText(AntiTheftManager.getAntiTheftMessageAreaText(status, mSeparator));
+        } else {
+            setText(status);
+        }
+        /// @}
+
         int color = mDefaultColor;
         if (mNextMessageColor != DEFAULT_COLOR) {
             color = mNextMessageColor;

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -37,6 +42,7 @@ import static com.android.server.am.ActivityManagerDebugConfig.DEBUG_CLEANUP;
 import static com.android.server.am.ActivityManagerDebugConfig.DEBUG_CONFIGURATION;
 import static com.android.server.am.ActivityManagerDebugConfig.DEBUG_CONTAINERS;
 import static com.android.server.am.ActivityManagerDebugConfig.DEBUG_LOCKSCREEN;
+import static com.android.server.am.ActivityManagerDebugConfig.DEBUG_MULTIWINDOW;
 import static com.android.server.am.ActivityManagerDebugConfig.DEBUG_PAUSE;
 import static com.android.server.am.ActivityManagerDebugConfig.DEBUG_RELEASE;
 import static com.android.server.am.ActivityManagerDebugConfig.DEBUG_RESULTS;
@@ -46,6 +52,7 @@ import static com.android.server.am.ActivityManagerDebugConfig.DEBUG_STACK;
 import static com.android.server.am.ActivityManagerDebugConfig.DEBUG_STATES;
 import static com.android.server.am.ActivityManagerDebugConfig.DEBUG_SWITCH;
 import static com.android.server.am.ActivityManagerDebugConfig.DEBUG_TASKS;
+import static com.android.server.am.ActivityManagerDebugConfig.DEBUG_TASK_RETURNTO;
 import static com.android.server.am.ActivityManagerDebugConfig.DEBUG_TRANSITION;
 import static com.android.server.am.ActivityManagerDebugConfig.DEBUG_USER_LEAVING;
 import static com.android.server.am.ActivityManagerDebugConfig.DEBUG_VISIBILITY;
@@ -113,6 +120,7 @@ import android.os.Message;
 import android.os.PersistableBundle;
 import android.os.RemoteException;
 import android.os.SystemClock;
+import android.os.SystemProperties;
 import android.os.Trace;
 import android.os.UserHandle;
 import android.service.voice.IVoiceInteractionSession;
@@ -130,6 +138,15 @@ import com.android.server.am.ActivityManagerService.ItemMatcher;
 import com.android.server.am.ActivityStackSupervisor.ActivityContainer;
 import com.android.server.wm.TaskGroup;
 import com.android.server.wm.WindowManagerService;
+
+import com.mediatek.am.AMEventHookAction;
+import com.mediatek.am.AMEventHookData;
+import com.mediatek.am.AMEventHookResult;
+///M : AWS
+import com.mediatek.am.IAWSProcessRecord;
+/// M: BMW
+import com.mediatek.multiwindow.MultiWindowManager;
+import com.mediatek.server.am.AMEventHook;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -552,6 +569,15 @@ final class ActivityStack {
 
     final ActivityRecord topRunningActivityLocked() {
         for (int taskNdx = mTaskHistory.size() - 1; taskNdx >= 0; --taskNdx) {
+            /// M: BMW @{
+            if (MultiWindowManager.isSupported()) {
+                TaskRecord task = mTaskHistory.get(taskNdx);
+                if (task.mSticky && mService.mFocusedActivity != null
+                    && task.taskId != mService.mFocusedActivity.task.taskId) {
+                    continue;
+                }
+            }
+            /// @}
             ActivityRecord r = mTaskHistory.get(taskNdx).topRunningActivityLocked();
             if (r != null) {
                 return r;
@@ -712,6 +738,12 @@ final class ActivityStack {
         if (task != null) {
             mWindowManager.moveTaskToTop(task.taskId);
         }
+        /// M: BMW @{
+        if (MultiWindowManager.isSupported()) {
+            restoreStickyTaskLocked(task);
+            keepStickyTaskLocked();
+        }
+        /// @}
     }
 
     boolean isFocusable() {
@@ -898,6 +930,17 @@ final class ActivityStack {
 
     void minimalResumeActivityLocked(ActivityRecord r) {
         r.state = ActivityState.RESUMED;
+
+        /// M: AMEventHook event @{
+        ProcessRecord appProc = r.app;
+        if (appProc != null) {
+            AMEventHookData.AfterActivityResumed eventData = null;
+            eventData = AMEventHookData.AfterActivityResumed.createInstance();
+            eventData.set(appProc.pid, r.info.name, r.info.packageName, r.mActivityType);
+            mService.getAMEventHook().hook(AMEventHook.Event.AM_AfterActivityResumed, eventData);
+        }
+        /// M: AMEventHook event @}
+
         if (DEBUG_STATES) Slog.v(TAG_STATES, "Moving to RESUMED: " + r + " (starting new instance)"
                 + " callers=" + Debug.getCallers(5));
         mResumedActivity = r;
@@ -1089,8 +1132,12 @@ final class ActivityStack {
     final boolean startPausingLocked(boolean userLeaving, boolean uiSleeping,
             ActivityRecord resuming, boolean dontWait) {
         if (mPausingActivity != null) {
-            Slog.wtf(TAG, "Going to pause when pause is already pending for " + mPausingActivity
-                    + " state=" + mPausingActivity.state);
+            /// M: ALPS02773160, Suppress AEE warning @{
+            Slog.e(TAG, "Going to pause when pause is already pending for " + mPausingActivity
+                    + " state=" + mPausingActivity.state,
+                    new RuntimeException("here").fillInStackTrace());
+            /// M: ALPS02773160, Suppress AEE warning @}
+
             if (!mService.isSleepingLocked()) {
                 // Avoid recursion among check for sleep and complete pause during sleeping.
                 // Because activity will be paused immediately after resume, just let pause
@@ -1101,7 +1148,10 @@ final class ActivityStack {
         ActivityRecord prev = mResumedActivity;
         if (prev == null) {
             if (resuming == null) {
-                Slog.wtf(TAG, "Trying to pause when nothing is resumed");
+                /// M: ALPS02773160, Suppress AEE warning @{
+                Slog.e(TAG, "Trying to pause when nothing is resumed",
+                        new RuntimeException("here").fillInStackTrace());
+                /// M: ALPS02773160, Suppress AEE warning @}
                 mStackSupervisor.resumeFocusedStackTopActivityLocked();
             }
             return false;
@@ -1137,6 +1187,13 @@ final class ActivityStack {
                 EventLog.writeEvent(EventLogTags.AM_PAUSE_ACTIVITY,
                         prev.userId, System.identityHashCode(prev),
                         prev.shortComponentName);
+
+                /// M: AMS log enhancement @{
+                if (!ActivityManagerService.IS_USER_BUILD || DEBUG_TASKS) {
+                    Slog.d(TAG, "ACT-AM_PAUSE_ACTIVITY " + prev);
+                }
+                /// @}
+
                 mService.updateUsageStats(prev, false);
                 prev.app.thread.schedulePauseActivity(prev.appToken, prev.finishing,
                         userLeaving, prev.configChangeFlags, dontWait);
@@ -1203,6 +1260,12 @@ final class ActivityStack {
         if (DEBUG_PAUSE) Slog.v(TAG_PAUSE,
             "Activity paused: token=" + token + ", timeout=" + timeout);
 
+        /// M: AMS log enhancement @{
+        if (!ActivityManagerService.IS_USER_BUILD || DEBUG_TASKS) {
+            Slog.d(TAG, "ACT-paused: token=" + token + ", timeout=" + timeout);
+        }
+        /// @}
+
         final ActivityRecord r = isInStackLocked(token);
         if (r != null) {
             mHandler.removeMessages(PAUSE_TIMEOUT_MSG, r);
@@ -1218,12 +1281,31 @@ final class ActivityStack {
                             ? mPausingActivity.shortComponentName : "(none)");
                 if (r.state == ActivityState.PAUSING) {
                     r.state = ActivityState.PAUSED;
+
+                    /// M: AMEventHook event @{
+                    ProcessRecord appProc = r.app;
+                    if (appProc != null) {
+                        AMEventHookData.AfterActivityPaused eventData = null;
+                        eventData = AMEventHookData.AfterActivityPaused.createInstance();
+                        eventData.set(appProc.pid, r.info.name, r.info.packageName);
+                        mService.getAMEventHook().hook(AMEventHook.Event.AM_AfterActivityPaused,
+                                eventData);
+                    }
+                    /// M: AMEventHook event @}
+
                     if (r.finishing) {
                         if (DEBUG_PAUSE) Slog.v(TAG,
                                 "Executing finish of failed to pause activity: " + r);
                         finishCurrentActivityLocked(r, FINISH_AFTER_VISIBLE, false);
                     }
                 }
+
+                /// M: AMS log enhancement @{
+                if (!ActivityManagerService.IS_USER_BUILD || DEBUG_TASKS) {
+                    Slog.d(TAG, "ACT-AM_FAILED_TO_PAUSE " + r + " PausingActivity:" +
+                        mPausingActivity);
+                }
+                /// @}
             }
         }
         mStackSupervisor.ensureActivitiesVisibleLocked(null, 0, !PRESERVE_WINDOWS);
@@ -1262,6 +1344,17 @@ final class ActivityStack {
             r.stopped = true;
             r.state = ActivityState.STOPPED;
 
+            /// M: AMEventHook event @{
+            ProcessRecord appProc = r.app;
+            if (appProc != null) {
+                AMEventHookData.AfterActivityStopped eventData = null;
+                eventData = AMEventHookData.AfterActivityStopped.createInstance();
+                eventData.set(appProc.pid, r.info.name, r.info.packageName);
+                mService.getAMEventHook().hook(AMEventHook.Event.AM_AfterActivityStopped,
+                        eventData);
+            }
+            /// M: AMEventHook event @}
+
             mWindowManager.notifyAppStopped(r.appToken);
 
             if (getVisibleBehindActivity() == r) {
@@ -1287,6 +1380,18 @@ final class ActivityStack {
         if (prev != null) {
             final boolean wasStopping = prev.state == ActivityState.STOPPING;
             prev.state = ActivityState.PAUSED;
+
+            /// M: AMEventHook event @{
+            ProcessRecord appProc = prev.app;
+            if (appProc != null) {
+                AMEventHookData.AfterActivityPaused eventData = null;
+                eventData = AMEventHookData.AfterActivityPaused.createInstance();
+                eventData.set(appProc.pid, prev.info.name, prev.info.packageName);
+                mService.getAMEventHook().hook(AMEventHook.Event.AM_AfterActivityPaused,
+                        eventData);
+            }
+            /// M: AMEventHook event @}
+
             if (prev.finishing) {
                 if (DEBUG_PAUSE) Slog.v(TAG_PAUSE, "Executing finish of activity: " + prev);
                 prev = finishCurrentActivityLocked(prev, FINISH_AFTER_VISIBLE, false);
@@ -1320,6 +1425,7 @@ final class ActivityStack {
             // It is possible the activity was freezing the screen before it was paused.
             // In that case go ahead and remove the freeze this activity has on the screen
             // since it is no longer visible.
+            /// M: Avoid null pointer exception
             if (prev != null) {
                 prev.stopFreezingScreenLocked(true /*force*/);
             }
@@ -1874,6 +1980,12 @@ final class ActivityStack {
 
     private boolean makeVisibleAndRestartIfNeeded(ActivityRecord starting, int configChanges,
             boolean isTop, boolean andResume, ActivityRecord r) {
+        /// M: Avoid starting activity in some scenario. @{
+        if (skipStartActivityIfNeeded()) {
+            return false;
+        }
+        /// M: Avoid starting activity in some scenario. @}
+
         // We need to make sure the app is running if it's the top, or it is just made visible from
         // invisible. If the app is already visible, it must have died while it was visible. In this
         // case, we'll show the dead window but will not restart the app. Otherwise we could end up
@@ -2172,6 +2284,20 @@ final class ActivityStack {
 
             // Let's just start up the Launcher...
             ActivityOptions.abort(options);
+
+            /// M: AMEventHook event @{
+            AMEventHookData.BeforeGoHomeWhenNoActivities eventData =
+                AMEventHookData.BeforeGoHomeWhenNoActivities.createInstance();
+            AMEventHookResult eventResult =
+                mService.getAMEventHook().hook(AMEventHook.Event.AM_BeforeGoHomeWhenNoActivities,
+                    eventData);
+            if (AMEventHookResult.hasAction(eventResult,
+                AMEventHookAction.AM_SkipHomeActivityLaunching)) {
+                Slog.v(TAG, "Skip to resume home activity!!");
+                return false;
+            }
+            /// M: AMEventHook event @}
+
             if (DEBUG_STATES) Slog.d(TAG_STATES,
                     "resumeTopActivityLocked: No more activities go home");
             if (DEBUG_STACK) mStackSupervisor.validateTopActivitiesLocked();
@@ -2272,6 +2398,68 @@ final class ActivityStack {
                     "resumeTopActivityLocked: Pausing " + mResumedActivity);
             pausing |= startPausingLocked(userLeaving, false, next, dontWaitForPause);
         }
+
+        /// M: AMEventHook event @{
+        if (next.info.packageName != mStackSupervisor.mLastResumedActivity.packageName ||
+                next.info.name != mStackSupervisor.mLastResumedActivity.activityName) {
+            AMEventHookData.BeforeActivitySwitch eventData = null;
+            eventData = AMEventHookData.BeforeActivitySwitch.createInstance();
+            ArrayList<String> taskPkgList = null;
+            if ("1".equals(SystemProperties.get("persist.runningbooster.support")) ||
+                    "1".equals(SystemProperties.get("ro.mtk_aws_support"))) {
+                if (!pausing) {
+                    if (nextTask != null) {
+                        taskPkgList = new ArrayList<String>();
+                        for (int i = 0; i < nextTask.mActivities.size(); i++) {
+                            ActivityRecord taskActivity = nextTask.mActivities.get(i);
+                            if (taskActivity.packageName != null) {
+                                taskPkgList.add(taskActivity.packageName);
+                            }
+                        }
+                    }
+                }
+            }
+            int waitProcessPid = -1;
+            ArrayList<IAWSProcessRecord> runningProcRecords = null;
+            if (SystemProperties.get("ro.mtk_aws_support").equals("1")) {
+                if ((next.resultTo != null) && (next.resultTo.app != null)) {
+                    waitProcessPid =  next.resultTo.app.pid;
+                }
+                synchronized (mService.mPidsSelfLocked) {
+                    final int size = mService.mPidsSelfLocked.size();
+                    if (size != 0) {
+                        for (int i = 0; i < size; i++) {
+                            if (runningProcRecords == null) {
+                                runningProcRecords = new ArrayList<IAWSProcessRecord>();
+                            }
+                            final ProcessRecord proc = mService.mPidsSelfLocked.valueAt(i);
+                            if (proc != null) {
+                                IAWSProcessRecord pr =
+                                    ActivityManagerService.convertProcessRecord(proc);
+                                runningProcRecords.add(pr);
+                            }
+                        }
+                    }
+                }
+            }
+            eventData.set(mStackSupervisor.mLastResumedActivity.activityName,
+                    next.info.name,
+                    mStackSupervisor.mLastResumedActivity.packageName,
+                    next.info.packageName,
+                    mStackSupervisor.mLastResumedActivity.activityType,
+                    next.mActivityType,
+                    pausing, taskPkgList,
+                    waitProcessPid, runningProcRecords);
+            mService.getAMEventHook().hook(AMEventHook.Event.AM_BeforeActivitySwitch, eventData);
+
+            if (!pausing) {
+                mStackSupervisor.mLastResumedActivity.packageName = next.info.packageName;
+                mStackSupervisor.mLastResumedActivity.activityName = next.info.name;
+                mStackSupervisor.mLastResumedActivity.activityType = next.mActivityType;
+            }
+        }
+        /// M: AMEventHook event @}
+
         if (pausing) {
             if (DEBUG_SWITCH || DEBUG_STATES) Slog.v(TAG_STATES,
                     "resumeTopActivityLocked: Skip resume: need to start pausing");
@@ -2353,6 +2541,18 @@ final class ActivityStack {
             Slog.w(TAG, "Failed trying to unstop package "
                     + next.packageName + ": " + e);
         }
+
+        /// M: [process suppression] @{
+        if ("1".equals(SystemProperties.get("persist.runningbooster.support")) ||
+                "1".equals(SystemProperties.get("ro.mtk_aws_support"))) {
+            AMEventHookData.PackageStoppedStatusChanged eventData1 =
+                    AMEventHookData.PackageStoppedStatusChanged.createInstance();
+            eventData1.set(next.packageName, mService.SUPPRESS_ACTION_UNSTOP,
+                    "resumeTopActivityInnerLocked");
+            mService.getAMEventHook().hook(AMEventHook.Event.AM_PackageStoppedStatusChanged,
+                    eventData1);
+        }
+        /// M: [process suppression] @}
 
         // We are starting up the next activity, so tell the window manager
         // that the previous one will be hidden soon.  This way it can know
@@ -2439,6 +2639,19 @@ final class ActivityStack {
 
             if (DEBUG_STATES) Slog.v(TAG_STATES, "Moving to RESUMED: " + next + " (in existing)");
             next.state = ActivityState.RESUMED;
+
+            /// M: AMEventHook event @{
+            ProcessRecord appProc = next.app;
+            if (appProc != null) {
+                AMEventHookData.AfterActivityResumed aarEventData = null;
+                aarEventData = AMEventHookData.AfterActivityResumed.createInstance();
+                aarEventData.set(appProc.pid, next.info.name, next.info.packageName,
+                        next.mActivityType);
+                mService.getAMEventHook().hook(AMEventHook.Event.AM_AfterActivityResumed,
+                        aarEventData);
+            }
+            /// M: AMEventHook event @}
+
             mResumedActivity = next;
             next.task.touchActiveTime();
             mRecentTasks.addLocked(next.task);
@@ -2517,6 +2730,12 @@ final class ActivityStack {
 
                 EventLog.writeEvent(EventLogTags.AM_RESUME_ACTIVITY, next.userId,
                         System.identityHashCode(next), next.task.taskId, next.shortComponentName);
+
+                /// M: AMS log enhancement @{
+                if (!ActivityManagerService.IS_USER_BUILD || DEBUG_TASKS) {
+                    Slog.d(TAG, "ACT-AM_RESUME_ACTIVITY " + next + " task:" + next.task.taskId);
+                }
+                /// @}
 
                 next.sleeping = false;
                 mService.showUnsupportedZoomDialogIfNeededLocked(next);
@@ -2637,6 +2856,22 @@ final class ActivityStack {
         if (isOnHomeDisplay()) {
             ActivityStack lastStack = mStackSupervisor.getLastStack();
             final boolean fromHome = lastStack.isHomeStack();
+
+            /// M: AMS log enhancement @{
+            // ALPS01902110 Debug task return to
+            if (DEBUG_TASK_RETURNTO) {
+                Slog.d(TAG, "insertTaskAtTop() task " + task + " fromHome=" + fromHome +
+                    " isHomeStack=" + isHomeStack() + " topTask=" + topTask());
+                if (lastStack != null) {
+                    TaskRecord top = lastStack.topTask();
+                    Slog.d(TAG, "lastStack=" + lastStack + " lastTop=" + top);
+                    if (top != null) {
+                        Slog.d(TAG, "lastTopType=" + top.taskType);
+                    }
+                }
+            }
+            /// @}
+
             if (!isHomeStack() && (fromHome || topTask() != task)) {
                 // If it's a last task over home - we default to keep its return to type not to
                 // make underlying task focused when this one will be finished.
@@ -3204,6 +3439,20 @@ final class ActivityStack {
         final ActivityRecord next = topRunningActivityLocked();
         final String myReason = reason + " adjustFocus";
         if (next != r) {
+            /// M: BMW. Disable sticky before removing last activity @{
+            if (MultiWindowManager.isSupported()) {
+                if (MultiWindowManager.DEBUG) {
+                    Slog.d(TAG, "adjustFocusedActivityLocked, r = " + r
+                        + ", r.task = " + r.task + ", topTask() = "
+                        + topTask() + ", r.frontOfTask" + r.frontOfTask);
+                }
+                if (r.task.mSticky) {
+                    if (r.frontOfTask && r.task == topTask()) {
+                        mService.stickWindow(r.task, false);
+                    }
+                }
+            }
+            /// @}
             if (next != null && StackId.keepFocusInStackIfPossible(mStackId) && isFocusable()) {
                 // For freeform, docked, and pinned stacks we always keep the focus within the
                 // stack as long as there is a running activity in the stack that we can adjust
@@ -3303,6 +3552,18 @@ final class ActivityStack {
                 r.stopped = true;
                 if (DEBUG_STATES) Slog.v(TAG_STATES, "Stop failed; moving to STOPPED: " + r);
                 r.state = ActivityState.STOPPED;
+
+                /// M: AMEventHook event @{
+                ProcessRecord appProc = r.app;
+                if (appProc != null) {
+                    AMEventHookData.AfterActivityStopped eventData = null;
+                    eventData = AMEventHookData.AfterActivityStopped.createInstance();
+                    eventData.set(appProc.pid, r.info.name, r.info.packageName);
+                    mService.getAMEventHook().hook(AMEventHook.Event.AM_AfterActivityStopped,
+                            eventData);
+                }
+                /// M: AMEventHook event @}
+
                 if (r.deferRelaunchUntilPaused) {
                     destroyActivityLocked(r, true, "stop-except");
                 }
@@ -3486,6 +3747,13 @@ final class ActivityStack {
         EventLog.writeEvent(EventLogTags.AM_FINISH_ACTIVITY,
                 r.userId, System.identityHashCode(r),
                 task.taskId, r.shortComponentName, reason);
+
+        /// M: AMS log enhancement @{
+        if (!ActivityManagerService.IS_USER_BUILD || DEBUG_TASKS) {
+            Slog.d(TAG, "ACT-AM_FINISH_ACTIVITY " + r + " task:" + r.task + " " + reason);
+        }
+        /// @}
+
         final ArrayList<ActivityRecord> activities = task.mActivities;
         final int index = activities.indexOf(r);
         if (index < (activities.size() - 1)) {
@@ -3521,6 +3789,28 @@ final class ActivityStack {
                 if (DEBUG_USER_LEAVING) Slog.v(TAG_USER_LEAVING,
                         "finish() => pause with userLeaving=false");
                 startPausingLocked(false, false, null, false);
+
+                /// M: AMEventHook event @{
+                ActivityRecord next = mStackSupervisor.getFocusedStack().topRunningActivityLocked();
+                AMEventHookData.BeforeActivitySwitch eventData = null;
+                if (next != null && next.info != null) {
+                    if (next.info.packageName !=
+                            mStackSupervisor.mLastResumedActivity.packageName
+                            || next.info.name !=
+                            mStackSupervisor.mLastResumedActivity.activityName) {
+                        eventData = AMEventHookData.BeforeActivitySwitch.createInstance();
+                        eventData.set(mStackSupervisor.mLastResumedActivity.activityName,
+                                next.info.name,
+                                mStackSupervisor.mLastResumedActivity.packageName,
+                                next.info.packageName,
+                                mStackSupervisor.mLastResumedActivity.activityType,
+                                next.mActivityType,
+                                true, null, null, null);
+                        mService.getAMEventHook().hook(AMEventHook.Event.AM_BeforeActivitySwitch,
+                                eventData);
+                    }
+                }
+                /// M: AMEventHook event @}
             }
 
             if (endTask) {
@@ -3588,7 +3878,8 @@ final class ActivityStack {
 
         if (mode == FINISH_IMMEDIATELY
                 || (prevState == ActivityState.PAUSED
-                    && (mode == FINISH_AFTER_PAUSE || mStackId == PINNED_STACK_ID))
+                    && (mode == FINISH_AFTER_PAUSE || mode == FINISH_AFTER_VISIBLE
+                        || mStackId == PINNED_STACK_ID))
                 || finishingActivityInNonFocusedStack
                 || prevState == ActivityState.STOPPED
                 || prevState == ActivityState.INITIALIZING) {
@@ -3780,6 +4071,18 @@ final class ActivityStack {
         if (setState) {
             if (DEBUG_STATES) Slog.v(TAG_STATES, "Moving to DESTROYED: " + r + " (cleaning up)");
             r.state = ActivityState.DESTROYED;
+
+            /// M: AMEventHook event @{
+            ProcessRecord appProc = r.app;
+            if (appProc != null) {
+                AMEventHookData.AfterActivityDestroyed eventData = null;
+                eventData = AMEventHookData.AfterActivityDestroyed.createInstance();
+                eventData.set(appProc.pid, r.info.name, r.info.packageName);
+                mService.getAMEventHook().hook(AMEventHook.Event.AM_AfterActivityDestroyed,
+                        eventData);
+            }
+            /// M: AMEventHook event @}
+
             if (DEBUG_APP) Slog.v(TAG_APP, "Clearing app during cleanUp for activity " + r);
             r.app = null;
         }
@@ -3837,6 +4140,18 @@ final class ActivityStack {
         if (DEBUG_STATES) Slog.v(TAG_STATES,
                 "Moving to DESTROYED: " + r + " (removed from history)");
         r.state = ActivityState.DESTROYED;
+
+        /// M: AMEventHook event @{
+        ProcessRecord appProc = r.app;
+        if (appProc != null) {
+            AMEventHookData.AfterActivityDestroyed eventData = null;
+            eventData = AMEventHookData.AfterActivityDestroyed.createInstance();
+            eventData.set(appProc.pid, r.info.name, r.info.packageName);
+            mService.getAMEventHook().hook(AMEventHook.Event.AM_AfterActivityDestroyed,
+                    eventData);
+        }
+        /// M: AMEventHook event @}
+
         if (DEBUG_APP) Slog.v(TAG_APP, "Clearing app during remove for activity " + r);
         r.app = null;
         mWindowManager.removeAppToken(r.appToken);
@@ -3850,6 +4165,11 @@ final class ActivityStack {
                     "removeActivityFromHistoryLocked: last activity removed from " + this);
             if (mStackSupervisor.isFocusedStack(this) && task == topTask &&
                     task.isOverHomeStack()) {
+                /// M: BMW. Disable sticky before removing last activity @{
+                if (MultiWindowManager.isSupported() && task.mSticky) {
+                    mService.stickWindow(task, false);
+                }
+                /// @}
                 mStackSupervisor.moveHomeStackTaskToTop(task.getTaskToReturnTo(), reason);
             }
             removeTask(task, reason);
@@ -3982,6 +4302,13 @@ final class ActivityStack {
                 r.userId, System.identityHashCode(r),
                 r.task.taskId, r.shortComponentName, reason);
 
+        /// M: AMS log enhancement @{
+        if (!ActivityManagerService.IS_USER_BUILD || DEBUG_TASKS) {
+            Slog.d(TAG, "ACT-Removing activity from " + reason + ": token=" + r +
+                ", app=" + (r.app != null ? r.app.processName : "(null)"));
+        }
+        /// @}
+
         boolean removedFromHistory = false;
 
         // If the activity is finishing, it's no longer considered in topRunningActivityLocked,
@@ -4050,6 +4377,18 @@ final class ActivityStack {
                 if (DEBUG_STATES) Slog.v(TAG_STATES,
                         "Moving to DESTROYED: " + r + " (destroy skipped)");
                 r.state = ActivityState.DESTROYED;
+
+                /// M: AMEventHook event @{
+                ProcessRecord appProc = r.app;
+                if (appProc != null) {
+                    AMEventHookData.AfterActivityDestroyed eventData = null;
+                    eventData = AMEventHookData.AfterActivityDestroyed.createInstance();
+                    eventData.set(appProc.pid, r.info.name, r.info.packageName);
+                    mService.getAMEventHook().hook(AMEventHook.Event.AM_AfterActivityDestroyed,
+                            eventData);
+                }
+                /// M: AMEventHook event @}
+
                 if (DEBUG_APP) Slog.v(TAG_APP, "Clearing app during destroy for activity " + r);
                 r.app = null;
             }
@@ -4061,6 +4400,18 @@ final class ActivityStack {
             } else {
                 if (DEBUG_STATES) Slog.v(TAG_STATES, "Moving to DESTROYED: " + r + " (no app)");
                 r.state = ActivityState.DESTROYED;
+
+                /// M: AMEventHook event @{
+                ProcessRecord appProc = r.app;
+                if (appProc != null) {
+                    AMEventHookData.AfterActivityDestroyed eventData = null;
+                    eventData = AMEventHookData.AfterActivityDestroyed.createInstance();
+                    eventData.set(appProc.pid, r.info.name, r.info.packageName);
+                    mService.getAMEventHook().hook(AMEventHook.Event.AM_AfterActivityDestroyed,
+                            eventData);
+                }
+                /// M: AMEventHook event @}
+
                 if (DEBUG_APP) Slog.v(TAG_APP, "Clearing app during destroy for activity " + r);
                 r.app = null;
             }
@@ -4158,6 +4509,11 @@ final class ActivityStack {
             if (r.app == app) {
                 if (DEBUG_CLEANUP) Slog.v(TAG_CLEANUP, "---> REMOVING this entry!");
                 list.remove(i);
+
+                /// M: ALPS02905496, Clear the relaunching value when the process is killed. @{
+                mWindowManager.notifyAppRelaunchesCleared(r.appToken);
+                /// @}
+
                 removeTimeoutsForActivityLocked(r);
             }
         }
@@ -4298,6 +4654,15 @@ final class ActivityStack {
             AppTimeTracker timeTracker, String reason) {
         if (DEBUG_SWITCH) Slog.v(TAG_SWITCH, "moveTaskToFront: " + tr);
 
+        /// M: multi-window log enhancement @{
+        /// M: AMS log enhancement @{
+        if (!ActivityManagerService.IS_USER_BUILD || DEBUG_TASKS || DEBUG_MULTIWINDOW) {
+            Slog.d(TAG, "ACT-moveTaskToFront: " + tr + " mStackId=" + mStackId +
+                " reason=" + reason + " " + Debug.getCallers(5));
+        }
+        /// @}
+        /// M: multi-window log enhancement @}
+
         final int numTasks = mTaskHistory.size();
         final int index = mTaskHistory.indexOf(tr);
         if (numTasks == 0 || index < 0)  {
@@ -4346,6 +4711,12 @@ final class ActivityStack {
 
         mStackSupervisor.resumeFocusedStackTopActivityLocked();
         EventLog.writeEvent(EventLogTags.AM_TASK_TO_FRONT, tr.userId, tr.taskId);
+
+        /// M: AMS log enhancement @{
+        if (!ActivityManagerService.IS_USER_BUILD || DEBUG_TASKS) {
+            Slog.d(TAG, "ACT-AM_TASK_TO_FRONT: " + tr);
+        }
+        /// @}
 
         if (VALIDATE_TOKENS) {
             validateAppTokensLocked();
@@ -4500,7 +4871,32 @@ final class ActivityStack {
                     (start.task == task) ? activities.indexOf(start) : activities.size() - 1;
             for (; activityIndex >= 0; --activityIndex) {
                 final ActivityRecord r = activities.get(activityIndex);
+
+                /// M: Do not relaunch the invisible and stopped activity @{
+                /// This will be checked if any of the stacks need to be resized due to the
+                /// configuration change. If so, resize the stacks now and do any relaunches
+                /// if necessary.
+                if (r.visible == false && r.stopped == true && r.state == ActivityState.STOPPED) {
+                    if (DEBUG_CONFIGURATION || !ActivityManagerService.IS_USER_BUILD) {
+                        Slog.v(TAG_CONFIGURATION, "ensureVisibleActivitiesConfigurationLocked:"
+                            + " skip r=" + r + " task=" + task + " start=" + start
+                            + " called by " + Debug.getCallers(4));
+                    }
+                    continue;
+                }
+
                 updatedConfig |= ensureActivityConfigurationLocked(r, 0, preserveWindow);
+
+                if (DEBUG_CONFIGURATION) {
+                    Slog.v(TAG_CONFIGURATION, "ensureVisibleActivitiesConfigurationLocked:"
+                        + " updatedConfig=" + updatedConfig + " fullscreen=" + r.fullscreen
+                        + " visible=" + r.visible + " state=" + r.state + " stopped="
+                        + r.stopped + " r=" + r + " task=" + task + " start=" + start
+                        + " preserveWindow=" + preserveWindow + " called by "
+                        + Debug.getCallers(4));
+                }
+                /// M: Do not relaunch the invisible and stopped activity @}
+
                 if (r.fullscreen) {
                     behindFullscreen = true;
                     break;
@@ -4748,9 +5144,15 @@ final class ActivityStack {
             results = r.results;
             newIntents = r.newIntents;
         }
-        if (DEBUG_SWITCH) Slog.v(TAG_SWITCH,
-                "Relaunching: " + r + " with results=" + results + " newIntents=" + newIntents
+
+        /// M: AMS log enhancement @{
+        if (DEBUG_SWITCH || !ActivityManagerService.IS_USER_BUILD) {
+            Slog.v(TAG_SWITCH,
+                "ACT-Relaunching: " + r + " with results=" + results + " newIntents=" + newIntents
                 + " andResume=" + andResume + " preserveWindow=" + preserveWindow);
+        }
+        /// @}
+
         EventLog.writeEvent(andResume ? EventLogTags.AM_RELAUNCH_RESUME_ACTIVITY
                 : EventLogTags.AM_RELAUNCH_ACTIVITY, r.userId, System.identityHashCode(r),
                 r.task.taskId, r.shortComponentName);
@@ -4780,6 +5182,18 @@ final class ActivityStack {
                 Slog.d(TAG_STATES, "Resumed after relaunch " + r);
             }
             r.state = ActivityState.RESUMED;
+
+            /// M: AMEventHook event @{
+            ProcessRecord appProc = r.app;
+            if (appProc != null) {
+                AMEventHookData.AfterActivityResumed eventData = null;
+                eventData = AMEventHookData.AfterActivityResumed.createInstance();
+                eventData.set(appProc.pid, r.info.name, r.info.packageName, r.mActivityType);
+                mService.getAMEventHook().hook(AMEventHook.Event.AM_AfterActivityResumed,
+                        eventData);
+            }
+            /// M: AMEventHook event @}
+
             // Relaunch-resume could happen either when the app is already in the front,
             // or while it's being brought to front. In the latter case, it's marked RESUMED
             // but not yet visible (or stopped). We need to complete the resume here as the
@@ -4796,6 +5210,17 @@ final class ActivityStack {
         } else {
             mHandler.removeMessages(PAUSE_TIMEOUT_MSG, r);
             r.state = ActivityState.PAUSED;
+
+            /// M: AMEventHook event @{
+            ProcessRecord appProc = r.app;
+            if (appProc != null) {
+                AMEventHookData.AfterActivityPaused eventData = null;
+                eventData = AMEventHookData.AfterActivityPaused.createInstance();
+                eventData.set(appProc.pid, r.info.name, r.info.packageName);
+                mService.getAMEventHook().hook(AMEventHook.Event.AM_AfterActivityPaused,
+                        eventData);
+            }
+            /// M: AMEventHook event @}
         }
 
         r.configChangeFlags = 0;
@@ -5167,10 +5592,20 @@ final class ActivityStack {
         // add the task to stack first, mTaskPositioner might need the stack association
         addTask(task, toTop, "createTaskRecord");
         final boolean isLockscreenShown = mService.mLockScreenShown == LOCK_SCREEN_SHOWN;
+        /// M: Use fullscreen when the activity shows over lockscreen only @{
+        final boolean showForAllUsers = (info.flags & FLAG_SHOW_FOR_ALL_USERS) != 0;
         if (!layoutTaskInStack(task, info.windowLayout) && mBounds != null && task.isResizeable()
-                && !isLockscreenShown) {
+                && (!isLockscreenShown || (isLockscreenShown && !showForAllUsers))) {
             task.updateOverrideConfiguration(mBounds);
+        } else {
+            if (DEBUG_TASKS || !ActivityManagerService.IS_USER_BUILD) {
+                Slog.d(TAG, "createTaskRecord: skip updateOverrideConfiguration mBounds="
+                    + mBounds + " taskId=" + taskId + " " + task + " " + info
+                    + " isLockscreenShown=" + isLockscreenShown + " showForAllUsers="
+                    + showForAllUsers + " callers=" + Debug.getCallers(4));
+            }
         }
+        /// M: Use fullscreen when the activity shows over lockscreen only @}
         return task;
     }
 
@@ -5316,4 +5751,77 @@ final class ActivityStack {
             mTaskHistory.get(taskNdx).setLockTaskAuth();
         }
     }
+
+    /// M: Mediatek added functions start
+
+    /// M: Avoid starting activity in some scenario. @{
+    private boolean skipStartActivityIfNeeded() {
+        /// M: AMEventHook event @{
+        AMEventHookData.SkipStartActivity eventData =
+            AMEventHookData.SkipStartActivity.createInstance();
+        AMEventHookResult eventResult =
+            mService.getAMEventHook().hook(AMEventHook.Event.AM_SkipStartActivity,
+                eventData);
+        if (AMEventHookResult.hasAction(eventResult,
+            AMEventHookAction.AM_SkipStartActivity)) {
+            return true;
+        }
+        /// M: AMEventHook event @}
+
+        return false;
+    }
+    /// M: Avoid starting activity in some scenario. @}
+
+    /// M: BMW @{
+    void keepStickyTaskLocked() {
+        // Move the stack containing sticky task to top.
+        final ActivityStack stack = mStackSupervisor.findStack(FREEFORM_WORKSPACE_STACK_ID);
+        if (MultiWindowManager.DEBUG) Slog.d(TAG_STACK, "keepStickyTaskLocked, stack = " + stack);
+        if (stack == null || this != stack) {
+            return;
+        }
+
+        ArrayList<TaskRecord> tasks = stack.getAllTasks();
+        /// M: we must keep z-order and sticky status of tasks.
+        for (int i = 0; i < tasks.size(); i++) {
+            TaskRecord task = tasks.get(i);
+            if (MultiWindowManager.DEBUG) {
+                Slog.d(TAG_STACK, "keepStickyTaskLocked, task = " + task);
+            }
+            if (task != null && task.mSticky) {
+                //mStacks.remove(stack);
+                //mStacks.add(stack);
+                insertTaskAtTop(task, null);
+                mWindowManager.moveTaskToTop(task.taskId);
+            }
+        }
+    }
+
+    void restoreStickyTaskLocked(TaskRecord topTask) {
+        final ActivityStack stack = mStackSupervisor.findStack(FREEFORM_WORKSPACE_STACK_ID);
+        if (MultiWindowManager.DEBUG) {
+            Slog.d(TAG_STACK, "restoreStickyTaskLocked, topTask = "
+                + topTask + ", stack = "  + stack);
+        }
+        if (topTask != null && stack != null && topTask.stack != stack) {
+            ArrayList<TaskRecord> tasks = stack.getAllTasks();
+            for (int i = tasks.size() - 1; i >= 0; i--) {
+                TaskRecord task = tasks.get(i);
+                if (MultiWindowManager.DEBUG)
+                    Slog.d(TAG_STACK, "restoreStickyTaskLocked, task = " + task);
+                if (task != null && task.mSticky) {
+                    mService.stickWindow(task, false);
+                }
+            }
+        }
+    }
+    /// @}
+
+    /// M: Prevent too many waiting visible activity @{
+    static int getMaxStoppingToForce() {
+        return MAX_STOPPING_TO_FORCE;
+    }
+    /// M: Prevent too many waiting visible activity @}
+
+    /// M: Mediatek added functions end
 }

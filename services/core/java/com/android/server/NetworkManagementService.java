@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -49,6 +54,7 @@ import android.annotation.NonNull;
 import android.app.ActivityManagerNative;
 import android.content.ContentResolver;
 import android.content.Context;
+import android.content.Intent;
 import android.net.ConnectivityManager;
 import android.net.INetd;
 import android.net.INetworkManagementEventObserver;
@@ -77,6 +83,7 @@ import android.os.ServiceSpecificException;
 import android.os.StrictMode;
 import android.os.SystemClock;
 import android.os.SystemProperties;
+import android.os.UserHandle;
 import android.provider.Settings;
 import android.telephony.DataConnectionRealTimeInfo;
 import android.telephony.PhoneStateListener;
@@ -118,13 +125,17 @@ import java.util.NoSuchElementException;
 import java.util.StringTokenizer;
 import java.util.concurrent.CountDownLatch;
 
+/** M: Hotspot Manager */
+import android.provider.Settings;
+import static com.android.server.NetworkManagementService.NetdResponseCode.InterfaceRxThrottleResult;
+import static com.android.server.NetworkManagementService.NetdResponseCode.InterfaceTxThrottleResult;
 /**
  * @hide
  */
 public class NetworkManagementService extends INetworkManagementService.Stub
         implements Watchdog.Monitor {
     private static final String TAG = "NetworkManagement";
-    private static final boolean DBG = Log.isLoggable(TAG, Log.DEBUG);
+    private static final boolean DBG = true;
     private static final String NETD_TAG = "NetdConnector";
     private static final String NETD_SERVICE_NAME = "netd";
 
@@ -163,10 +174,19 @@ public class NetworkManagementService extends INetworkManagementService.Stub
         public static final int SoftapStatusResult        = 214;
         public static final int InterfaceRxCounterResult  = 216;
         public static final int InterfaceTxCounterResult  = 217;
+
+        /** M: Hotspot Manager */
+        public static final int InterfaceRxThrottleResult = 218;
+        public static final int InterfaceTxThrottleResult = 219;
+
         public static final int QuotaCounterResult        = 220;
         public static final int TetheringStatsResult      = 221;
         public static final int DnsProxyQueryResult       = 222;
         public static final int ClatdStatusResult         = 223;
+
+        // sip info
+        public static final int NetInfoSipResult          = 250;
+        public static final int NetInfoSipError           = 251;
 
         public static final int InterfaceChange           = 600;
         public static final int BandwidthControl          = 601;
@@ -175,6 +195,9 @@ public class NetworkManagementService extends INetworkManagementService.Stub
         public static final int InterfaceDnsServerInfo    = 615;
         public static final int RouteChange               = 616;
         public static final int StrictCleartext           = 617;
+
+        /// M: NNN <UID>
+        public static final int StrictSocketConn          = 699;
     }
 
     /* Defaults for resolver parameters. */
@@ -429,6 +452,8 @@ public class NetworkManagementService extends INetworkManagementService.Stub
      * Notify our observers of an interface removal.
      */
     private void notifyInterfaceRemoved(String iface) {
+        Slog.d(TAG, "notifyInterfaceRemoved, iface=" + iface);
+
         // netd already clears out quota and alerts for removed ifaces; update
         // our sanity-checking state.
         mActiveAlerts.remove(iface);
@@ -577,6 +602,8 @@ public class NetworkManagementService extends INetworkManagementService.Stub
      * existing in-memory rules.
      */
     private void prepareNativeDaemon() {
+        //M: enable debug info
+        mConnector.setDebug(true);
 
         mBandwidthControlEnabled = false;
 
@@ -588,7 +615,9 @@ public class NetworkManagementService extends INetworkManagementService.Stub
                 mConnector.execute("bandwidth", "enable");
                 mBandwidthControlEnabled = true;
             } catch (NativeDaemonConnectorException e) {
-                Log.wtf(TAG, "problem enabling bandwidth controls", e);
+                //M: workaroud for avoid blocking
+                //Log.wtf(TAG, "problem enabling bandwidth controls", e);
+                Slog.e(TAG, "problem enabling bandwidth controls");
             }
         } else {
             Slog.i(TAG, "not enabling bandwidth control");
@@ -794,6 +823,7 @@ public class NetworkManagementService extends INetworkManagementService.Stub
 
         @Override
         public boolean onEvent(int code, String raw, String[] cooked) {
+            Slog.d(TAG, "onEvent:" + raw + ":" + cooked.length);
             String errorMessage = String.format("Invalid event from daemon (%s)", raw);
             switch (code) {
             case NetdResponseCode.InterfaceChange:
@@ -860,7 +890,7 @@ public class NetworkManagementService extends INetworkManagementService.Stub
                     notifyInterfaceClassActivity(Integer.parseInt(cooked[3]),
                             isActive ? DataConnectionRealTimeInfo.DC_POWER_STATE_HIGH
                             : DataConnectionRealTimeInfo.DC_POWER_STATE_LOW,
-                            timestampNanos, processUid, false);
+                            timestampNanos, processUid, true);
                     return true;
                     // break;
             case NetdResponseCode.InterfaceAddressChange:
@@ -878,10 +908,23 @@ public class NetworkManagementService extends INetworkManagementService.Stub
                     try {
                         int flags = Integer.parseInt(cooked[5]);
                         int scope = Integer.parseInt(cooked[6]);
-                        address = new LinkAddress(cooked[3], flags, scope);
+                        //M: for ipv6 enhancement @{
+                        if (cooked.length > 7) {
+                            // valid = 0 >> lifetime = 0
+                            // valid = -1 >> no ra
+                            long valid = Long.parseLong(cooked[7]);
+                            Slog.d(TAG, "InterfaceAddressChange valid=" + valid);
+                            address = new LinkAddress(cooked[3], flags, scope, valid);
+                        } else {
+                            Slog.d(TAG, "InterfaceAddressChange no valid field");
+                            address = new LinkAddress(cooked[3], flags, scope);
+                        }
+                        // M: @}
                     } catch(NumberFormatException e) {     // Non-numeric lifetime or scope.
+                        Slog.d(TAG, "NumberFormatException");
                         throw new IllegalStateException(errorMessage, e);
                     } catch(IllegalArgumentException e) {  // Malformed/invalid IP address.
+                        Slog.d(TAG, "IllegalArgumentException");
                         throw new IllegalStateException(errorMessage, e);
                     }
 
@@ -960,6 +1003,12 @@ public class NetworkManagementService extends INetworkManagementService.Stub
                     ActivityManagerNative.getDefault().notifyCleartextNetwork(uid, firstPacket);
                 } catch (RemoteException ignored) {
                 }
+                break;
+            case NetdResponseCode.StrictSocketConn:
+                final int uidApp = Integer.parseInt(cooked[1]);
+                Intent intent = new Intent("com.mediatek.network.socketconn");
+                intent.putExtra("uid", uidApp);
+                mContext.sendBroadcastAsUser(intent, UserHandle.ALL);
                 break;
             default: break;
             }
@@ -1041,6 +1090,9 @@ public class NetworkManagementService extends INetworkManagementService.Stub
     @Override
     public void setInterfaceConfig(String iface, InterfaceConfiguration cfg) {
         mContext.enforceCallingOrSelfPermission(CONNECTIVITY_INTERNAL, TAG);
+
+        Slog.d(TAG, "Enter setInterfaceConfig, iface=" + iface);
+
         LinkAddress linkAddr = cfg.getLinkAddress();
         if (linkAddr == null || linkAddr.getAddress() == null) {
             throw new IllegalStateException("Null LinkAddress given");
@@ -1056,7 +1108,9 @@ public class NetworkManagementService extends INetworkManagementService.Stub
         try {
             mConnector.execute(cmd);
         } catch (NativeDaemonConnectorException e) {
-            throw e.rethrowAsParcelableException();
+            /** M: ALPS00771683 */
+            Slog.e(TAG, "setInterfaceConfig Error");
+            //throw e.rethrowAsParcelableException();
         }
     }
 
@@ -1388,9 +1442,10 @@ public class NetworkManagementService extends INetworkManagementService.Stub
 
     private void modifyNat(String action, String internalInterface, String externalInterface)
             throws SocketException {
-        final Command cmd = new Command("nat", action, internalInterface, externalInterface);
+        final Command cmd = new Command("nat", action, internalInterface, externalInterface, 0);
 
-        final NetworkInterface internalNetworkInterface = NetworkInterface.getByName(
+        //M: comment due to L version not use addresses in netd
+        /*final NetworkInterface internalNetworkInterface = NetworkInterface.getByName(
                 internalInterface);
         if (internalNetworkInterface == null) {
             cmd.appendArg("0");
@@ -1405,7 +1460,7 @@ public class NetworkManagementService extends INetworkManagementService.Stub
                         ia.getAddress(), ia.getNetworkPrefixLength());
                 cmd.appendArg(addr.getHostAddress() + "/" + ia.getNetworkPrefixLength());
             }
-        }
+        }*/
 
         try {
             mConnector.execute(cmd);
@@ -1507,7 +1562,6 @@ public class NetworkManagementService extends INetworkManagementService.Stub
             }
             executeOrLogWithMessage(SOFT_AP_COMMAND, args, NetdResponseCode.SoftapStatusResult,
                     SOFT_AP_COMMAND_SUCCESS, logMsg);
-
             logMsg = "startAccessPoint Error starting softap";
             args = new Object[] {"startap"};
             executeOrLogWithMessage(SOFT_AP_COMMAND, args, NetdResponseCode.SoftapStatusResult,
@@ -1572,12 +1626,22 @@ public class NetworkManagementService extends INetworkManagementService.Stub
             if (wifiConfig == null) {
                 args = new Object[] {"set", wlanIface};
             } else {
+                /** M: Hotspot Manager @{ */
+                int clientNum = Settings.System.getInt(mContext.getContentResolver(),
+                    Settings.System.WIFI_HOTSPOT_MAX_CLIENT_NUM,
+                    Settings.System.WIFI_HOTSPOT_DEFAULT_CLIENT_NUM);
+                /** @} */
+
+                ///M: for Hidden SSID
+                String hiddenSSid = (wifiConfig.hiddenSSID == true) ? "hidden" : "broadcast";
+
                 // TODO: understand why this is set to "6" instead of
                 // Integer.toString(wifiConfig.apChannel) as in startAccessPoint
                 // TODO: should startAccessPoint call this instead of repeating code?
                 args = new Object[] {"set", wlanIface, wifiConfig.SSID,
-                        "broadcast", "6",
-                        getSecurityType(wifiConfig), new SensitiveArg(wifiConfig.preSharedKey)};
+                        hiddenSSid, wifiConfig.channel,
+                        getSecurityType(wifiConfig), new SensitiveArg(wifiConfig.preSharedKey),
+                        wifiConfig.channelWidth, clientNum};
             }
             executeOrLogWithMessage(SOFT_AP_COMMAND, args, NetdResponseCode.SoftapStatusResult,
                     SOFT_AP_COMMAND_SUCCESS, logMsg);
@@ -2210,6 +2274,12 @@ public class NetworkManagementService extends INetworkManagementService.Stub
                 // chains default detached.
                 return;
             }
+            //M: avoid wtf log info
+            if (mFirewallChainStates.indexOfKey(chain) < 0 &&
+                    enable == false) {
+                // no need to disable before it is enabled
+                return;
+            }
             mFirewallChainStates.put(chain, enable);
 
             final String operation = enable ? "enable_chain" : "disable_chain";
@@ -2774,6 +2844,468 @@ public class NetworkManagementService extends INetworkManagementService.Stub
     @Override
     public void removeInterfaceFromLocalNetwork(String iface) {
         modifyInterfaceInNetwork("remove", "local", iface);
+    }
+
+    //M: New APIs added by Mediatek.
+    /**
+     * Ipv6 Tethering - get ipv6 forwarding enable
+     * @return true for enable, false for disable
+     * @hide
+     */
+    public boolean getIpv6ForwardingEnabled() throws IllegalStateException {
+            mContext.enforceCallingOrSelfPermission(CONNECTIVITY_INTERNAL, TAG);
+
+            final NativeDaemonEvent event;
+            try {
+                event = mConnector.execute("ipv6fwd", "status");
+            } catch (NativeDaemonConnectorException e) {
+                throw e.rethrowAsParcelableException();
+            }
+
+            // 211 Forwarding enabled
+            event.checkCode(IpFwdStatusResult);
+            return event.getMessage().endsWith("enabled");
+    }
+
+    /**
+     * Ipv6 Tethering - set ipv6 forwarding enable
+     * @param true for enable, false for disable
+     * @hide
+     */
+    public void setIpv6ForwardingEnabled(boolean enable) throws IllegalStateException {
+        mContext.enforceCallingOrSelfPermission(CONNECTIVITY_INTERNAL, TAG);
+
+        try {
+            mConnector.execute("ipv6fwd", String.format("%sable", (enable ? "en" : "dis")));
+        } catch (NativeDaemonConnectorException e) {
+            throw e.rethrowAsParcelableException();
+        }
+    }
+
+    /**
+     * Ipv6 Tethering
+     */
+    private void modifyNatIpv6(String action, String internalInterface, String externalInterface)
+            throws SocketException {
+        final Command cmd = new Command("IPv6Tether", action, internalInterface,
+            externalInterface, 0);
+
+        try {
+            mConnector.execute(cmd);
+        } catch (NativeDaemonConnectorException e) {
+            throw e.rethrowAsParcelableException();
+        }
+    }
+
+    /**
+     * Ipv6 Tethering - enable nat for ipv6
+     * @param internal interface for downstream, external interface for upstream
+     * @hide
+     */
+    public void enableNatIpv6(String internalInterface, String externalInterface)
+            throws IllegalStateException {
+        mContext.enforceCallingOrSelfPermission(CONNECTIVITY_INTERNAL, TAG);
+
+        if (DBG) Log.d(TAG, "enableNatIpv6(" + internalInterface + ", " + externalInterface + ")");
+        try {
+            modifyNatIpv6("enable", internalInterface, externalInterface);
+        } catch (SocketException e) {
+            Log.e(TAG, "enableNatIpv6 got Exception " + e.toString());
+            throw new IllegalStateException(
+                    "Unable to communicate to native daemon for enabling Ipv6 NAT interface");
+        }
+    }
+
+    /**
+     * Ipv6 Tethering
+     * @param interface for downstream, external interface for upstream
+     * @hide
+     */
+    public void setRouteIpv6(String internalInterface, String externalInterface)
+            throws IllegalStateException {
+        mContext.enforceCallingOrSelfPermission(CONNECTIVITY_INTERNAL, TAG);
+
+        if (DBG) Log.d(TAG, "setRouteIpv6(" + internalInterface + ", " + externalInterface + ")");
+        try {
+            mConnector.execute("IPv6Tether", "setroute", internalInterface, externalInterface);
+        } catch (NativeDaemonConnectorException e) {
+            Log.e(TAG, "setRouteIpv6 got Exception " + e.toString());
+            throw new IllegalStateException(
+                    "Unable to communicate to native daemon for setRouteIpv6");
+        }
+    }
+
+    /**
+     * Ipv6 Tethering
+     * @param interface for downstream, external interface for upstream
+     * @hide
+     */
+    public void clearRouteIpv6(String internalInterface, String externalInterface)
+            throws IllegalStateException {
+        mContext.enforceCallingOrSelfPermission(CONNECTIVITY_INTERNAL, TAG);
+
+        if (DBG) Log.d(TAG, "clearRouteIpv6(" + internalInterface + ", " + externalInterface + ")");
+        try {
+            mConnector.execute("IPv6Tether", "clearroute", internalInterface, externalInterface);
+        } catch (NativeDaemonConnectorException e) {
+            Log.e(TAG, "clearRouteIpv6 got Exception " + e.toString());
+            throw new IllegalStateException(
+                    "Unable to communicate to native daemon for clearRouteIpv6");
+        }
+    }
+
+    /**
+     * Ipv6 Tethering + dedicated apn
+     * @param interface for downstream, external interface for upstream
+     * @hide
+     */
+    public void setSourceRouteIpv6(String internalInterface, String externalInterface)
+            throws IllegalStateException {
+        mContext.enforceCallingOrSelfPermission(CONNECTIVITY_INTERNAL, TAG);
+
+        if (DBG) Log.d(TAG, "setSourceRouteIpv6(" + internalInterface +
+            ", " + externalInterface + ")");
+        try {
+            mConnector.execute("IPv6Tether", "setsroute", internalInterface, externalInterface);
+        } catch (NativeDaemonConnectorException e) {
+            Log.e(TAG, "setSourceRouteIpv6 got Exception " + e.toString());
+            throw new IllegalStateException(
+                    "Unable to communicate to native daemon for setSourceRouteIpv6");
+        }
+    }
+
+    /**
+     * Ipv6 Tethering + dedicated apn
+     * @param interface for downstream, external interface for upstream
+     * @hide
+     */
+    public void clearSourceRouteIpv6(String internalInterface, String externalInterface)
+            throws IllegalStateException {
+        mContext.enforceCallingOrSelfPermission(CONNECTIVITY_INTERNAL, TAG);
+
+        if (DBG) Log.d(TAG, "clearSourceRouteIpv6(" + internalInterface +
+            ", " + externalInterface + ")");
+        try {
+            mConnector.execute("IPv6Tether", "clearsroute", internalInterface, externalInterface);
+        } catch (NativeDaemonConnectorException e) {
+            Log.e(TAG, "clearSourceRouteIpv6 got Exception " + e.toString());
+            throw new IllegalStateException(
+                    "Unable to communicate to native daemon for clearSourceRouteIpv6");
+        }
+    }
+
+
+    /**
+     * Ipv6 Tethering - disable nat for ipv6
+     * @param internal interface for downstream, external interface for upstream
+     * @hide
+     */
+    public void disableNatIpv6(String internalInterface, String externalInterface)
+            throws IllegalStateException {
+        mContext.enforceCallingOrSelfPermission(CONNECTIVITY_INTERNAL, TAG);
+
+        if (DBG) Log.d(TAG, "disableNatIpv6(" + internalInterface + ", " + externalInterface + ")");
+        try {
+            modifyNatIpv6("disable", internalInterface, externalInterface);
+        } catch (SocketException e) {
+            Log.e(TAG, "disableNatIpv6 got Exception " + e.toString());
+            throw new IllegalStateException(
+                    "Unable to communicate to native daemon for disabling Ipv6 NAT interface");
+        }
+    }
+
+    /**
+     * Always on VPN - Support PPTP
+     * @param proto for protocol, allow for allowed or not
+     * @hide
+     */
+    @Override
+    public void setFirewallEgressProtoRule(String proto, boolean allow) {
+            enforceSystemUid();
+            Preconditions.checkState(mFirewallEnabled);
+            final String rule = allow ? "allow" : "deny";
+            try {
+                mConnector.execute("firewall", "set_egress_proto_rule", proto, rule);
+            } catch (NativeDaemonConnectorException e) {
+                throw e.rethrowAsParcelableException();
+            }
+    }
+
+    /**
+     * set Dhcpv6 server(stateless) enable
+     * @param enable for ON/OFF, ifc for interface to be control
+     * @hide
+     */
+    @Override
+    public void setDhcpv6Enabled(boolean enable, String ifc)
+            throws IllegalStateException {
+        mContext.enforceCallingOrSelfPermission(
+                android.Manifest.permission.CHANGE_NETWORK_STATE, "NetworkManagementService");
+            try {
+                mConnector.execute("IPv6Tether", String.format("%s",
+                    (enable ? "add" : "remove")), ifc);
+            } catch (NativeDaemonConnectorException e) {
+                throw e.rethrowAsParcelableException();
+            }
+    }
+
+    /**
+     * [NS-IOT Support]Support UDP packets forwarding from device to tethering terminal
+     * @hide
+     */
+    public void enableUdpForwarding(boolean enabled, String internalInterface,
+        String externalInterface, String ipAddr) throws IllegalStateException {
+        mContext.enforceCallingOrSelfPermission(CONNECTIVITY_INTERNAL, TAG);
+        try {
+            if (enabled) {
+                mConnector.execute("firewall", "set_udp_forwarding",
+                    internalInterface, externalInterface, ipAddr);
+            } else {
+                mConnector.execute("firewall", "clear_udp_forwarding",
+                    internalInterface, externalInterface);
+            }
+        } catch (NativeDaemonConnectorException e) {
+            throw e.rethrowAsParcelableException();
+        }
+    }
+
+    /**
+     * [NS-IOT Support]Retrieve client ip address from arp result
+     * @hide
+     */
+    public void getUsbClient(String iface)
+            throws IllegalStateException {
+        mContext.enforceCallingOrSelfPermission(CONNECTIVITY_INTERNAL, TAG);
+        try {
+            mConnector.execute("firewall", "get_usb_client", iface);
+        } catch (NativeDaemonConnectorException e) {
+            throw e.rethrowAsParcelableException();
+        }
+    }
+
+    /**
+     * @internal Hotspot manager
+     */
+    private boolean isWifi(String iface) {
+        String[] tetherableWifiRegexs = mContext.getResources().getStringArray(
+                com.android.internal.R.array.config_tether_wifi_regexs);
+
+        for (String regex : tetherableWifiRegexs) {
+            if (iface.matches(regex)) return true;
+        }
+        return false;
+
+    }
+
+    /**
+     * WiFi Hotspot manager - BandwidthControl
+     * Configures bandwidth throttling on an interface.
+     * @hide
+     */
+    public void setInterfaceThrottle(String iface, int rxKbps, int txKbps) {
+        mContext.enforceCallingOrSelfPermission(CONNECTIVITY_INTERNAL, TAG);
+        try {
+            mConnector.execute("interface", "setthrottle", iface, rxKbps, txKbps);
+        } catch (NativeDaemonConnectorException e) {
+            throw e.rethrowAsParcelableException();
+        }
+        /* M: ALPS00609719,ALPS00652865 re-set throttle value after hotspot re-enabled @{ */
+        if (isWifi(iface)) {
+            Settings.Secure.putInt(mContext.getContentResolver(),
+                Settings.Secure.INTERFACE_THROTTLE_RX_VALUE, rxKbps);
+            Settings.Secure.putInt(mContext.getContentResolver(),
+                Settings.Secure.INTERFACE_THROTTLE_TX_VALUE, txKbps);
+        }
+        /* @} */
+    }
+
+    private int getInterfaceThrottle(String iface, boolean rx) {
+        final NativeDaemonEvent event;
+        try {
+            event = mConnector.execute("interface", "getthrottle", iface, rx ? "rx" : "tx");
+        } catch (NativeDaemonConnectorException e) {
+            throw e.rethrowAsParcelableException();
+        }
+
+        if (rx) {
+            event.checkCode(InterfaceRxThrottleResult);
+        } else {
+            event.checkCode(InterfaceTxThrottleResult);
+        }
+
+        try {
+            return Integer.parseInt(event.getMessage());
+        } catch (NumberFormatException e) {
+            throw new IllegalStateException("unexpected response:" + event);
+        }
+    }
+
+    /**
+     * WiFi Hotspot manager - BandwidthControl
+     * Returns the currently configured RX throttle values
+     * for the specified interface
+     * @hide
+     */
+    public int getInterfaceRxThrottle(String iface) {
+        mContext.enforceCallingOrSelfPermission(CONNECTIVITY_INTERNAL, TAG);
+        return getInterfaceThrottle(iface, true);
+    }
+
+    /**
+     * WiFi Hotspot manager - BandwidthControl
+     * Returns the currently configured TX throttle values
+     * for the specified interface
+     * @hide
+     */
+    public int getInterfaceTxThrottle(String iface) {
+        mContext.enforceCallingOrSelfPermission(CONNECTIVITY_INTERNAL, TAG);
+        return getInterfaceThrottle(iface, false);
+    }
+
+    /**
+     * @Configure firewall rule by uid and chain
+     * @hide
+     */
+    public void setFirewallUidChainRule(int uid, int networkType, boolean allow) {
+        //enforceSystemUid();
+        final String MOBILE = "mobile";
+        final String WIFI = "wifi";
+
+        final String rule = allow ? "allow" : "deny";
+        final String chain = (networkType == 1) ? WIFI : MOBILE;
+
+        try {
+            mConnector.execute("firewall", "set_uid_fw_rule", uid, chain, rule);
+        } catch (NativeDaemonConnectorException e) {
+            throw e.rethrowAsParcelableException();
+        }
+    }
+
+    /**
+     * @Configure firewall rule by uid and chain
+     * @hide
+     */
+    public void clearFirewallChain(String chain) {
+        //enforceSystemUid();
+        try {
+            mConnector.execute("firewall", "clear_fw_chain", chain);
+        } catch (NativeDaemonConnectorException e) {
+            throw e.rethrowAsParcelableException();
+        }
+    }
+
+    @Override
+        public void disablePPPOE() {
+            mContext.enforceCallingOrSelfPermission(CONNECTIVITY_INTERNAL, TAG);
+            try {
+                mConnector.execute("pppoectl", "stop");
+            } catch (NativeDaemonConnectorException e) {
+                throw e.rethrowAsParcelableException();
+            }
+        }
+
+
+    /**
+     *  sip info
+     * @param interfaceName input
+     * @param service input
+     * @param protocol input
+     * @param result_array output, String[0] = hostname, String[1] = port
+     * @hide
+     */
+    public String[] getSipInfo(String iface, String service, String protocol) {
+        mContext.enforceCallingOrSelfPermission(CONNECTIVITY_INTERNAL, TAG);
+
+        final NativeDaemonEvent event;
+        Log.e(TAG, "getSipInfo:" + iface + " " + service + " " + protocol);
+
+        try {
+            event = mConnector.execute("NetInfo", "getsip", iface, service, protocol);
+        } catch (NativeDaemonConnectorException e) {
+            throw e.rethrowAsParcelableException();
+        }
+
+        event.checkCode(NetdResponseCode.NetInfoSipResult);
+
+        // Rsp: 250 hostname port
+        ArrayList<String> result = new ArrayList<String>();
+        final StringTokenizer st = new StringTokenizer(event.getMessage());
+        while (st.hasMoreTokens()) {
+            result.add(st.nextToken(" "));
+        }
+        if (!result.isEmpty())
+        {
+            Log.e(TAG, "getSipInfo result:" + result);
+            return result.toArray(new String[result.size()]);
+        }
+
+        throw new IllegalStateException("Got an empty sipinfo response");
+    }
+
+    /**
+     *  sip info
+     * @hide
+     * @param interfaceName input
+     */
+    public void clearSipInfo(String iface) {
+        mContext.enforceCallingOrSelfPermission(CONNECTIVITY_INTERNAL, TAG);
+        try {
+            mConnector.execute("NetInfo", "clearsip", iface);
+        } catch (NativeDaemonConnectorException e) {
+            throw e.rethrowAsParcelableException();
+        }
+    }
+
+    /**
+     * Delete all NS-IOT firewall rules
+     * @hide
+     */
+    public void clearIotFirewall() {
+        mContext.enforceCallingOrSelfPermission(CONNECTIVITY_INTERNAL, TAG);
+        try {
+            mConnector.execute("firewall", "clear_nsiot_firewall");
+        } catch (NativeDaemonConnectorException e) {
+            throw e.rethrowAsParcelableException();
+        }
+    }
+
+    /**
+     * Set all NS-IOT firewall rules
+     * @hide
+     */
+    public void setIotFirewall() {
+        mContext.enforceCallingOrSelfPermission(CONNECTIVITY_INTERNAL, TAG);
+        try {
+            mConnector.execute("firewall", "set_nsiot_firewall");
+        } catch (NativeDaemonConnectorException e) {
+            throw e.rethrowAsParcelableException();
+        }
+    }
+
+    /**
+     * M: Delete all NS-IOT firewall rules for VoLTE test
+     * @hide
+     */
+    public void clearVolteIotFirewall(String ifc) {
+        mContext.enforceCallingOrSelfPermission(CONNECTIVITY_INTERNAL, TAG);
+        try {
+            mConnector.execute("firewall", "clear_volte_nsiot_firewall", ifc);
+        } catch (NativeDaemonConnectorException e) {
+            throw e.rethrowAsParcelableException();
+        }
+    }
+
+    /**
+     * M: Set all NS-IOT firewall rules for VoLTE test
+     * @hide
+     */
+    public void setVolteIotFirewall(String ifc) {
+        mContext.enforceCallingOrSelfPermission(CONNECTIVITY_INTERNAL, TAG);
+        try {
+            mConnector.execute("firewall", "set_volte_nsiot_firewall", ifc);
+        } catch (NativeDaemonConnectorException e) {
+            throw e.rethrowAsParcelableException();
+        }
     }
 
     @Override

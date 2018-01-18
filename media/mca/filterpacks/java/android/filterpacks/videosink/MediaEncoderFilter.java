@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -71,6 +76,20 @@ public class MediaEncoderFilter extends Filter {
      */
     @GenerateFieldPort(name = "infoListener", hasDefault = true)
     private MediaRecorder.OnInfoListener mInfoListener = null;
+
+    /** M:
+     * Add switch for disable audio in recording.
+     */
+    @GenerateFieldPort(name = "muteAudio", hasDefault = true)
+    private boolean mMuteAudio = false;
+
+    /** M:
+     * Media recorder camera device released listener, which needs to implement
+     * MediaRecorder.OnInfoListener. Set this to receive notifications about
+     * mediaRecorder has released camera device now.
+     */
+    @GenerateFieldPort(name = "releasedListener", hasDefault = true)
+    private MediaRecorder.OnInfoListener mCameraReleasedListener = null;
 
     /** Media recorder error listener, which needs to implement
      * MediaRecorder.OnErrorListener. Set this to receive notifications about
@@ -187,7 +206,7 @@ public class MediaEncoderFilter extends Filter {
         Point tl = new Point(0, 1);
         Point tr = new Point(1, 1);
         mSourceRegion = new Quad(bl, br, tl, tr);
-        mLogVerbose = Log.isLoggable(TAG, Log.VERBOSE);
+        mLogVerbose = true; //Log.isLoggable(TAG, Log.VERBOSE);
     }
 
     @Override
@@ -230,17 +249,29 @@ public class MediaEncoderFilter extends Filter {
         mCaptureTimeLapse = mTimeBetweenTimeLapseFrameCaptureUs > 0;
         final int GRALLOC_BUFFER = 2;
         mMediaRecorder.setVideoSource(GRALLOC_BUFFER);
-        if (!mCaptureTimeLapse && (mAudioSource != NO_AUDIO_SOURCE)) {
+        if (!mCaptureTimeLapse && (mAudioSource != NO_AUDIO_SOURCE) && !mMuteAudio) {
             mMediaRecorder.setAudioSource(mAudioSource);
         }
         if (mProfile != null) {
-            mMediaRecorder.setProfile(mProfile);
-            mFps = mProfile.videoFrameRate;
+            //mMediaRecorder.setProfile(mProfile);
+            mMediaRecorder.setOutputFormat(mProfile.fileFormat);
+            mMediaRecorder.setVideoFrameRate(mProfile.videoFrameRate);
             // If width and height are set larger than 0, then those
             // overwrite the ones in the profile.
             if (mWidth > 0 && mHeight > 0) {
                 mMediaRecorder.setVideoSize(mWidth, mHeight);
+            } else {
+                mMediaRecorder.setVideoSize(mProfile.videoFrameWidth, mProfile.videoFrameHeight);
             }
+            mMediaRecorder.setVideoEncodingBitRate(mProfile.videoBitRate);
+            mMediaRecorder.setVideoEncoder(mProfile.videoCodec);
+            if (!mMuteAudio && !mCaptureTimeLapse) {
+                mMediaRecorder.setAudioEncodingBitRate(mProfile.audioBitRate);
+                mMediaRecorder.setAudioChannels(mProfile.audioChannels);
+                mMediaRecorder.setAudioSamplingRate(mProfile.audioSampleRate);
+                mMediaRecorder.setAudioEncoder(mProfile.audioCodec);
+            }
+            mFps = mProfile.videoFrameRate;
         } else {
             mMediaRecorder.setOutputFormat(mOutputFormat);
             mMediaRecorder.setVideoEncoder(mVideoEncoder);
@@ -249,6 +280,7 @@ public class MediaEncoderFilter extends Filter {
         }
         mMediaRecorder.setOrientationHint(mOrientationHint);
         mMediaRecorder.setOnInfoListener(mInfoListener);
+        mMediaRecorder.setOnCameraReleasedListener(mCameraReleasedListener);
         mMediaRecorder.setOnErrorListener(mErrorListener);
         if (mFd != null) {
             mMediaRecorder.setOutputFile(mFd);
@@ -328,14 +360,29 @@ public class MediaEncoderFilter extends Filter {
         // register the surface. The native window handle needed to create
         // the surface is initiated in start()
         mMediaRecorder.start();
+        recorderStartTimestampNs = System.nanoTime(); /// M: set start timestamp
         if (mLogVerbose) Log.v(TAG, "Open: registering surface from Mediarecorder");
         mSurfaceId = context.getGLEnvironment().
                 registerSurfaceFromMediaRecorder(mMediaRecorder);
         mNumFramesEncoded = 0;
         mRecordingActive = true;
+        // M: extra code is -1 means MediaRecorder has been started
+        // and Application needs to listen MediaRecorder.MEDIA_RECORDER_INFO_CAMERA_RELEASE info.
+        // @{
+        if (mCameraReleasedListener != null) {
+            mCameraReleasedListener.onInfo(mMediaRecorder,
+                    MediaRecorder.MEDIA_RECORDER_INFO_CAMERA_RELEASE, -1);
+        }
+        // @}
     }
 
     public boolean skipFrameAndModifyTimestamp(long timestampNs) {
+        if (mLogVerbose) Log.v(TAG, "skipFrameAndModifyTimestamp(" + timestampNs + ")" +
+                ", recorderStartTimestampNs=" + recorderStartTimestampNs);
+        /// M: skip pre-time frame if media recorder has been started.
+        if (timestampNs < recorderStartTimestampNs) {
+            return true;
+        }
         // first frame- encode. Don't skip
         if (mNumFramesEncoded == 0) {
             mLastTimeLapseFrameRealTimestampNs = timestampNs;
@@ -416,6 +463,7 @@ public class MediaEncoderFilter extends Filter {
 
         mRecordingActive = false;
         mNumFramesEncoded = 0;
+        recorderStartTimestampNs = 0; /// M: reset media recorder start time
         GLEnvironment glEnv = context.getGLEnvironment();
         // The following call will switch the surface_id to 0
         // (thus, calling eglMakeCurrent on surface with id 0) and
@@ -462,4 +510,5 @@ public class MediaEncoderFilter extends Filter {
 
     }
 
+    private long recorderStartTimestampNs = 0;
 }

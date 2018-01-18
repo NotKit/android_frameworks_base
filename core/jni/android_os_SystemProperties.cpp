@@ -187,6 +187,7 @@ static void SystemProperties_set(JNIEnv *env, jobject clazz,
     }
 
     if (err < 0) {
+        ALOGE("setproperty key=%s value=%s err=%d\n", key, val, err);
         jniThrowException(env, "java/lang/RuntimeException",
                           "failed to set system property");
     }

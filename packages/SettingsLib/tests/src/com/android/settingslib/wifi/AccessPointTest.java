@@ -18,8 +18,10 @@ package com.android.settingslib.wifi;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiConfiguration.KeyMgmt;
 
 import com.android.settingslib.BaseTest;
+import com.android.settingslib.wifi.AccessPoint;
 import com.android.settingslib.wifi.AccessPoint.AccessPointListener;
 
 import org.mockito.ArgumentCaptor;
@@ -29,6 +31,7 @@ import org.mockito.Mockito;
 public class AccessPointTest extends BaseTest {
 
     private static final String TEST_SSID = "TestSsid";
+    private static final String TEST_BSSID = "00:11:22:33:AA:BB";
     private static final int NETWORK_ID = 0;
 
     private AccessPointListener mAccessPointListener;
@@ -42,6 +45,7 @@ public class AccessPointTest extends BaseTest {
         WifiConfiguration wifiConfig = new WifiConfiguration();
         wifiConfig.networkId = NETWORK_ID;
         wifiConfig.SSID = TEST_SSID;
+        wifiConfig.BSSID = TEST_BSSID;
 
         mAccessPoint = new AccessPoint(mContext, wifiConfig);
         mAccessPoint.setListener(mAccessPointListener);
@@ -51,6 +55,7 @@ public class AccessPointTest extends BaseTest {
         ScanResult result = new ScanResult();
         result.capabilities = "";
         result.SSID = TEST_SSID;
+        result.BSSID = TEST_BSSID;
 
         // Give it a level.
         result.level = WifiTrackerTest.levelToRssi(1);
@@ -67,15 +72,18 @@ public class AccessPointTest extends BaseTest {
         WifiInfo wifiInfo = Mockito.mock(WifiInfo.class);
         Mockito.when(wifiInfo.getNetworkId()).thenReturn(NETWORK_ID);
 
-        mAccessPoint.update(wifiInfo, null);
+        //M: fix build error for google api changes
+        mAccessPoint.update(mAccessPoint.getConfig(), wifiInfo, null);
         verifyOnAccessPointsCallback(1);
 
-        mAccessPoint.update(null, null);
+        //M: fix build error for google api changes
+        mAccessPoint.update(mAccessPoint.getConfig(), null, null);
         verifyOnAccessPointsCallback(2);
 
         ScanResult result = new ScanResult();
         result.capabilities = "";
         result.SSID = TEST_SSID;
+        result.BSSID = TEST_BSSID;
         mAccessPoint.update(result);
         verifyOnAccessPointsCallback(3);
     }

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -821,7 +826,7 @@ public class KeyEvent extends InputEvent implements Parcelable {
     //  MUST contribute a patch to the open source project to define
     //  those new codes.  This is intended to maintain a consistent
     //  set of key code definitions across all Android devices.
-
+    //  set of key code definitions across all Android devices.
     // Symbolic names of all metakeys in bit order from least significant to most significant.
     // Accordingly there are exactly 32 values in this table.
     private static final String[] META_SYMBOLIC_NAMES = new String[] {
@@ -1463,7 +1468,16 @@ public class KeyEvent extends InputEvent implements Parcelable {
         mFlags = flags;
         mSource = source;
     }
-
+	//hezhuohua add begin
+	public void setCode(int code){
+		mKeyCode = code;
+	}
+	
+	public void setTime(long downTime,long eventTime){
+		 mDownTime = downTime;
+     mEventTime = eventTime;
+	}
+	//hezhuohua add end
     /**
      * Create a new key event for a string of characters.  The key code,
      * action, repeat count and source will automatically be set to
@@ -1857,6 +1871,7 @@ public class KeyEvent extends InputEvent implements Parcelable {
             case KeyEvent.KEYCODE_SYSTEM_NAVIGATION_DOWN:
             case KeyEvent.KEYCODE_SYSTEM_NAVIGATION_LEFT:
             case KeyEvent.KEYCODE_SYSTEM_NAVIGATION_RIGHT:
+            case KeyEvent.KEYCODE_CAPS_LOCK://guohuajun add
                 return true;
         }
 
@@ -2327,6 +2342,7 @@ public class KeyEvent extends InputEvent implements Parcelable {
      * @see #META_CAPS_LOCK_ON
      */
     public final boolean isCapsLockOn() {
+    		
         return (mMetaState & META_CAPS_LOCK_ON) != 0;
     }
 
@@ -2443,6 +2459,23 @@ public class KeyEvent extends InputEvent implements Parcelable {
         return mScanCode;
     }
 
+    //guohuajun add
+    public final void setScanCode(int scanCode) {
+         mScanCode = scanCode;
+    }
+    
+  
+    public final void setAction(int action) {
+        mAction = action;
+    }
+
+    public final void setMetaState(int metaState){
+    		mMetaState = metaState;
+    }
+    
+    public final void setFlags(int flag){
+    	 mFlags = flag;
+    }
     /**
      * Retrieve the repeat count of the event.  For both key up and key down
      * events, this is the number of times the key has repeated with the first

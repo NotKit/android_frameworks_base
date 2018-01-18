@@ -29,7 +29,11 @@ import com.android.internal.util.AsyncChannel;
 import com.android.settingslib.wifi.WifiStatusTracker;
 import com.android.systemui.statusbar.policy.NetworkController.IconState;
 import com.android.systemui.statusbar.policy.NetworkController.SignalCallback;
+import com.mediatek.systemui.ext.IMobileIconExt;
+import com.mediatek.systemui.statusbar.util.FeatureOptions;
+import com.mediatek.systemui.PluginManager;
 
+import java.util.BitSet;
 import com.android.systemui.R;
 
 import java.util.Objects;
@@ -37,11 +41,16 @@ import java.util.Objects;
 
 public class WifiSignalController extends
         SignalController<WifiSignalController.WifiState, SignalController.IconGroup> {
+    private static final String TAG = "WifiSignalController";
+
     private final WifiManager mWifiManager;
     private final AsyncChannel mWifiChannel;
     private final boolean mHasMobileData;
-    private final WifiStatusTracker mWifiTracker;
 
+    private final WifiStatusTracker mWifiTracker;
+    /// M: Add for plug in @ {
+    private IMobileIconExt mMobileIconExt;
+    // @ }
     public WifiSignalController(Context context, boolean hasMobileData,
             CallbackHandler callbackHandler, NetworkControllerImpl networkController) {
         super("WifiSignalController", context, NetworkCapabilities.TRANSPORT_WIFI,
@@ -67,6 +76,9 @@ public class WifiSignalController extends
                 WifiIcons.QS_WIFI_NO_NETWORK,
                 AccessibilityContentDescriptions.WIFI_NO_CONNECTION
                 );
+        /// M: Init plugin @ {
+        mMobileIconExt = PluginManager.getMobileIconExt(context);
+        /// @ }
     }
 
     @Override
@@ -164,4 +176,53 @@ public class WifiSignalController extends
                     && Objects.equals(((WifiState) o).ssid, ssid);
         }
     }
+
+    /// M: Disable inetCondition check as this condition is not sufficient in some cases.
+    /// So always set it is in net with value 1. @ {
+    @Override
+    public void updateConnectivity(BitSet connectedTransports, BitSet validatedTransports) {
+        // Override its parent methods, so keep check for migration
+        mCurrentState.inetCondition = validatedTransports.get(mTransportType) ? 1 : 0;
+        Log.d(TAG,"mCurrentState.inetCondition = " + mCurrentState.inetCondition);
+        mCurrentState.inetCondition =
+                mMobileIconExt.customizeWifiNetCondition(mCurrentState.inetCondition);
+        notifyListenersIfNecessary();
+    }
+
+    /** Add for [WIFI StatusBar Active Icon].
+     * Override to replace the icon if there is activity in / out.
+     */
+    @Override
+    public int getCurrentIconId() {
+        if (FeatureOptions.MTK_A1_SUPPORT) {
+            return super.getCurrentIconId();
+        }
+        int iconId = super.getCurrentIconId();
+        /// M: add "mCurrentState.connected" to avoid the probem that wifi icon showing when enable
+        ///    wifi setting switch only
+        /// M: for ALPS02828267
+        if (mCurrentState.connected && (mCurrentState.activityIn || mCurrentState.activityOut)) {
+            int type = getActiveType();
+            if (type < WifiIcons.WIFI_SIGNAL_STRENGTH_INOUT[0].length) {
+                iconId = WifiIcons.WIFI_SIGNAL_STRENGTH_INOUT[mCurrentState.level][type];
+            }
+        }
+        return iconId;
+    }
+
+    /** Add for [WIFI StatusBar Active Icon].
+     * Based on the activity type, to get relate icons.
+     */
+    private int getActiveType() {
+        int type = WifiManager.DATA_ACTIVITY_NONE;
+        if (mCurrentState.activityIn && mCurrentState.activityOut) {
+            type = WifiManager.DATA_ACTIVITY_INOUT;
+        } else if (mCurrentState.activityIn) {
+            type = WifiManager.DATA_ACTIVITY_IN;
+        } else if (mCurrentState.activityOut) {
+            type = WifiManager.DATA_ACTIVITY_OUT;
+        }
+        return type;
+    }
+    /// @ }
 }

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright 2014, The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,7 +41,7 @@ final public class Log {
     // Generic tag for all Telecom Framework logging
     private static final String TAG = "TelecomFramework";
 
-    public static final boolean FORCE_LOGGING = false; /* STOP SHIP if true */
+    public static final boolean FORCE_LOGGING = true; /* STOP SHIP if true */
     public static final boolean DEBUG = isLoggable(android.util.Log.DEBUG);
     public static final boolean INFO = isLoggable(android.util.Log.INFO);
     public static final boolean VERBOSE = isLoggable(android.util.Log.VERBOSE);

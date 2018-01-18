@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -105,6 +110,14 @@ public final class Phone {
          * @param phone The {@code Phone} calling this method.
          */
         public void onSilenceRinger(Phone phone) { }
+
+        /// M: phone record @{
+        /** {@hide} */
+        public void onUpdateRecordState(int state, int customValue) { }
+
+        /** {@hide} */
+        public void onStorageFull() { }
+        /// @}
     }
 
     // A Map allows us to track each Call by its Telecom-specified call ID
@@ -197,6 +210,22 @@ public final class Phone {
             call.internalOnConnectionEvent(event, extras);
         }
     }
+
+    /// M: phone record @{
+    /** {@hide} */
+    final void internalUpdateRecordState(int state, int customValue) {
+        for (Listener listener : mListeners) {
+            listener.onUpdateRecordState(state, customValue);
+        }
+    }
+
+    /** {@hide} */
+    final void internalOnStorageFull() {
+        for (Listener listener : mListeners) {
+            listener.onStorageFull();
+        }
+    }
+    /// @}
 
     /**
      * Called to destroy the phone and cleanup any lingering calls.
@@ -364,5 +393,78 @@ public final class Phone {
                 }
             }
         }
+    }
+
+    /**
+     * M: Start to record the voice of the call talking
+     * @hide
+     */
+    public final void startVoiceRecording() {
+        mInCallAdapter.startVoiceRecording();
+    }
+
+    /**
+     * M: Stop to record the voice of the call talking, the voice
+     * will be recorded in a specific file
+     * @hide
+     */
+    public final void stopVoiceRecording() {
+        mInCallAdapter.stopVoiceRecording();
+    }
+
+    /**
+     * M: Add for OP09 2W request.
+     * @hide
+     */
+    public void setSortedIncomingCallList(List<String> list) {
+        mInCallAdapter.setSortedIncomingCallList(list);
+    }
+
+    /**
+     * M: Handle the ECT
+     * @hide
+     */
+    public void explicitCallTransfer(String callId) {
+        mInCallAdapter.explicitCallTransfer(callId);
+    }
+
+    /**
+     * M: Handle the blind/assured ECT
+     * @hide
+     */
+    public void explicitCallTransfer(String callId, String number, int type) {
+        mInCallAdapter.explicitCallTransfer(callId, number, type);
+    }
+
+    /**
+     * M: Instructs Telecom to hangup all the calls.
+     * @hide
+     */
+    public final void hangupAll() {
+        mInCallAdapter.hangupAll();
+    }
+
+    /**
+     * M: Instructs Telecom to hangup all the HOLDING calls.
+     * @hide
+     */
+    public final void hangupAllHoldCalls() {
+        mInCallAdapter.hangupAllHoldCalls();
+    }
+
+    /**
+     * M: Instructs Telecom to hangup active call and answer waiting call.
+     * @hide
+     */
+    public final void hangupActiveAndAnswerWaiting() {
+        mInCallAdapter.hangupActiveAndAnswerWaiting();
+    }
+
+    /**
+     * M: Power on/off device when connecting to smart book
+     * @hide
+     */
+    public final void updatePowerForSmartBook(boolean onOff) {
+        mInCallAdapter.updatePowerForSmartBook(onOff);
     }
 }

@@ -58,8 +58,10 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.FileObserver;
 import android.os.FileUtils;
+import android.os.Handler;
 import android.os.IBinder;
 import android.os.IRemoteCallback;
+import android.os.Message;
 import android.os.Process;
 import android.os.ParcelFileDescriptor;
 import android.os.RemoteCallbackList;
@@ -67,6 +69,7 @@ import android.os.RemoteException;
 import android.os.SELinux;
 import android.os.ServiceManager;
 import android.os.SystemClock;
+import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.os.UserManager;
 import android.service.wallpaper.IWallpaperConnection;
@@ -261,6 +264,7 @@ public class WallpaperManagerService extends IWallpaperManager.Stub {
                                 if (DEBUG) {
                                     Slog.v(TAG, "moved-to, therefore restore; reloading metadata");
                                 }
+                                SELinux.restorecon(changedFile);
                                 loadSettingsLocked(wallpaper.userId, true);
                             }
                             generateCrop(wallpaper);
@@ -635,6 +639,9 @@ public class WallpaperManagerService extends IWallpaperManager.Stub {
         public void onServiceConnected(ComponentName name, IBinder service) {
             synchronized (mLock) {
                 if (mWallpaper.connection == this) {
+                    /// M: Wallpaper Slim @{
+                    mExpectedLiving = true;
+                    /// @}
                     mService = IWallpaperService.Stub.asInterface(service);
                     attachServiceLocked(this, mWallpaper);
                     // XXX should probably do saveSettingsLocked() later
@@ -652,6 +659,13 @@ public class WallpaperManagerService extends IWallpaperManager.Stub {
             synchronized (mLock) {
                 mService = null;
                 mEngine = null;
+                Slog.w(TAG, "onServiceDisconnected(): " + name);
+                /// M: Wallpaper Slim @{
+                mExpectedLiving = false;
+                if (isGmoRamOptimizeSupport() && !mVisible) {
+                    return;
+                }
+                /// @}
                 if (mWallpaper.connection == this) {
                     Slog.w(TAG, "Wallpaper service gone: " + mWallpaper.wallpaperComponent);
                     if (!mWallpaper.wallpaperUpdating
@@ -1690,6 +1704,15 @@ public class WallpaperManagerService extends IWallpaperManager.Stub {
                 Slog.w(TAG, msg);
                 return false;
             }
+
+            /// M: Wallpaper Slim @{
+            if (isGmoRamOptimizeSupport()) {
+                mLastIntent = intent;
+                ActivityManagerNative.getDefault().setWallpaperProcess(componentName);
+                Slog.v(TAG, "Tell ActivityManager current wallpaper process is " + componentName);
+            }
+            /// @}
+
             if (wallpaper.userId == mCurrentUserId && mLastWallpaper != null) {
                 detachWallpaperLocked(mLastWallpaper);
             }
@@ -2315,4 +2338,61 @@ public class WallpaperManagerService extends IWallpaperManager.Stub {
 
         }
     }
+    /// M: Wallpaper Slim @{
+    private Intent mLastIntent;
+    private boolean mVisible;
+    private boolean mExpectedLiving = true; // whether current wallpaper is alive
+    private static final int MSG_BIND_WP = 10101;
+    private static final String ACTION_BG_RELEASE = "ACTION_BG_RELEASE";
+
+    private final Handler mHandler = new Handler() {
+        @Override
+        public void handleMessage(Message msg) {
+            if (msg.what == MSG_BIND_WP) {
+                int userId = UserHandle.getCallingUserId();
+                Slog.v(TAG, "Receive message MSG_BIND_WP, bind service: "
+                        + mLastIntent.getComponent() + ",connection: " + mLastWallpaper.connection);
+                mContext.bindServiceAsUser(mLastIntent, mLastWallpaper.connection,
+                        Context.BIND_AUTO_CREATE | Context.BIND_SHOWING_UI, new UserHandle(userId));
+            }
+        }
+    };
+
+    /**
+    * For WMS tell WpMS the visible state changed of wallpaper
+    * @hide
+    */
+    public void onVisibilityChanged(boolean isVisible) throws RemoteException {
+        if (DEBUG) Slog.v(TAG, "Visibility changed from WMS : " + isVisible);
+        if (isGmoRamOptimizeSupport()) {
+            if (mVisible != isVisible) {
+                mVisible = isVisible;
+                modifyWallpaperAdj(mVisible);
+                doVisibilityChanged(mVisible);
+            }
+        }
+    }
+
+    private void doVisibilityChanged(boolean isVisible) {
+        if (isVisible && !mExpectedLiving) {
+            if (DEBUG) Slog.v(TAG, "Restart current wallpaper");
+            if (!mLastWallpaper.wallpaperComponent.toString().equals(mImageWallpaper.toString())) {
+                mHandler.removeMessages(MSG_BIND_WP);
+                mHandler.sendEmptyMessage(MSG_BIND_WP);
+            }
+        }
+    }
+
+    private void modifyWallpaperAdj(boolean isVisible) {
+        try {
+            ActivityManagerNative.getDefault().updateWallpaperState(isVisible);
+        } catch (RemoteException e) {
+            Slog.w(TAG, "Modify wallpaper's ADJ, catch RemoteException!!!!!");
+        }
+    }
+
+    private boolean isGmoRamOptimizeSupport() {
+        return SystemProperties.get("ro.mtk_gmo_ram_optimize").equals("1");
+    }
+    /// M: Wallpaper Slim @}
 }

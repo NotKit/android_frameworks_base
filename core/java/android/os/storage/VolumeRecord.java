@@ -155,4 +155,16 @@ public class VolumeRecord implements Parcelable {
         parcel.writeLong(lastTrimMillis);
         parcel.writeLong(lastBenchMillis);
     }
+
+    @Override
+    public String toString() {
+        return "type=" + type
+                + ", fsUuid=" + fsUuid
+                + ", partGuid=" + partGuid
+                + ", nickname=" + nickname
+                + ", userFlags=" + userFlags
+                + ", createdMillis=" + createdMillis
+                + ", lastTrimMillis=" + lastTrimMillis
+                + ", lastBenchMillis=" + lastBenchMillis;
+    }
 }

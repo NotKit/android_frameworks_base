@@ -37,6 +37,7 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.Icon;
 import android.graphics.Bitmap;
 import android.os.Build;
+import android.os.Binder;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.os.Parcel;
@@ -912,6 +913,13 @@ public abstract class NotificationListenerService extends Service {
                 Log.w(TAG, "onNotificationRemoved: Error receiving StatusBarNotification", e);
                 return;
             }
+            /// M: Fix NPE for null StatusBarNotifcation @{
+            if (sbn == null) {
+                Log.w(TAG, "onNotificationRemoved: StatusBarNotification is null from PID = "
+                        + Binder.getCallingPid());
+                return;
+            }
+            /// @}
             // protect subclass from concurrent modifications of (@link mNotificationKeys}.
             synchronized (mLock) {
                 applyUpdateLocked(update);

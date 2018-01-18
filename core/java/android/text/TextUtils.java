@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,6 +28,7 @@ import android.os.Parcel;
 import android.os.Parcelable;
 import android.os.SystemProperties;
 import android.provider.Settings;
+import android.text.Layout.Directions;
 import android.text.style.AbsoluteSizeSpan;
 import android.text.style.AlignmentSpan;
 import android.text.style.BackgroundColorSpan;
@@ -1773,6 +1779,85 @@ public class TextUtils {
         return Resources.getSystem().getQuantityString(R.plurals.selected_count, count, count);
     }
 
+    /**
+     * M: This wrapper method is used for text auto test purposes only
+     * @hide
+     */
+    public static int getBidiForTest(int dir, char[] chs, byte[] chInfo, int n, boolean haveInfo) {
+        return AndroidBidi.bidi(dir, chs, chInfo, n, false);
+    }
+
+   /**
+     * M: This wrapper method is used for text auto test purposes only
+     * @hide
+     */
+    public static void setBlocksDataForTest(DynamicLayout dl, int[] blockEndLines, int[] blockIndices, int numberOfBlocks) {
+        dl.setBlocksDataForTest(blockEndLines, blockIndices, numberOfBlocks);
+    }
+
+   /**
+     * M: This wrapper method is used for text auto test purposes only
+     * @hide
+     */
+    public static void updateBlocksForTest(DynamicLayout dl, int startLine, int endLine, int newLineCount) {
+        dl.updateBlocks(startLine, endLine, newLineCount);
+    }
+
+   /**
+     * M: This wrapper method is used for text auto test purposes only
+     * @hide
+     */
+    public static Directions newDirectionsForTest(int[] dir) {
+        return new Directions(dir) ;
+    }
+
+   /**
+     * M: This wrapper method is used for text auto test purposes only
+     * @hide
+     */
+    public static int[] getDirectionsForTest(Directions dir) {
+        return dir.mDirections ;
+    }
+
+   /**
+     * M: This wrapper method is used for text auto test purposes only
+     * @hide
+     */
+    public static Directions getLayoutDirectionsForTest() {
+        return Layout.DIRS_ALL_LEFT_TO_RIGHT ;
+    }
+
+   /**
+     * M: This wrapper class is used for text auto test purposes only
+     * @hide
+     */
+    public static class PackedIntVectorForTest extends PackedIntVector {
+        public PackedIntVectorForTest(int columns) {
+            super(columns) ;
+        }
+    }
+
+    /**
+     * M: This method is used to check if the character at specific position is surrogated
+     * @hide
+     */
+    public static boolean isSurrogateChar(CharSequence text, int pos) {
+        if (!isEmpty(text) && text.length() >= 2 && pos >= 1) {
+            final char prevChar = text.charAt(pos - 1);
+            final char currChar = text.charAt(pos);
+                return Character.isSurrogatePair(prevChar, currChar);
+            }
+        return false;
+    }
+
+   /**
+       * M: MTK normal debug log
+       * @hide
+       */
+    public static void printDebugLog(String logTag, String logContent) {
+        Log.d("[TextDebug] " + logTag, logContent);
+    }
+
     private static Object sLock = new Object();
 
     private static char[] sTemp = null;
@@ -1780,4 +1865,14 @@ public class TextUtils {
     private static String[] EMPTY_STRING_ARRAY = new String[]{};
 
     private static final char ZWNBS_CHAR = '\uFEFF';
+
+    private static String ARAB_SCRIPT_SUBTAG = "Arab";
+    private static String HEBR_SCRIPT_SUBTAG = "Hebr";
+
+    /**
+     * M: Flag of whether print normal debug log
+     * @hide
+     */
+    public static boolean DEBUG_LOG = SystemProperties.getBoolean("debug.text", false);
+
 }

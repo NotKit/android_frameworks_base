@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -157,7 +162,11 @@ public class DynamicLayout extends Layout
 
         Directions[] dirs = new Directions[] { DIRS_ALL_LEFT_TO_RIGHT };
 
-        Paint.FontMetricsInt fm = paint.getFontMetricsInt();
+        /// M: new FontMetrics method for complex text support. @{
+        Paint.FontMetricsInt fm = new Paint.FontMetricsInt();
+        paint.getFontMetricsInt(base, fm);
+        /// M: new FontMetrics method for complex text support. }@
+
         int asc = fm.ascent;
         int desc = fm.descent;
 
@@ -520,6 +529,8 @@ public class DynamicLayout extends Layout
             newFirstChangedBlock = firstBlock + numAddedBlocks;
             for (int i = newFirstChangedBlock; i < mNumberOfBlocks; i++) {
                 mBlockEndLines[i] += deltaLines;
+               /// M: Set blocks indices after the changed blocks to invalid.
+               mBlockIndices[i] = INVALID_BLOCK_INDEX;
             }
         } else {
             newFirstChangedBlock = mNumberOfBlocks;
@@ -712,6 +723,15 @@ public class DynamicLayout extends Layout
         }
 
         return mInts.getValue(line, ELLIPSIS_COUNT);
+    }
+
+    /**
+     * M: Override
+     * @hide
+     */
+    @Override
+    public boolean isSingleLineRtoL() {
+        return (getLineDirections(0).mDirections[1] & RUN_RTL_FLAG) != 0;
     }
 
     private CharSequence mBase;

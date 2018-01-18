@@ -47,14 +47,20 @@ import static com.android.server.wm.WindowSurfacePlacer.SET_ORIENTATION_CHANGE_C
 import static com.android.server.wm.WindowSurfacePlacer.SET_TURN_ON_SCREEN;
 
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.Matrix;
 import android.graphics.PixelFormat;
 import android.graphics.Point;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Region;
+import android.os.AsyncTask;
 import android.os.Debug;
+import android.os.IBinder;
 import android.os.RemoteException;
+import android.os.UserHandle;
+import android.os.SystemProperties;
 import android.os.Trace;
 import android.util.Slog;
 import android.view.DisplayInfo;
@@ -73,6 +79,10 @@ import android.view.animation.Transformation;
 import com.android.server.wm.WindowManagerService.H;
 
 import java.io.PrintWriter;
+
+/// M: add import
+import android.view.View;
+
 
 /**
  * Keep track of animations and surface operations for a single WindowState.
@@ -448,10 +458,14 @@ class WindowStateAnimator {
         }
 
         // Done animating, clean up.
+        /// M: Add more log at WMS
+        Trace.traceBegin(Trace.TRACE_TAG_WINDOW_MANAGER
+                | Trace.TRACE_TAG_PERF, "win animation done");
         if (DEBUG_ANIM) Slog.v(
             TAG, "Animation done in " + this + ": exiting=" + mWin.mAnimatingExit
             + ", reportedVisible="
             + (mWin.mAppToken != null ? mWin.mAppToken.reportedVisible : false));
+        Trace.traceEnd(Trace.TRACE_TAG_WINDOW_MANAGER | Trace.TRACE_TAG_PERF);
 
         mAnimating = false;
         mKeyguardGoingAwayAnimation = false;
@@ -481,6 +495,11 @@ class WindowStateAnimator {
                     + mWin.mToken + ": first real window done animating");
             mService.mFinishedStarting.add(mWin.mAppToken);
             mService.mH.sendEmptyMessage(H.FINISHED_STARTING);
+            /// M: [App Launch Reponse Time Enhancement][FSW] Cache bitmap. {@
+            if (mService.isFastStartingWindowSupport() && mService.isCacheFirstFrame()) {
+                doCacheBitmap();
+            }
+            /// @}
         } else if (mAttrType == LayoutParams.TYPE_STATUS_BAR && mWin.mPolicyVisibility) {
             // Upon completion of a not-visible to visible status bar animation a relayout is
             // required.
@@ -599,9 +618,12 @@ class WindowStateAnimator {
         boolean layoutNeeded = mWin.clearAnimatingWithSavedSurface();
 
         if (mDrawState == DRAW_PENDING) {
-            if (DEBUG_SURFACE_TRACE || DEBUG_ANIM || SHOW_TRANSACTIONS || DEBUG_ORIENTATION)
+            /// M: Enable more window log.
+            if (DEBUG_SURFACE_TRACE || DEBUG_ANIM || SHOW_TRANSACTIONS || DEBUG_ORIENTATION
+                    || !WindowManagerService.IS_USER_BUILD)
                 Slog.v(TAG, "finishDrawingLocked: mDrawState=COMMIT_DRAW_PENDING " + mWin + " in "
                         + mSurfaceController);
+
             if (DEBUG_STARTING_WINDOW && startingWindow) {
                 Slog.v(TAG, "Draw state now committed in " + mWin);
             }
@@ -712,8 +734,26 @@ class WindowStateAnimator {
 
         mTmpSize.set(w.mFrame.left + w.mXOffset, w.mFrame.top + w.mYOffset, 0, 0);
         calculateSurfaceBounds(w, attrs);
-        final int width = mTmpSize.width();
-        final int height = mTmpSize.height();
+        int width = mTmpSize.width();
+        int height = mTmpSize.height();
+
+        /// M: [App Launch Reponse Time Enhancement] Init starting size.
+        if (mService.isFastStartingWindowSupport() && (w.isFastStartingWindow())) {
+            if (DEBUG_VISIBILITY) {
+                Slog.v(TAG, "[StartingWindow] window " + this);
+            }
+            if (width == 1 && height == 1) {
+                final DisplayContent displayContent = w.getDisplayContent();
+                if (displayContent != null) {
+                    final DisplayInfo displayInfo = displayContent.getDisplayInfo();
+                    width = displayInfo.logicalWidth;
+                    height = displayInfo.logicalHeight;
+                    if (DEBUG_VISIBILITY) {
+                        Slog.v(TAG, "[StartingWindow] apply logic width height");
+                    }
+                }
+            }
+        }
 
         if (DEBUG_VISIBILITY) {
             Slog.v(TAG, "Creating surface in session "
@@ -753,7 +793,8 @@ class WindowStateAnimator {
 
             w.setHasSurface(true);
 
-            if (SHOW_TRANSACTIONS || SHOW_SURFACE_ALLOC) {
+            if (SHOW_TRANSACTIONS || SHOW_SURFACE_ALLOC
+                    || !WindowManagerService.IS_USER_BUILD) {
                 Slog.i(TAG, "  CREATE SURFACE "
                         + mSurfaceController + " IN SESSION "
                         + mSession.mSurfaceSession
@@ -790,6 +831,29 @@ class WindowStateAnimator {
         mLastHidden = true;
 
         if (WindowManagerService.localLOGV) Slog.v(TAG, "Created surface " + this);
+        /// M: [App Launch Reponse Time Enhancement][FSW] Cache bitmap. {@
+        if (mService.isFastStartingWindowSupport()
+                && w.isFastStartingWindow()) {
+            if (true) {
+                AsyncTask<Void, Void, Void> task = new AsyncTask<Void, Void, Void>() {
+                    @Override
+                    protected Void doInBackground(Void... para) {
+                        //android.os.Process.setThreadPriority
+                        //    (android.os.Process.THREAD_PRIORITY_FOREGROUND);
+                        try {
+                            drawIfNeeded();
+                        } catch (Exception e) {
+                            Slog.e(TAG,"FSW Exception: " + e);
+                        }
+                        return null;
+                    }
+                };
+                task.execute();
+            } else {
+                drawIfNeeded();
+            }
+        }
+        /// @}
         return mSurfaceController;
     }
 
@@ -1412,6 +1476,7 @@ class WindowStateAnimator {
         mExtraHScale = (float) 1.0;
         mExtraVScale = (float) 1.0;
 
+        boolean wasResized = mSurfaceResized;
         boolean wasForceScaled = mForceScaleUntilResize;
         boolean wasSeamlesslyRotated = w.mSeamlesslyRotated;
 
@@ -1486,6 +1551,15 @@ class WindowStateAnimator {
                 mSurfaceController.setPositionInTransaction(mTmpSize.left, mTmpSize.top,
                         recoveringMemory);
             }
+
+            /// M: [ALPS02828276] Let wallpaper is able to set position and size
+            /// in the same transaction to avoid small wallpaper is shown during bootup.
+            if (w.mIsWallpaper && wasResized != mSurfaceResized) {
+                if (DEBUG_WALLPAPER) {
+                    Slog.d(TAG, w + " forceScaleableInTransaction " + mSurfaceResized);
+                }
+                mSurfaceController.forceScaleableInTransaction(mSurfaceResized);
+            }
         }
 
         // If we are ending the scaling mode. We switch to SCALING_MODE_FREEZE
@@ -1552,6 +1626,19 @@ class WindowStateAnimator {
         computeShownFrameLocked();
 
         setSurfaceBoundariesLocked(recoveringMemory);
+
+        if (SHOW_TRANSACTIONS) {
+            Slog.v(TAG, this + " prepareSurfaceLocked " +
+                ", mIsWallpaper=" + mIsWallpaper +
+                ", mWin.mWallpaperVisible=" + mWin.mWallpaperVisible +
+                ", w.mAttachedHidden=" + w.mAttachedHidden +
+                ", w.isOnScreen=" + w.isOnScreen() +
+                ", w.mPolicyVisibility=" + w.mPolicyVisibility +
+                ", w.isOnScreenIgnoringKeyguard=" + w.isOnScreenIgnoringKeyguard() +
+                ", w.mHasSurface=" + w.mHasSurface +
+                ", w.mDestroying=" + w.mDestroying +
+                ", mLastHidden=" + mLastHidden);
+        }
 
         if (mIsWallpaper && !mWin.mWallpaperVisible) {
             // Wallpaper is no longer visible and there is no wp target => hide it.
@@ -1737,6 +1824,17 @@ class WindowStateAnimator {
                     + (mAppAnimator != null ? mAppAnimator.animating : false) + " Callers="
                     + Debug.getCallers(3));
         }
+
+        /// M: For Low Bandwidth Application Transition Animation @{
+        if (SystemProperties.get("ro.mtk_low_band_tran_anim").equals("1")) {
+            if (mDrawState == READY_TO_SHOW &&
+                    (mWin.mAppToken != null && mWin.mAppToken.startingWindow != null) &&
+                    (mAppAnimator != null && mAppAnimator.animating)) {
+                return false;
+            }
+        }
+        /// @}
+
         if (mDrawState == READY_TO_SHOW && mWin.isReadyForDisplayIgnoringKeyguard()) {
             if (DEBUG_VISIBILITY || (DEBUG_STARTING_WINDOW &&
                     mWin.mAttrs.type == WindowManager.LayoutParams.TYPE_APPLICATION_STARTING)) {
@@ -1817,7 +1915,9 @@ class WindowStateAnimator {
 
         mService.updateNonSystemOverlayWindowsVisibilityIfNeeded(mWin, true);
         if (mWin.mTurnOnScreen) {
-            if (DEBUG_VISIBILITY) Slog.v(TAG, "Show surface turning screen on: " + mWin);
+            /// M: Add more log at WMS
+            if (DEBUG_VISIBILITY || !WindowManagerService.IS_USER_BUILD)
+                Slog.v(TAG, "Show surface turning screen on: " + mWin);
             mWin.mTurnOnScreen = false;
             mAnimator.mBulkUpdateParams |= SET_TURN_ON_SCREEN;
         }
@@ -1908,6 +2008,25 @@ class WindowStateAnimator {
                     + " isEntrance=" + isEntrance + " Callers " + Debug.getCallers(3));
             if (a != null) {
                 if (DEBUG_ANIM) logWithStack(TAG, "Loaded animation " + a + " for " + this);
+                /// M: For Low Bandwidth Application Transition Animation @{
+                if (SystemProperties.get("ro.mtk_low_band_tran_anim").equals("1")) {
+                    if (transit == WindowManagerPolicy.TRANSIT_PREVIEW_DONE) {
+                        a.setDuration(100);
+                    }
+                }
+                /// @}
+                /// M: [App Launch Reponse Time Enhancement][FSW] Cache bitmap. @{
+                if (mService.isFastStartingWindowSupport() && mWin.isFastStartingWindow()) {
+                    if (transit == WindowManagerPolicy.TRANSIT_PREVIEW_DONE) {
+                        if (mWmDuration != -1) {
+                            a.setDuration(mWmDuration);
+                        }
+                        if (mWmOffset != -1) {
+                            a.setStartOffset(mWmOffset);
+                        }
+                    }
+                }
+                /// @}
                 setAnimation(a);
                 mAnimationIsEntrance = isEntrance;
             }
@@ -2055,9 +2174,13 @@ class WindowStateAnimator {
         if (!mWin.isChildWindow()) {
             return;
         }
-        mSurfaceController.deferTransactionUntil(
-                mWin.mAttachedWindow.mWinAnimator.mSurfaceController.getHandle(),
-                frameNumber);
+        /// M: [ALPS02893704] avoid to reference a null surface controller
+        if (mWin.mAttachedWindow.mWinAnimator.mSurfaceController != null) {
+            mSurfaceController.deferTransactionUntil(
+                    mWin.mAttachedWindow.mWinAnimator.mSurfaceController.getHandle(),
+                    frameNumber);
+        }
+
     }
 
     /**
@@ -2158,4 +2281,126 @@ class WindowStateAnimator {
                     DtDy * w.mVScale, false);
         }
     }
+
+    /// M: [App Launch Reponse Time Enhancement][FSW] Cache bitmap. {@
+    final int mWmDuration = SystemProperties.getInt("debug.wm.duration", -1);
+    final int mWmOffset = SystemProperties.getInt("debug.wm.offset", -1);
+    final int mWmSleep = SystemProperties.getInt("debug.wm.sleep", -1);
+    boolean mDrawNeeded = true;
+
+    void drawIfNeeded() {
+        if (mSurfaceController == null) {
+            return;
+        }
+        //Trace.traceBegin(Trace.TRACE_TAG_WINDOW_MANAGER, mWin.getOwningPackage());
+        Surface mSurface = null;
+        if (mSurfaceController.mSurfaceControl == null) {
+            Slog.i(TAG, "drawIfNeeded, mSurfaceControl is released");
+            return;
+        } else if (mDrawNeeded) {
+            Slog.i(TAG, "drawIfNeeded");
+            if (mSurface == null) {
+                mSurface = new Surface();
+                try {
+                    mSurface.copyFrom(mSurfaceController.mSurfaceControl);
+                } catch (IllegalArgumentException e) {
+                    Slog.e(TAG, "copyFrom, IllegalArgumentException");
+                } catch (Surface.OutOfResourcesException e) {
+                    Slog.e(TAG, "copyFrom, OutOfResourcesException");
+                } catch (NullPointerException e) {
+                    Slog.e(TAG, "copyFrom, NullPointerException");
+                }
+            }
+            if (mSurface != null) {
+                final int dw = (int) mSurfaceController.mSurfaceW;
+                final int dh = (int) mSurfaceController.mSurfaceH;
+                mDrawNeeded = false;
+                Rect dirty = new Rect(0, 0, dw, dh);
+                Canvas c = null;
+                try {
+                    c = mSurface.lockCanvas(dirty);
+                    Slog.i(TAG, "lockCanvas, mToken =" + mWin.mToken);
+                    if (c != null && mWin.mToken != null) {
+                        Bitmap bitmap = mService.getBitmapByToken(mWin.mToken.token);
+                        //Trace.traceBegin(Trace.TRACE_TAG_WINDOW_MANAGER, "bm " + bitmap);
+                        if (bitmap != null) {
+                            c.drawBitmap(bitmap, 0, 0, null);
+                        }
+                        //Trace.traceEnd(Trace.TRACE_TAG_WINDOW_MANAGER);
+                        Slog.i(TAG, "unlockCanvasAndPost");
+                        mSurface.unlockCanvasAndPost(c);
+                    }
+                } catch (IllegalArgumentException e) {
+                    Slog.e(TAG, "Could not unlock surface, surface = " + mSurface
+                            + ", canvas = " + c + ", this = " + this, e);
+                } catch (IllegalStateException e) {
+                    Slog.e(TAG, "IllegalStateException, this = " + this, e);
+                } catch (Surface.OutOfResourcesException e) {
+                    Slog.e(TAG, "OutOfResourcesException, surface = " + mSurface
+                            + ", canvas = " + c + ", this = " + this, e);
+                } finally {
+                    if (mSurface != null) {
+                        mSurface.release();
+                        mSurface = null;
+                    }
+                }
+            } else {
+                Slog.i(TAG, "drawIfNeeded, mSurface is null");
+            }
+        }
+        //Trace.traceEnd(Trace.TRACE_TAG_WINDOW_MANAGER);
+    }
+
+    void doCacheBitmap() {
+        AsyncTask<Void, Void, Void> task = new AsyncTask<Void, Void, Void>() {
+            @Override
+            protected Void doInBackground(Void... para) {
+                //android.os.Process.setThreadPriority
+                //    (android.os.Process.THREAD_PRIORITY_FOREGROUND);
+                try {
+                    if (mWmSleep != -1) {
+                        Thread.sleep(mWmSleep);
+                    } else {
+                        Thread.sleep(100);
+                    }
+                } catch (Exception e) {
+                }
+                Trace.traceBegin(Trace.TRACE_TAG_WINDOW_MANAGER, "AsyncScreenshot");
+                Bitmap bmShot = SurfaceControl.screenshot(new Rect(),
+                                    (int) mWin.mWinAnimator.mSurfaceController.mSurfaceW,
+                                    (int) mWin.mWinAnimator.mSurfaceController.mSurfaceH,
+                                        mSurfaceController.mSurfaceLayer,
+                                        mSurfaceController.mSurfaceLayer, false, 0);
+                Slog.i(TAG, "doCacheBitmap, mToken =" + mWin.mToken);
+                if (bmShot != null && mWin.mToken != null) {
+                    mService.setBitmapByToken(mWin.mToken.token
+                            , bmShot.copy(bmShot.getConfig(), true));
+                    bmShot.recycle();
+                }
+                Trace.traceEnd(Trace.TRACE_TAG_WINDOW_MANAGER);
+                return null;
+            }
+        };
+        task.execute();
+    }
+
+    void doCacheBitmap(final View view) {
+        if (mWin.mToken == null) return;
+        final IBinder token = mWin.mToken.token;
+        Trace.traceBegin(Trace.TRACE_TAG_WINDOW_MANAGER, "SyncScreenshot");
+        try {
+            view.setDrawingCacheEnabled(true);
+            Bitmap bmShot = Bitmap.createBitmap(view.getDrawingCache());
+            Slog.i(TAG, "doCacheBitmap, mToken =" + token);
+            if (bmShot != null && token != null) {
+                mService.setBitmapByToken(token
+                        , bmShot.copy(bmShot.getConfig(), true));
+                bmShot.recycle();
+            }
+        } catch (Throwable e) {
+            Slog.e(TAG, "doSyncCacheBitmap, this = " + this, e);
+        }
+        Trace.traceEnd(Trace.TRACE_TAG_WINDOW_MANAGER);
+    }
+    /// @}
 }

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -321,6 +326,7 @@ public class UserManagerService extends IUserManager.Stub {
     @GuardedBy("mPackagesLock")
     private int mNextSerialNumber;
     private int mUserVersion = 0;
+    private int mSwitchedUserId = 0;
 
     private IAppOpsService mAppOpsService;
 
@@ -573,7 +579,7 @@ public class UserManagerService extends IUserManager.Stub {
     @Override
     public int[] getProfileIds(int userId, boolean enabledOnly) {
         if (userId != UserHandle.getCallingUserId()) {
-            checkManageUsersPermission("getting profiles related to user " + userId);
+            checkManageOrCreateUsersPermission("getting profiles related to user " + userId);
         }
         final long ident = Binder.clearCallingIdentity();
         try {
@@ -1587,6 +1593,13 @@ public class UserManagerService extends IUserManager.Stub {
     }
 
     private void writeBitmapLP(UserInfo info, Bitmap bitmap) {
+        /// M: [ALPS00438553][Google Issue][Status bar & Notification]
+        /// Notification cannot update the UserIcon @{
+        if (bitmap == null) {
+            info.iconPath = null;
+            return;
+        }
+        /// @} 2013-01-10
         try {
             File dir = new File(mUsersDir, Integer.toString(info.id));
             File file = new File(dir, USER_PHOTO_FILENAME);
@@ -2176,6 +2189,7 @@ public class UserManagerService extends IUserManager.Stub {
 
     @Override
     public UserInfo createUser(String name, int flags) {
+        if (DBG) Slog.i(LOG_TAG, "createUser name " + name);
         checkManageOrCreateUsersPermission(flags);
         return createUserInternal(name, flags, UserHandle.USER_NULL);
     }
@@ -2533,6 +2547,7 @@ public class UserManagerService extends IUserManager.Stub {
     }
 
     private void removeUserState(final int userHandle) {
+        if (DBG) Slog.i(LOG_TAG, "removeUserStateLocked userHandle " + userHandle);
         try {
             mContext.getSystemService(StorageManager.class).destroyUserKey(userHandle);
         } catch (IllegalStateException e) {
@@ -2914,7 +2929,8 @@ public class UserManagerService extends IUserManager.Stub {
             Slog.w(LOG_TAG, "userForeground: unknown user #" + userId);
             return;
         }
-
+        Slog.d(LOG_TAG, "LoggedIn User Id from: " + mSwitchedUserId + " to : " + userId);
+        mSwitchedUserId = userId;
         final long now = System.currentTimeMillis();
         if (now > EPOCH_PLUS_30_YEARS) {
             userData.info.lastLoggedInTime = now;

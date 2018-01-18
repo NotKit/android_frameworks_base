@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -69,6 +74,9 @@ public class RecentsCreateFragment extends Fragment {
     private LoaderCallbacks<List<DocumentStack>> mCallbacks;
 
     private static final int LOADER_RECENTS = 3;
+
+    /// M: add a loading view to notify user we are loading item background.
+    private View mLoadingView;
 
     public static void show(FragmentManager fm) {
         final RecentsCreateFragment fragment = new RecentsCreateFragment();
@@ -225,6 +233,10 @@ public class RecentsCreateFragment extends Fragment {
 
         void update(@Nullable List<DocumentStack> items) {
             mItems = items;
+
+            /// M: When finish loading, disable loading view.
+            if (mLoadingView != null)
+            mLoadingView.setVisibility(View.GONE);
 
             if (isEmpty()) {
                 mEmptyView.setVisibility(View.VISIBLE);

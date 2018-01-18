@@ -63,6 +63,8 @@ import android.os.ResultReceiver;
 import android.os.ServiceManager;
 import android.os.ShellCommand;
 import android.os.SystemClock;
+/// M: Config Doze and App Standby
+import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.provider.Settings;
 import android.util.ArrayMap;
@@ -83,6 +85,9 @@ import com.android.internal.os.BackgroundThread;
 import com.android.internal.util.FastXmlSerializer;
 import com.android.internal.util.XmlUtils;
 import com.android.server.am.BatteryStatsService;
+
+/// M: : integrate Doze and App Standby
+import com.mediatek.datashaping.IDataShapingManager;
 
 import org.xmlpull.v1.XmlPullParser;
 import org.xmlpull.v1.XmlPullParserException;
@@ -111,6 +116,13 @@ public class DeviceIdleController extends SystemService
     private static final boolean COMPRESS_TIME = false;
 
     private static final int EVENT_BUFFER_SIZE = 100;
+
+    /// M: Config Doze and App Standby
+    private static final String CONFIG_AUTO_POWER =
+            "persist.config.AutoPowerModes";
+    private static final int ENABLE_LIGHT_DOZE = 1;
+    private static final int ENABLE_DEEP_DOZE = 2;
+    private static final int ENABLE_LIGHT_AND_DEEP_DOZE = 3;
 
     private AlarmManager mAlarmManager;
     private IBatteryStats mBatteryStats;
@@ -141,6 +153,8 @@ public class DeviceIdleController extends SystemService
     private boolean mHasNetworkLocation;
     private Location mLastGenericLocation;
     private Location mLastGpsLocation;
+    /// M: : integrate Doze and App Standby
+    private IDataShapingManager mDataShapingManager;
 
     /** Device is currently active. */
     private static final int STATE_ACTIVE = 0;
@@ -1031,6 +1045,11 @@ public class DeviceIdleController extends SystemService
                         lightChanged = mLocalPowerManager.setLightDeviceIdleMode(true);
                     }
                     try {
+                        /// M: integrate Doze and App Standby @{
+                        if(null != getDataShapingService()) {
+                            mDataShapingManager.setDeviceIdleMode(true);
+                        }
+                        /// integrate Doze and App Standby @}
                         mNetworkPolicyManager.setDeviceIdleMode(true);
                         mBatteryStats.noteDeviceIdleMode(msg.what == MSG_REPORT_IDLE_ON
                                 ? BatteryStats.DEVICE_IDLE_MODE_DEEP
@@ -1078,6 +1097,11 @@ public class DeviceIdleController extends SystemService
                     final boolean deepChanged = mLocalPowerManager.setDeviceIdleMode(false);
                     final boolean lightChanged = mLocalPowerManager.setLightDeviceIdleMode(false);
                     try {
+                        /// M: integrate Doze and App Standby @{
+                        if(null != getDataShapingService()) {
+                            mDataShapingManager.setDeviceIdleMode(false);
+                        }
+                        /// integrate Doze and App Standby @}
                         mNetworkPolicyManager.setDeviceIdleMode(false);
                         mBatteryStats.noteDeviceIdleMode(BatteryStats.DEVICE_IDLE_MODE_OFF,
                                 activeReason, activeUid);
@@ -1295,6 +1319,21 @@ public class DeviceIdleController extends SystemService
         synchronized (this) {
             mLightEnabled = mDeepEnabled = getContext().getResources().getBoolean(
                     com.android.internal.R.bool.config_enableAutoPowerModes);
+
+            /// M: Config Doze and App Standby {
+            if (SystemProperties.get(CONFIG_AUTO_POWER, "0").equals(ENABLE_LIGHT_DOZE)) {
+                mDeepEnabled = false;
+                mLightEnabled = true;
+            } else if (SystemProperties.get(CONFIG_AUTO_POWER, "0").equals(ENABLE_DEEP_DOZE)) {
+                mDeepEnabled = true;
+                mLightEnabled = false;
+            }else if (SystemProperties.get(CONFIG_AUTO_POWER, "0").
+                      equals(ENABLE_LIGHT_AND_DEEP_DOZE)) {
+                mDeepEnabled = true;
+                mLightEnabled = true;
+            }
+            /// Config Doze and App Standby }
+
             SystemConfig sysConfig = SystemConfig.getInstance();
             ArraySet<String> allowPowerExceptIdle = sysConfig.getAllowInPowerSaveExceptIdle();
             for (int i=0; i<allowPowerExceptIdle.size(); i++) {
@@ -3028,4 +3067,15 @@ public class DeviceIdleController extends SystemService
             }
         }
     }
- }
+
+    /// M: : integrate Doze and App Standby @{
+    private IDataShapingManager getDataShapingService() {
+        if(null == mDataShapingManager) {
+            return mDataShapingManager = (IDataShapingManager) ServiceManager.
+                    getService(Context.DATA_SHAPING_SERVICE);
+        }
+        else
+            return mDataShapingManager;
+    }
+    /// integrate Doze and App Standby @}
+}

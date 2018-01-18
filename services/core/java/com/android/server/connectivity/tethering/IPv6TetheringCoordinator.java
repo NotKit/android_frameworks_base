@@ -42,8 +42,8 @@ import java.util.LinkedList;
  */
 public class IPv6TetheringCoordinator {
     private static final String TAG = IPv6TetheringCoordinator.class.getSimpleName();
-    private static final boolean DBG = false;
-    private static final boolean VDBG = false;
+    private static final boolean DBG = true;
+    private static final boolean VDBG = true;
 
     private final ArrayList<TetherInterfaceStateMachine> mNotifyList;
     private final LinkedList<TetherInterfaceStateMachine> mActiveDownstreams;
@@ -55,6 +55,7 @@ public class IPv6TetheringCoordinator {
     }
 
     public void addActiveDownstream(TetherInterfaceStateMachine downstream) {
+        Log.d(TAG, "addActiveDownstream: " + downstream);
         if (mActiveDownstreams.indexOf(downstream) == -1) {
             // Adding a new downstream appends it to the list. Adding a
             // downstream a second time without first removing it has no effect.
@@ -64,6 +65,7 @@ public class IPv6TetheringCoordinator {
     }
 
     public void removeActiveDownstream(TetherInterfaceStateMachine downstream) {
+        Log.d(TAG, "removeActiveDownstream: " + downstream);
         stopIPv6TetheringOn(downstream);
         if (mActiveDownstreams.remove(downstream)) {
             updateIPv6TetheringInterfaces();
@@ -115,8 +117,11 @@ public class IPv6TetheringCoordinator {
     }
 
     private void updateIPv6TetheringInterfaces() {
+        if (VDBG) Log.d(TAG, "updateIPv6TetheringInterfaces mNotifyList:size:" + mNotifyList.size());
         for (TetherInterfaceStateMachine sm : mNotifyList) {
             final LinkProperties lp = getInterfaceIPv6LinkProperties(sm);
+            Log.d(TAG, "updateIPv6TetheringInterfaces()"
+                    + " sendMessage(CMD_IPV6_TETHER_UPDATE) " + sm + " lp:" + lp);
             sm.sendMessage(TetherInterfaceStateMachine.CMD_IPV6_TETHER_UPDATE, 0, 0, lp);
             break;
         }
@@ -139,7 +144,7 @@ public class IPv6TetheringCoordinator {
         if (currentActive != null && currentActive == sm) {
             final LinkProperties lp = getIPv6OnlyLinkProperties(
                     mUpstreamNetworkState.linkProperties);
-            if (lp.hasIPv6DefaultRoute() && lp.hasGlobalIPv6Address()) {
+            if (lp.hasIPv6DefaultRoute() && hasGlobalIPv6Address(lp)) {
                 return lp;
             }
         }
@@ -167,12 +172,18 @@ public class IPv6TetheringCoordinator {
                 (ns != null) && (ns.network != null) &&
                 (ns.linkProperties != null) && (ns.networkCapabilities != null) &&
                 // At least one upstream DNS server:
-                ns.linkProperties.isProvisioned() &&
+                (ns.linkProperties.isProvisioned() ||
                 // Minimal amount of IPv6 provisioning:
-                ns.linkProperties.hasIPv6DefaultRoute() &&
-                ns.linkProperties.hasGlobalIPv6Address() &&
+                ns.linkProperties.hasIPv6DefaultRoute()) &&
+                hasGlobalIPv6Address(ns.linkProperties) &&
                 // Temporary approximation of "dedicated prefix":
                 ns.networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR);
+
+        if (DBG) Log.d(TAG, "canTether:" + canTether);
+        if (DBG && (ns != null)) {
+            Log.d(TAG, "LP hasGlobalIPv6Address:" + hasGlobalIPv6Address(ns.linkProperties) +
+                " isProvisioned():" + ns.linkProperties.isProvisioned());
+        }
 
         // For now, we do not support separate IPv4 and IPv6 upstreams (e.g.
         // tethering with 464xlat involved). TODO: Rectify this shortcoming,
@@ -193,6 +204,7 @@ public class IPv6TetheringCoordinator {
                 }
             }
         }
+        Log.d(TAG, "v4default:" + v4default + " v6default:" + v6default);
 
         final boolean supportedConfiguration =
                 (v4default != null) && (v6default != null) &&
@@ -227,7 +239,7 @@ public class IPv6TetheringCoordinator {
         v6only.setMtu(lp.getMtu());
 
         for (LinkAddress linkAddr : lp.getLinkAddresses()) {
-            if (linkAddr.isGlobalPreferred() && linkAddr.getPrefixLength() == 64) {
+            if (isIPv6GlobalAddress(linkAddr.getAddress()) && linkAddr.getPrefixLength() == 64) {
                 v6only.addLinkAddress(linkAddr);
             }
         }
@@ -274,6 +286,20 @@ public class IPv6TetheringCoordinator {
     }
 
     private static void stopIPv6TetheringOn(TetherInterfaceStateMachine sm) {
+        Log.d(TAG, "stopIPv6TetheringOn() sendMessage(CMD_IPV6_TETHER_UPDATE) " + sm + " lp=null");
         sm.sendMessage(TetherInterfaceStateMachine.CMD_IPV6_TETHER_UPDATE, 0, 0, null);
     }
+
+    /// M: Add for IPv6 tethering with machine testing
+    private static boolean hasGlobalIPv6Address(LinkProperties linkProperties) {
+        for (InetAddress address : linkProperties.getAddresses()) {
+            if (address instanceof Inet6Address &&
+                isIPv6GlobalAddress(address)) {
+                return true;
+            }
+        }
+        return false;
+
+    }
+
 }

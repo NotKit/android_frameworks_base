@@ -119,6 +119,8 @@ import com.android.internal.app.IVoiceInteractor;
 import com.android.internal.app.ToolbarActionBar;
 import com.android.internal.app.WindowDecorActionBar;
 import com.android.internal.policy.PhoneWindow;
+/// M: BMW
+import com.mediatek.multiwindow.MultiWindowManager;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -7189,4 +7191,31 @@ public class Activity extends ContextThemeWrapper
             return (w != null && w.peekDecorView() != null);
         }
     }
+
+    /// M: Mediatek added APIs start
+    /**
+     * M: BMW
+     *
+     * @hide
+     */
+    @Override
+    public void stickWindow(boolean isSticky) throws RemoteException {
+        if (MultiWindowManager.isSupported()) {
+            ActivityManagerNative.getDefault().stickWindow(mToken, isSticky);
+        }
+    }
+
+    /**
+     * M: BMW
+     *
+     * @hide
+     */
+    @Override
+    public boolean isStickyByMtk() throws RemoteException {
+        if (MultiWindowManager.isSupported()) {
+            return ActivityManagerNative.getDefault().isStickyByMtk(mToken);
+        }
+        return false;
+    }
+    /// M: Mediatek added APIs end
 }

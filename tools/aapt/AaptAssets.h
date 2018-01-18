@@ -1,3 +1,8 @@
+/*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
 //
 // Copyright 2006 The Android Open Source Project
 //
@@ -53,9 +58,14 @@ enum {
     AXIS_SCREENHEIGHTDP,
     AXIS_LAYOUTDIR,
     AXIS_VERSION,
+    ///M: resource filter enhancement
+    AXIS_NEGATIVE_SMALLESTSCREENWIDTHDP,
 
     AXIS_START = AXIS_MCC,
     AXIS_END = AXIS_VERSION,
+    ///M: resource filter enhancement
+    AXIS_NEGATIVE_START = AXIS_NEGATIVE_SMALLESTSCREENWIDTHDP,
+    AXIS_NEGATIVE_END = AXIS_NEGATIVE_SMALLESTSCREENWIDTHDP,
 };
 
 struct AaptLocaleValue {
@@ -217,6 +227,11 @@ public:
     // Returns the relative path after the AaptGroupEntry dirs.
     const String8& getPath() const { return mPath; }
 
+    /// M: ALPS01947812, Restore jpg files need to change group name @{
+    void setLeaf(const String8& leaf) { mLeaf = leaf; }
+    void setPath(const String8& path) { mPath = path; }
+    /// @}
+
     const DefaultKeyedVector<AaptGroupEntry, sp<AaptFile> >& getFiles() const
         { return mFiles; }
 
@@ -287,13 +302,15 @@ private:
     sp<AaptDir> makeDir(const String8& name);
     status_t addLeafFile(const String8& leafName,
                          const sp<AaptFile>& file,
-                         const bool overwrite=false);
+                         const bool overwrite=false,
+                         const bool isAssetsDir=false); /// M: Check file is in assets folder
     virtual ssize_t slurpFullTree(Bundle* bundle,
                                   const String8& srcDir,
                                   const AaptGroupEntry& kind,
                                   const String8& resType,
                                   sp<FilePathStore>& fullResPaths,
-                                  const bool overwrite=false);
+                                  const bool overwrite=false,
+                                  const bool isAssetsDir=false); /// M: Check file is in assets folder
 
     String8 mLeaf;
     String8 mPath;
@@ -590,7 +607,8 @@ private:
                                   const AaptGroupEntry& kind,
                                   const String8& resType,
                                   sp<FilePathStore>& fullResPaths,
-                                  const bool overwrite=false);
+                                  const bool overwrite=false,
+                                  const bool isAssetsDir=false);  /// M: Check file is in assets folder
 
     ssize_t slurpResourceTree(Bundle* bundle, const String8& srcDir);
     ssize_t slurpResourceZip(Bundle* bundle, const char* filename);

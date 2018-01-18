@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,10 +29,13 @@ import android.content.Context;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.Build;
+import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.util.Slog;
-
+import android.os.SystemProperties;
 import java.util.Objects;
+
+import static android.net.wifi.WifiInfo.removeDoubleQuotes;
 
 /**
  * Network definition that includes strong identity. Analogous to combining
@@ -37,6 +45,10 @@ import java.util.Objects;
  */
 public class NetworkIdentity implements Comparable<NetworkIdentity> {
     private static final String TAG = "NetworkIdentity";
+    /** M: modify for log reduction @{ */
+    private static final String PROP_FORCE_DEBUG_KEY = "persist.log.tag.tel_dbg";
+    private static final boolean VDBG = (SystemProperties.getInt(PROP_FORCE_DEBUG_KEY, 0) == 1);
+    /** @} */
 
     /**
      * When enabled, combine all {@link #mSubType} together under
@@ -172,7 +184,7 @@ public class NetworkIdentity implements Comparable<NetworkIdentity> {
         String networkId = null;
         boolean roaming = false;
         boolean metered = false;
-
+        if (VDBG) Slog.i(TAG, "buildNetworkIdentity:");
         if (isNetworkTypeMobile(type)) {
             if (state.subscriberId == null) {
                 if (state.networkInfo.getState() != NetworkInfo.State.DISCONNECTED &&
@@ -181,10 +193,8 @@ public class NetworkIdentity implements Comparable<NetworkIdentity> {
                             + state.networkInfo);
                 }
             }
-
             subscriberId = state.subscriberId;
             roaming = state.networkInfo.isRoaming();
-
             metered = !state.networkCapabilities.hasCapability(
                     NetworkCapabilities.NET_CAPABILITY_NOT_METERED);
 
@@ -195,7 +205,9 @@ public class NetworkIdentity implements Comparable<NetworkIdentity> {
                 final WifiManager wifi = (WifiManager) context.getSystemService(
                         Context.WIFI_SERVICE);
                 final WifiInfo info = wifi.getConnectionInfo();
-                networkId = info != null ? info.getSSID() : null;
+                ///M: fix google issue
+                networkId = info != null ? removeDoubleQuotes(info.getSSID()) : null;
+                if (VDBG) Slog.i(TAG, "networkId = " + networkId);
             }
         }
 

@@ -23,6 +23,7 @@ package android.mtp;
 public class MtpServer implements Runnable {
 
     private long mNativeContext; // accessed by native methods
+    private boolean mServerEndup = false;
     private final MtpDatabase mDatabase;
 
     static {
@@ -30,12 +31,14 @@ public class MtpServer implements Runnable {
     }
 
     public MtpServer(MtpDatabase database, boolean usePtp) {
+        mServerEndup = false;
         mDatabase = database;
         native_setup(database, usePtp);
         database.setServer(this);
     }
 
     public void start() {
+        mServerEndup = false;
         Thread thread = new Thread(this, "MtpServer");
         thread.start();
     }
@@ -44,6 +47,7 @@ public class MtpServer implements Runnable {
     public void run() {
         native_run();
         native_cleanup();
+        mServerEndup = true;
         mDatabase.close();
     }
 
@@ -67,6 +71,50 @@ public class MtpServer implements Runnable {
         native_remove_storage(storage.getStorageId());
     }
 
+    /**
+     * Added for Storage Update and send StorageInfoChanged event
+     * @hide
+     * @internal
+     */
+    public void updateStorage(MtpStorage storage) {
+        native_update_storage(storage);
+    }
+    /**
+     * for send StorageInfoChanged event
+     * @hide
+     * @internal
+     */
+    public void sendStorageInfoChanged(MtpStorage storage) {
+        native_send_storage_infoChanged(storage.getStorageId());
+    }
+
+    /**
+     * dummy
+     * @hide
+     * @internal
+     */
+    public void endSession() {
+        //do nothing
+    }
+
+    /**
+     * check thread run status
+     * @hide
+     * @internal
+     */
+    public boolean getStatus() {
+        return mServerEndup;
+    }
+
+    /**
+     * update object, send ObjectInfoChanged event
+     * @hide
+     * @internal
+     */
+    public void sendObjectInfoChanged(int handle) {
+        native_send_object_infoChanged(handle);
+    }
+
     private native final void native_setup(MtpDatabase database, boolean usePtp);
     private native final void native_run();
     private native final void native_cleanup();
@@ -75,4 +123,8 @@ public class MtpServer implements Runnable {
     private native final void native_send_device_property_changed(int property);
     private native final void native_add_storage(MtpStorage storage);
     private native final void native_remove_storage(int storageId);
+    // for sorage update
+    private native final void native_update_storage(MtpStorage storage);
+    private native final void native_send_storage_infoChanged(int storageId);
+    private native final void native_send_object_infoChanged(int handle);
 }

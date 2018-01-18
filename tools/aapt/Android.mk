@@ -1,4 +1,9 @@
 #
+# Copyright (C) 2014 MediaTek Inc.
+# Modification based on code covered by the mentioned copyright
+# and/or permission notice(s).
+#
+#
 # Copyright (C) 2014 The Android Open Source Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -91,6 +96,10 @@ LOCAL_STATIC_LIBRARIES := $(aaptHostStaticLibs)
 LOCAL_STATIC_LIBRARIES_windows := $(aaptHostStaticLibs_windows)
 
 include $(BUILD_HOST_STATIC_LIBRARY)
+
+ifeq ($(strip $(MTK_DFO_RESOLUTION_SUPPORT)),yes)
+LOCAL_CFLAGS += -DMTK_FOR_HOST_BUILD_AAPT
+endif
 
 # ==========================================================
 # Build the host executable: aapt

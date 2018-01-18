@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2009 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -206,10 +211,19 @@ class SuggestionsAdapter extends ResourceCursorAdapter implements OnClickListene
         return null;
     }
 
-    public void close() {
+    /*
+     * M: Add synchronized keyword.
+     */
+    public synchronized void close() {
         if (DBG) Log.d(LOG_TAG, "close()");
         changeCursor(null);
         mClosed = true;
+    }
+    /*
+     * M: Enable the adapter.
+     */
+    public void enable() {
+        mClosed = false;
     }
 
     @Override
@@ -731,5 +745,13 @@ class SuggestionsAdapter extends ResourceCursorAdapter implements OnClickListene
                             + "did the remote process die?", e);
             return null;
         }
+    }
+    /**
+     * M: fix CR [ALPS00405393]
+     */
+    @Override
+    protected void onContentChanged() {
+        super.onContentChanged();
+        notifyDataSetChanged();
     }
 }

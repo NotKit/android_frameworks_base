@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -880,6 +885,11 @@ public final class DocumentsContract {
         final Intent intent = new Intent(PROVIDER_INTERFACE);
         final List<ResolveInfo> infos = context.getPackageManager()
                 .queryIntentContentProviders(intent, 0);
+        /// M: PackageManager.queryIntentContentProviders() may return null,
+        ///    So add this to avoid NPE
+        if (null == infos) {
+            return false;
+        }
         for (ResolveInfo info : infos) {
             if (authority.equals(info.providerInfo.authority)) {
                 return true;

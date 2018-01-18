@@ -26,10 +26,12 @@ import android.os.Environment;
 import android.os.Parcel;
 import android.os.Parcelable;
 import android.os.UserHandle;
+import android.os.SystemProperties;
 import android.provider.DocumentsContract;
 import android.text.TextUtils;
 import android.util.ArrayMap;
 import android.util.DebugUtils;
+import android.util.Log;
 import android.util.SparseArray;
 import android.util.SparseIntArray;
 
@@ -41,6 +43,7 @@ import java.io.CharArrayWriter;
 import java.io.File;
 import java.util.Comparator;
 import java.util.Objects;
+import android.util.Slog;
 
 /**
  * Information about a storage volume that may be mounted. A volume may be a
@@ -63,6 +66,7 @@ import java.util.Objects;
  * @hide
  */
 public class VolumeInfo implements Parcelable {
+    private static final String TAG = "MountService";
     public static final String ACTION_VOLUME_STATE_CHANGED =
             "android.os.storage.action.VOLUME_STATE_CHANGED";
     public static final String EXTRA_VOLUME_ID =
@@ -90,6 +94,7 @@ public class VolumeInfo implements Parcelable {
     public static final int STATE_UNMOUNTABLE = 6;
     public static final int STATE_REMOVED = 7;
     public static final int STATE_BAD_REMOVAL = 8;
+    public static final int STATE_MEDIA_SHARED = 9;
 
     public static final int MOUNT_FLAG_PRIMARY = 1 << 0;
     public static final int MOUNT_FLAG_VISIBLE = 1 << 1;
@@ -124,6 +129,7 @@ public class VolumeInfo implements Parcelable {
         sStateToEnvironment.put(VolumeInfo.STATE_UNMOUNTABLE, Environment.MEDIA_UNMOUNTABLE);
         sStateToEnvironment.put(VolumeInfo.STATE_REMOVED, Environment.MEDIA_REMOVED);
         sStateToEnvironment.put(VolumeInfo.STATE_BAD_REMOVAL, Environment.MEDIA_BAD_REMOVAL);
+        sStateToEnvironment.put(VolumeInfo.STATE_MEDIA_SHARED, Environment.MEDIA_SHARED);
 
         sEnvironmentToBroadcast.put(Environment.MEDIA_UNMOUNTED, Intent.ACTION_MEDIA_UNMOUNTED);
         sEnvironmentToBroadcast.put(Environment.MEDIA_CHECKING, Intent.ACTION_MEDIA_CHECKING);
@@ -143,6 +149,8 @@ public class VolumeInfo implements Parcelable {
         sStateToDescrip.put(VolumeInfo.STATE_UNMOUNTABLE, R.string.ext_media_status_unmountable);
         sStateToDescrip.put(VolumeInfo.STATE_REMOVED, R.string.ext_media_status_removed);
         sStateToDescrip.put(VolumeInfo.STATE_BAD_REMOVAL, R.string.ext_media_status_bad_removal);
+        sStateToDescrip.put(VolumeInfo.STATE_MEDIA_SHARED,
+                            com.mediatek.internal.R.string.ext_media_status_shared);
     }
 
     /** vold state */
@@ -331,7 +339,7 @@ public class VolumeInfo implements Parcelable {
 
         final boolean removable;
         final boolean emulated;
-        final boolean allowMassStorage = false;
+        final boolean allowMassStorage = isAllowUsbMassStorage(userId);
         final String envState = reportUnmounted
                 ? Environment.MEDIA_UNMOUNTED : getEnvironmentForState(state);
 
@@ -536,5 +544,45 @@ public class VolumeInfo implements Parcelable {
         parcel.writeString(fsLabel);
         parcel.writeString(path);
         parcel.writeString(internalPath);
+    }
+
+    /**
+     * check if volume is USB OTG
+     * @return
+     */
+    public boolean isUSBOTG() {
+        String diskID = getDiskId();
+        if (diskID != null) {
+            // for usb otg, the disk id same as disk:8:x
+            String[] idSplit = diskID.split(":");
+            if (idSplit != null && idSplit.length == 2) {
+                if (idSplit[1].startsWith("8,")) {
+                    Log.d(TAG, "this is a usb otg");
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * check if this volume is phone storage
+     * eMMC storage diskid is "disk:179,0"
+     * NAND storage diskid is "disk:7,1"
+     */
+    public boolean isPhoneStorage() {
+        return DiskInfo.isPhoneStorage(getDiskId());
+    }
+
+    /**
+     * check if this volume is allow Usb mass storages
+     */
+    public boolean isAllowUsbMassStorage(int userId) {
+        if (getType() == VolumeInfo.TYPE_PUBLIC
+                && isVisibleForWrite(userId)
+                && !isUSBOTG()) {
+            return true;
+        }
+        return false;
     }
 }

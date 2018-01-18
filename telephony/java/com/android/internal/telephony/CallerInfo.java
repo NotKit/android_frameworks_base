@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -43,6 +48,17 @@ import android.telephony.SubscriptionManager;
 
 import java.util.Locale;
 
+/// M: CC: CallerInfo OP Plugin @{
+import android.os.SystemProperties;
+import com.mediatek.common.MPlugin;
+import com.mediatek.common.telephony.ICallerInfoExt;
+/// @}
+
+/// M: CC: Query city name via GeoCodingQuery
+import com.mediatek.geocoding.GeoCodingQuery;
+
+/// M: CC: Query ECC via EmergencyNumberExt
+import static com.android.internal.telephony.PhoneConstants.PHONE_TYPE_CDMA;
 
 /**
  * Looks up caller information for the given phone number.
@@ -51,7 +67,7 @@ import java.util.Locale;
  */
 public class CallerInfo {
     private static final String TAG = "CallerInfo";
-    private static final boolean VDBG = Rlog.isLoggable(TAG, Log.VERBOSE);
+    private static final boolean VDBG = true/* Rlog.isLoggable(TAG, Log.VERBOSE) */;
 
     public static final long USER_TYPE_CURRENT = 0;
     public static final long USER_TYPE_WORK = 1;
@@ -170,7 +186,17 @@ public class CallerInfo {
      * @return the CallerInfo which contains the caller id for the given
      * number. The returned CallerInfo is null if no number is supplied.
      */
+    //According to CallerInfoExt implementation on L, subId is requested for USIM AAS feature.
     public static CallerInfo getCallerInfo(Context context, Uri contactRef, Cursor cursor) {
+        /// M: CC: CallerInfo OP Plugin @{
+        int subId = SubscriptionManager.getDefaultSubscriptionId();
+        return getCallerInfo(context, contactRef, cursor, subId);
+        //// @}
+    }
+
+    /// M: CC: CallerInfo OP Plugin @{
+    public static CallerInfo getCallerInfo(Context context, Uri contactRef, Cursor cursor, int subId) {
+    //// @}
         CallerInfo info = new CallerInfo();
         info.photoResource = 0;
         info.phoneLabel = null;
@@ -216,9 +242,30 @@ public class CallerInfo {
                     if (typeColumnIndex != -1) {
                         info.numberType = cursor.getInt(typeColumnIndex);
                         info.numberLabel = cursor.getString(columnIndex);
-                        info.phoneLabel = Phone.getDisplayLabel(context,
-                                info.numberType, info.numberLabel)
-                                .toString();
+                        /// M: CC: CallerInfo OP Plugin @{
+                        if (SystemProperties.get("ro.mtk_bsp_package").equals("1")) {
+                        /// @}
+                            info.phoneLabel = Phone.getDisplayLabel(context,
+                                    info.numberType, info.numberLabel)
+                                    .toString();
+                        /// M: CC: CallerInfo OP Plugin @{
+                        } else {
+                            try {
+                                ICallerInfoExt iCallerInfoExt = MPlugin.createInstance(
+                                        ICallerInfoExt.class.getName(), context);
+                                if (iCallerInfoExt != null) {
+                                    info.phoneLabel = iCallerInfoExt.getTypeLabel(context,
+                                            info.numberType, info.numberLabel, cursor, subId)
+                                            .toString();
+                                } else {
+                                    Rlog.e(TAG, "Fail to initialize ICallerInfoExt");
+                                }
+                            } catch (Exception e) {
+                                Rlog.e(TAG, "Fail to create plug-in");
+                                e.printStackTrace();
+                            }
+                        }
+                        /// @}
                     }
                 }
 
@@ -281,6 +328,18 @@ public class CallerInfo {
                         ((cursor.getInt(columnIndex)) == 1);
                 info.contactExists = true;
             }
+            /// M: CC: Query Contacts db to reject specific contact number @{
+            // [ALPS00351053]
+            // When more than one contacts have same phone number
+            // and only one of them enables "Auto Reject", still reject it
+            while ((info.shouldSendToVoicemail == false) && (cursor.moveToNext() == true))
+            {
+               int columnIndex = cursor.getColumnIndex(PhoneLookup.SEND_TO_VOICEMAIL);
+               info.shouldSendToVoicemail = (columnIndex != -1) &&
+                                            ((cursor.getInt(columnIndex)) == 1);
+            }
+            /// @}
+
             cursor.close();
             cursor = null;
         }
@@ -351,10 +410,24 @@ public class CallerInfo {
         // Change the callerInfo number ONLY if it is an emergency number
         // or if it is the voicemail number.  If it is either, take a
         // shortcut and skip the query.
-        if (PhoneNumberUtils.isLocalEmergencyNumber(context, number)) {
-            return new CallerInfo().markAsEmergency(context);
+
+        Rlog.d(TAG, "number " + number + " subId: " + subId);
+
+        /// M: CC: Query ECC via EmergencyNumberExt @{
+        int phoneType = TelephonyManager.getDefault().getCurrentPhoneType(subId);
+        if (PhoneNumberUtils.isEmergencyNumberExt(number, phoneType)) {
+            CallerInfo info = new CallerInfo().markAsEmergency(context);
+            if (phoneType == PHONE_TYPE_CDMA) {
+                info.name = info.phoneNumber;
+                info.phoneNumber = number;
+            }
+            return info;
+        /// @}
         } else if (PhoneNumberUtils.isVoiceMailNumber(subId, number)) {
-            return new CallerInfo().markAsVoiceMail();
+            /// M: CC: DSDS bug fix @{
+            // CallerInfo subId bug fix
+            return new CallerInfo().markAsVoiceMail(subId);
+            /// @}
         }
 
         Uri contactUri = Uri.withAppendedPath(PhoneLookup.ENTERPRISE_CONTENT_FILTER_URI,
@@ -576,12 +649,29 @@ public class CallerInfo {
      * @return a geographical description string for the specified number.
      * @see com.android.i18n.phonenumbers.PhoneNumberOfflineGeocoder
      */
-    private static String getGeoDescription(Context context, String number) {
+    /// M: CC: Query geo description in worker thread @{
+    // change private -> public to allow CallerInfoAsyncQuery to use it.
+    //private static String getGeoDescription(Context context, String number) {
+    public static String getGeoDescription(Context context, String number) {
+    /// @}
+
         if (VDBG) Rlog.v(TAG, "getGeoDescription('" + number + "')...");
 
         if (TextUtils.isEmpty(number)) {
             return null;
         }
+
+        /// M: CC: Query city name via GeoCodingQuery @{
+        // [ALPS00286530]Query Geocoding description
+        if (SystemProperties.get("ro.mtk_phone_number_geo").equals("1")) {
+            GeoCodingQuery geoCodingQuery = GeoCodingQuery.getInstance(context);
+            String cityName = geoCodingQuery.queryByNumber(number);
+            Rlog.v(TAG, "[GeoCodingQuery] cityName = " + cityName);
+            if ((cityName != null) && (!cityName.equals(""))) {
+                return cityName;
+            }
+        }
+        /// @}
 
         PhoneNumberUtil util = PhoneNumberUtil.getInstance();
         PhoneNumberOfflineGeocoder geocoder = PhoneNumberOfflineGeocoder.getInstance();
@@ -595,7 +685,8 @@ public class CallerInfo {
             pn = util.parse(number, countryIso);
             if (VDBG) Rlog.v(TAG, "- parsed number: " + pn);
         } catch (NumberParseException e) {
-            Rlog.w(TAG, "getGeoDescription: NumberParseException for incoming number '" + number + "'");
+            Rlog.d(TAG, "getGeoDescription: NumberParseException for incoming number '"
+                    + number + "'");
         }
 
         if (pn != null) {

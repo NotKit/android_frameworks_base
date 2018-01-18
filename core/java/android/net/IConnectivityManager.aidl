@@ -176,5 +176,41 @@ interface IConnectivityManager
 
     void stopKeepalive(in Network network, int slot);
 
+
     String getCaptivePortalServerUrl();
+
+
+    /// M: For automatic NS-IOT test
+    String[] getTetheredIfacePairs();
+
+    /** M: support Tether dediated APN feature  for OP03APNSettingExt*/
+    boolean isTetheringChangeDone();
+
+    /**
+     * M: ipv6 tethering
+     * @hide
+     */
+    void setTetheringIpv6Enable(boolean enable);
+
+    /**
+     * M: ipv6 tethering
+     * @hide
+     */
+    boolean getTetheringIpv6Enable();
+
+    /**
+     * M: check if network is created
+     * @hide
+     */
+    Network getNetworkIfCreated(in NetworkRequest networkRequest);
+
+     /**
+     * Monitor HTTP redirect event
+     * @hide
+     */
+    void monitorHttpRedirect(String location);
+
+    boolean isFirewallEnabled();
+
+    String getWebLocation();
 }

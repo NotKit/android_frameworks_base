@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -441,7 +446,7 @@ static void load_maps(int pid, stats_t* stats, bool* foundSwapPss)
 static void android_os_Debug_getDirtyPagesPid(JNIEnv *env, jobject clazz,
         jint pid, jobject object)
 {
-    bool foundSwapPss;
+    bool foundSwapPss = false;
     stats_t stats[_NUM_HEAP];
     memset(&stats, 0, sizeof(stats));
 
@@ -480,7 +485,7 @@ static void android_os_Debug_getDirtyPagesPid(JNIEnv *env, jobject clazz,
     }
 
 
-    env->SetBooleanField(object, hasSwappedOutPss_field, foundSwapPss);
+    env->SetBooleanField(object, hasSwappedOutPss_field, foundSwapPss == false ? JNI_FALSE : JNI_TRUE);
     jintArray otherIntArray = (jintArray)env->GetObjectField(object, otherStats_field);
 
     jint* otherArray = (jint*)env->GetPrimitiveArrayCritical(otherIntArray, 0);
@@ -630,6 +635,134 @@ static long get_allocated_vmalloc_memory() {
     return vmalloc_allocated_size;
 }
 
+#ifndef MTK_BSP_PACKAGE
+static jlong android_os_Debug_getPswapPid(JNIEnv *env, jobject clazz, jint pid)
+{
+    char line[1024];
+    jlong pss = 0;
+    unsigned temp;
+
+    char tmp[128];
+    FILE *fp;
+
+    sprintf(tmp, "/proc/%d/smaps", pid);
+    fp = fopen(tmp, "r");
+    if (fp == 0) return 0;
+
+    while (true) {
+        if (fgets(line, 1024, fp) == 0) {
+            break;
+        }
+
+        if (sscanf(line, "PSwap: %d kB", &temp) == 1) {
+            pss += temp;
+        }
+    }
+
+    fclose(fp);
+
+    return pss;
+}
+
+static jlong android_os_Debug_getCompZram(JNIEnv *env, jobject clazz)
+{
+    FILE *fp;
+    char path[] = "/sys/block/zram0/mem_used_total";
+    char line[1024];
+    unsigned long compZram = 0;
+
+    fp = fopen(path, "r");
+
+    if (fp == 0) return 0;
+
+    if (fgets(line, 1024, fp) != 0) {
+        if (sscanf(line, "%lu", &compZram) != 1) {
+            fclose(fp);
+            return 0;
+        }
+    }
+
+    fclose(fp);
+
+    return static_cast<jlong>(compZram);
+}
+
+static jlong android_os_Debug_getOrigZram(JNIEnv *env, jobject clazz)
+{
+    FILE *fp;
+    char path[] = "/sys/block/zram0/orig_data_size";
+    char line[1024];
+    unsigned long origZram = 0;
+
+    fp = fopen(path, "r");
+
+    if (fp == 0) return 0;
+
+    if (fgets(line, 1024, fp) != 0) {
+        if (sscanf(line, "%lu", &origZram) != 1) {
+            fclose(fp);
+            return 0;
+        }
+    }
+
+    fclose(fp);
+
+    return static_cast<jlong>(origZram);
+}
+
+static jlong android_os_Debug_getTotalZram(JNIEnv *env, jobject clazz)
+{
+    FILE *fp;
+    char path[] = "/sys/block/zram0/disksize";
+    char line[1024];
+    unsigned long totalZram = 0;
+
+    fp = fopen(path, "r");
+
+    if (fp == 0) return 0;
+
+    if (fgets(line, 1024, fp) != 0) {
+        if (sscanf(line, "%lu", &totalZram) != 1) {
+            fclose(fp);
+            return 0;
+        }
+    }
+
+    fclose(fp);
+
+    return static_cast<jlong>(totalZram);
+}
+
+
+static jshort android_os_Debug_getZramCompressMethod(JNIEnv *env, jobject clazz)
+{
+    FILE *fp;
+    char path[] = "/proc/zraminfo";
+    char line[1024];
+
+    char zram_compress_method[16];
+    jshort zram_compress_method_id = 0; //0: LZO, 1: LZ4K
+
+    fp = fopen(path, "r");
+
+    if (fp == 0) return 0;
+
+    while(fgets(line, 1024, fp) != 0) {
+        if (1 == sscanf(line, "Algorithm: [%15[^]]", zram_compress_method)) {
+            if (0 == strncmp("LZ4K", zram_compress_method, 15)) {
+                zram_compress_method_id = 1;
+            }
+            break;
+        }
+    }
+    fclose(fp);
+
+    return zram_compress_method_id;
+}
+
+
+#endif
+
 enum {
     MEMINFO_TOTAL,
     MEMINFO_FREE,
@@ -644,6 +777,11 @@ enum {
     MEMINFO_VMALLOC_USED,
     MEMINFO_PAGE_TABLES,
     MEMINFO_KERNEL_STACK,
+    MEMINFO_ION_CACHED,
+    MEMINFO_GPU_CACHED,
+    MEMINFO_ION_DISP,
+    MEMINFO_TRACE,
+    MEMINFO_CMA_USAGE,
     MEMINFO_COUNT
 };
 
@@ -675,6 +813,251 @@ static long long get_zram_mem_used()
     }
 
     return 0;
+}
+
+static void android_os_Debug_getCached(long * mem)
+{
+    char buffer[4096];
+    size_t numFound = 0;
+
+    int fd = open("/sys/kernel/debug/shrinker", O_RDONLY);
+
+    if (fd < 0) {
+        ALOGW("Unable to open /sys/kernel/debug/shrinker: %s\n", strerror(errno));
+        return;
+    }
+
+    int len = read(fd, buffer, sizeof(buffer)-1);
+    close(fd);
+
+    if (len < 0) {
+        ALOGW("Empty /sys/kernel/debug/shrinker");
+        return;
+    }
+    buffer[len] = 0;
+
+    static const char* const tags[] = {
+            "kbase_mem_pool_reclaim_scan_objects ",
+            "kbase_mem_allocator_scan ",
+            "kbase_mem_allocator_shrink ",
+            "ion_heap_shrink_scan ",
+            "ion_heap_shrink ",
+            NULL
+    };
+    static const int tagsLen[] = {
+            36,
+            25,
+            27,
+            21,
+            16,
+            0
+    };
+    static const int tagtypes[] = {
+            MEMINFO_GPU_CACHED,
+            MEMINFO_GPU_CACHED,
+            MEMINFO_GPU_CACHED,
+            MEMINFO_ION_CACHED,
+            MEMINFO_ION_CACHED,
+            MEMINFO_COUNT
+    };
+    long cachedmem[] = { 0, 0, 0, 0, 0, 0};
+
+    char* p = buffer;
+    while (*p && numFound < (sizeof(tagsLen) / sizeof(tagsLen[0]))) {
+        int i = 0;
+        int isN = 0;
+        while (tags[i]) {
+            if (strncmp(p, tags[i], tagsLen[i]) == 0) {
+                p += tagsLen[i];
+                while (*p == ' ') p++;
+                char* num = p;
+                while (*p >= '0' && *p <= '9') p++;
+                if (*p != 0) {
+                    if (*p == '\n')
+                        isN = 1;
+                    *p = 0;
+                    p++;
+                }
+                cachedmem[i] += atoll(num);
+//                numFound++;
+                break;
+            }
+            i++;
+        }
+
+        if (isN)
+           continue;
+
+        while (*p && *p != '\n') {
+            p++;
+        }
+        if (*p) p++;
+    }
+
+    for (unsigned int i = 0; i < sizeof(tagtypes) / sizeof(tagtypes[0]); i++)
+    {
+        switch (tagtypes[i]) {
+            case MEMINFO_GPU_CACHED:
+            case MEMINFO_ION_CACHED:
+                mem[tagtypes[i]] += cachedmem[i];
+                break;
+            default:
+                break;
+        }
+    }
+}
+
+static void android_os_Debug_getTrace(long * mem)
+{
+    char buffer[512];
+    size_t numFound = 0;
+
+    int fd = open("/sys/kernel/debug/tracing/buffer_total_size_kb", O_RDONLY);
+
+    if (fd < 0) {
+        ALOGW("Unable to open /sys/kernel/debug/tracing/buffer_total_size_kb: %s\n", strerror(errno));
+        return;
+    }
+
+    int len = read(fd, buffer, sizeof(buffer)-1);
+    close(fd);
+
+    if (len < 0) {
+        ALOGW("Empty /sys/kernel/debug/tracing/buffer_total_size_kb");
+        return;
+    }
+    buffer[len] = 0;
+
+    long cachedmem[] = { 0 };
+
+    char* p = buffer;
+    while (*p && numFound < 1) {
+
+        while (*p == ' ') p++;
+        char* num = p;
+        while (*p >= '0' && *p <= '9') p++;
+        if (*p != 0) {
+            *p = 0;
+            p++;
+        }
+        cachedmem[0] += atoll(num);
+        numFound++;
+        break;
+    }
+
+    mem[MEMINFO_TRACE] += cachedmem[0];
+}
+
+#include <dirent.h>
+
+static void android_os_Debug_getIONDISP(long * mem)
+{
+    char buffer[1024];
+    char line[1024];
+    const char * dir_path = "/d/ion/clients/";
+
+    DIR *d;
+    struct dirent *file;
+    FILE *fp;
+
+    if (!(d = opendir(dir_path))) {
+        ALOGE("open dir: %s.\n", dir_path);
+        return;
+    }
+
+    while((file = readdir(d)) != NULL) {
+        if (strncmp(file->d_name, ".", 1) ==0)
+            continue;
+
+        snprintf(buffer, sizeof(buffer), file->d_name);
+        strtok(buffer, "-");
+        if (atoi(buffer) != 0)
+            continue;
+
+        snprintf(buffer, sizeof(buffer), "/d/ion/clients/%s", file->d_name);
+        fp = fopen(buffer, "r");
+        if (fp == NULL) {
+            ALOGE("%s error to open /sys/kernel/debug/ion/clients/%s: %s\n", __func__, file->d_name, strerror(errno));
+            continue;
+        }
+
+        while (1) {
+            pid_t handle_pid;
+            size_t size;
+            int ret;
+            int handle_count;
+
+            if (fgets(line, sizeof(line), fp) == NULL) {
+                    break;
+            }
+
+            ret = sscanf(line, "%s %d %8zu %d\n", buffer, &handle_pid, &size, &handle_count);
+            if (ret == 4 && strcmp(buffer, "ion_mm_heap")==0) {
+                mem[MEMINFO_ION_DISP] += size;
+                ALOGI("%s match %d: %s : %d %d %zu %d\n", __func__, ret, line, handle_pid, size, handle_count, mem[MEMINFO_ION_DISP]);
+            }
+        }
+        fclose(fp);
+    }
+
+    mem[MEMINFO_ION_DISP] /= 1024;
+
+    closedir(d);
+}
+
+static void android_os_Debug_getCmaUsage(long * mem)
+{
+    int fd = open("/sys/kernel/debug/cmainfo", O_RDONLY);
+
+    if (fd >= 0) {
+        char buffer[1024];
+        int len = read(fd, buffer, sizeof(buffer)-1);
+        close(fd);
+        if (len > 0) {
+            char* p = buffer;
+            while (*p < '0' || *p > '9') p++;
+            char* num = p;
+            while (*p >= '0' && *p <= '9') p++;
+            if (*p != 0) *p = 0;
+            mem[MEMINFO_CMA_USAGE] = atoll(num);
+        }
+    }
+}
+
+static void android_os_Debug_getExtraMemInfo(JNIEnv *env, jobject clazz, jlongArray out)
+{
+//    char buffer[1024];
+//    int numFound = 0;
+
+    if (out == NULL) {
+        jniThrowNullPointerException(env, "out == null");
+        return;
+    }
+
+    long mem[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
+    // Recompute Vmalloc Used since the value in meminfo
+    // doesn't account for I/O remapping which doesn't use RAM.
+    mem[MEMINFO_VMALLOC_USED] = get_allocated_vmalloc_memory() / 1024;
+
+    android_os_Debug_getCached(mem);
+    android_os_Debug_getTrace(mem);
+    android_os_Debug_getIONDISP(mem);
+    android_os_Debug_getCmaUsage(mem);
+
+    int maxNum = env->GetArrayLength(out);
+    if (maxNum > MEMINFO_COUNT) {
+        maxNum = MEMINFO_COUNT;
+    }
+    jlong* outArray = env->GetLongArrayElements(out, 0);
+    if (outArray != NULL) {
+        for (int i=MEMINFO_ION_CACHED; i<maxNum; i++) {
+            outArray[i] = mem[i];
+        }
+
+        outArray[MEMINFO_VMALLOC_USED] = mem[MEMINFO_VMALLOC_USED];
+    }
+    env->ReleaseLongArrayElements(out, outArray, 0);
 }
 
 static void android_os_Debug_getMemInfo(JNIEnv *env, jobject clazz, jlongArray out)
@@ -735,7 +1118,7 @@ static void android_os_Debug_getMemInfo(JNIEnv *env, jobject clazz, jlongArray o
             12,
             0
     };
-    long mem[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+    long mem[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
     char* p = buffer;
     while (*p && numFound < (sizeof(tagsLen) / sizeof(tagsLen[0]))) {
@@ -765,7 +1148,7 @@ static void android_os_Debug_getMemInfo(JNIEnv *env, jobject clazz, jlongArray o
     mem[MEMINFO_ZRAM_TOTAL] = get_zram_mem_used() / 1024;
     // Recompute Vmalloc Used since the value in meminfo
     // doesn't account for I/O remapping which doesn't use RAM.
-    mem[MEMINFO_VMALLOC_USED] = get_allocated_vmalloc_memory() / 1024;
+    //mem[MEMINFO_VMALLOC_USED] = get_allocated_vmalloc_memory() / 1024;
 
     int maxNum = env->GetArrayLength(out);
     if (maxNum > MEMINFO_COUNT) {
@@ -1030,7 +1413,9 @@ static void android_os_Debug_dumpNativeBacktraceToFile(JNIEnv* env, jobject claz
         env->ReleaseStringCritical(fileName, str);
     }
 
-    int fd = open(fileName8.string(), O_CREAT | O_WRONLY | O_NOFOLLOW, 0666);  /* -rw-rw-rw- */
+    /// M: Add O_APPEND option because it has the risk of being overwritten during dump backtrace.
+    int fd = open(fileName8.string(), O_CREAT | O_WRONLY | O_NOFOLLOW | O_APPEND, 0666);  /* -rw-rw-rw- */
+
     if (fd < 0) {
         fprintf(stderr, "Can't open %s: %s\n", fileName8.string(), strerror(errno));
         return;
@@ -1071,6 +1456,18 @@ static const JNINativeMethod gMethods[] = {
             (void*) android_os_Debug_getPss },
     { "getPss",                 "(I[J[J)J",
             (void*) android_os_Debug_getPssPid },
+#ifndef MTK_BSP_PACKAGE
+    { "getPswap",               "(I)J",
+            (void*) android_os_Debug_getPswapPid },
+    { "getCompZram",            "()J",
+            (void*) android_os_Debug_getCompZram },
+    { "getOrigZram",            "()J",
+            (void*) android_os_Debug_getOrigZram },
+    { "getTotalZram",            "()J",
+            (void*) android_os_Debug_getTotalZram },
+    { "getZramCompressMethod",   "()S",
+            (void*) android_os_Debug_getZramCompressMethod },
+#endif
     { "getMemInfo",             "([J)V",
             (void*) android_os_Debug_getMemInfo },
     { "dumpNativeHeap",         "(Ljava/io/FileDescriptor;)V",
@@ -1089,6 +1486,8 @@ static const JNINativeMethod gMethods[] = {
             (void*)android_os_Debug_dumpNativeBacktraceToFile },
     { "getUnreachableMemory", "(IZ)Ljava/lang/String;",
             (void*)android_os_Debug_getUnreachableMemory },
+    { "getExtraMemInfo",             "([J)V",
+            (void*) android_os_Debug_getExtraMemInfo },
 };
 
 int register_android_os_Debug(JNIEnv *env)

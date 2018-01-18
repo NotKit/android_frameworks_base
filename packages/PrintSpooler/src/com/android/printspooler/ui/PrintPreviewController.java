@@ -41,8 +41,16 @@ import java.io.FileNotFoundException;
 import java.util.ArrayList;
 import java.util.List;
 
+///M: Add debug machanism @{
+import android.util.Log;
+///M: @}
+
 class PrintPreviewController implements MutexFileProvider.OnReleaseRequestCallback,
         PageAdapter.PreviewArea, EmbeddedContentContainer.OnSizeChangeListener {
+
+    ///M: Add debug machanism @{
+    private static final String TAG = "PrintPreviewController";
+    ///M: @}
 
     private final PrintActivity mActivity;
 
@@ -301,9 +309,17 @@ class PrintPreviewController implements MutexFileProvider.OnReleaseRequestCallba
                     final int pageCount = args.argi1;
                     args.recycle();
 
-                    mPageAdapter.update(writtenPages, selectedPages, pageCount,
-                            mediaSize, margins);
-
+                    ///M: FIXME
+                    //      There is a chance just at the update request when previous
+                    //      preview is under loading, since I`ve got good solution on this
+                    //     case, just catch the exception and abort update this time. @{
+                    try {
+                        mPageAdapter.update(writtenPages, selectedPages, pageCount,
+                                mediaSize, margins);
+                    } catch (IllegalStateException  ie) {
+                        Log.e(TAG, "Can not update due to preview is under loading");
+                    }
+                    ///M: @}
                 } break;
 
                 case MSG_START_PRELOAD: {

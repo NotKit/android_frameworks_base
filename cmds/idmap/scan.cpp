@@ -186,7 +186,13 @@ int idmap_scan(const char *target_package_name, const char *target_apk_path,
         const char *idmap_dir, const android::Vector<const char *> *overlay_dirs)
 {
     String8 filename = String8(idmap_dir);
-    filename.appendPath("overlays.list");
+    /// M: ALPS02521810, support mediatek-res runtime overlay @{
+    if (strcmp(target_package_name, "com.mediatek") == 0) {
+        filename.appendPath("mediatek.overlays.list");
+    } else {
+        filename.appendPath("overlays.list");
+    }
+    /// @}
 
     SortedVector<Overlay> overlayVector;
     const size_t N = overlay_dirs->size();

@@ -99,6 +99,7 @@
     <string name="notification_touch_for_details" msgid="6268189413228855582">"Tocca per vedere i dettagli"</string>
     <string name="close" msgid="3043722427445528732">"Chiudi"</string>
     <string name="copy_failure_alert_content" msgid="4563147454522476183">"I seguenti file non sono stati copiati: <xliff:g id="LIST">%1$s</xliff:g>"</string>
+    <string name="mode_selected_count">"<xliff:g id="COUNT">%1$d</xliff:g> selezionati"</string>
     <string name="move_failure_alert_content" msgid="2635075788682922861">"I seguenti file non sono stati spostati: <xliff:g id="LIST">%1$s</xliff:g>"</string>
     <string name="delete_failure_alert_content" msgid="892393767207938353">"I seguenti file non sono stati eliminati: <xliff:g id="LIST">%1$s</xliff:g>"</string>
     <string name="copy_converted_warning_content" msgid="5753861488218674361">"I file sono stati convertiti in un altro formato: <xliff:g id="LIST">%1$s</xliff:g>"</string>
@@ -140,4 +141,6 @@
     </plurals>
     <string name="too_many_selected" msgid="6781456208116966753">"Spiacenti, puoi selezionare massimo 1000 elementi alla volta"</string>
     <string name="too_many_in_select_all" msgid="8281987479885307456">"Sono stati selezionati solo 1000 elementi"</string>
+		<string name="drm_file_cannot_move">Non è stato possibile spostare alcuni file protetti</string>
+		<string name="drm_file_cannot_copy">Non è stato possibile copiare alcuni file protetti</string>
 </resources>

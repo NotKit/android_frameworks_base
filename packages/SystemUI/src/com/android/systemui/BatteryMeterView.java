@@ -107,3 +107,4 @@ public class BatteryMeterView extends ImageView implements
         mDrawable.setDarkIntensity(f);
     }
 }
+

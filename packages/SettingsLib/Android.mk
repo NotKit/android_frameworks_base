@@ -14,8 +14,19 @@ LOCAL_SHARED_ANDROID_LIBRARIES := \
 
 LOCAL_RESOURCE_DIR := $(LOCAL_PATH)/res
 
+# M: Add for MTK resource
+LOCAL_RESOURCE_DIR += $(LOCAL_PATH)/res_ext
+
+LOCAL_JAVA_LIBRARIES := ims-common \
+                        mediatek-framework \
+
+LOCAL_STATIC_JAVA_LIBRARIES += com.mediatek.settingslib.ext
+
 LOCAL_JAR_EXCLUDE_FILES := none
 
 LOCAL_SRC_FILES := $(call all-java-files-under, src)
 
 include $(BUILD_STATIC_JAVA_LIBRARY)
+
+# This finds and builds ext as well.
+include $(call all-makefiles-under,$(LOCAL_PATH))

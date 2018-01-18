@@ -521,7 +521,7 @@ public class BitmapDrawable extends Drawable {
             if (needMirroring) {
                 canvas.save();
                 // Mirror the bitmap
-                canvas.translate(mDstRect.right - mDstRect.left, 0);
+                canvas.translate(mDstRect.right - mDstRect.left + mOpticalInsets.left*2, 0);
                 canvas.scale(-1.0f, 1.0f);
             }
 

@@ -99,4 +99,7 @@
 
     <!-- The offsets the tasks animate from when recents is launched while docking -->
     <dimen name="recents_task_stack_animation_launched_while_docking_offset">192dp</dimen>
+
+    <!-- The font size of the time when collapsed in QS -->
+    <dimen name="qs_time_collapsed_size">9sp</dimen>
 </resources>

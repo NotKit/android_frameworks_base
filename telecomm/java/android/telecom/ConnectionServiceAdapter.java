@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -525,4 +530,19 @@ final class ConnectionServiceAdapter implements DeathRecipient {
             }
         }
     }
+
+    /// M: for volte @{
+    void handleCreateConferenceComplete(
+            String conferenceId,
+            ConnectionRequest request,
+            ParcelableConference conference) {
+        Log.v(this, "handleCreateConferenceComplete: %s, %s", conferenceId, conference);
+        for (IConnectionServiceAdapter adapter : mAdapters) {
+            try {
+                adapter.handleCreateConferenceComplete(conferenceId, request, conference);
+            } catch (RemoteException e) {
+            }
+        }
+    }
+    /// @}
 }

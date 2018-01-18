@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -138,6 +143,22 @@ abstract class PackageSettingBase extends SettingBase {
             int pVersionCode, int pkgFlags, int pkgPrivateFlags,
             String parentPackageName, List<String> childPackageNames) {
         super(pkgFlags, pkgPrivateFlags);
+        this.name = name;
+        this.realName = realName;
+        this.parentPackageName = parentPackageName;
+        this.childPackageNames = (childPackageNames != null)
+                ? new ArrayList<>(childPackageNames) : null;
+        init(codePath, resourcePath, legacyNativeLibraryPathString, primaryCpuAbiString,
+                secondaryCpuAbiString, cpuAbiOverrideString, pVersionCode);
+    }
+
+    /// M: [FlagExt] Additional constructor for MTK flags
+    PackageSettingBase(String name, String realName, File codePath, File resourcePath,
+            String legacyNativeLibraryPathString, String primaryCpuAbiString,
+            String secondaryCpuAbiString, String cpuAbiOverrideString,
+            int pVersionCode, int pkgFlags, int pkgPrivateFlags, int flagsEx,
+            String parentPackageName, List<String> childPackageNames) {
+        super(pkgFlags, pkgPrivateFlags, flagsEx);
         this.name = name;
         this.realName = realName;
         this.parentPackageName = parentPackageName;

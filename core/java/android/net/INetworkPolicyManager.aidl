@@ -75,4 +75,25 @@ interface INetworkPolicyManager {
     boolean isNetworkMetered(in NetworkState state);
 
     void factoryReset(String subscriber);
+
+    // M:DataUsage for ViLTE
+    /**
+     * Get if data usage over warning.
+     *
+     * @param subscriberId the unique subscriber ID, for example, the IMSI for a GSM phone.
+     * @return if data usage over warning.
+     *
+     * @hide
+     */
+    boolean getNetworkTemplateOverWarning(String subscriberId);
+
+    /**
+     * Get if data usage over limit.
+     *
+     * @param subscriberId the unique subscriber ID, for example, the IMSI for a GSM phone.
+     * @return if data usage over limit.
+     *
+     * @hide
+     */
+    boolean getNetworkTemplateOverLimit(String subscriberId);
 }

@@ -19,6 +19,7 @@ package com.android.keyguard;
 import android.content.Context;
 import android.graphics.Rect;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
@@ -28,6 +29,9 @@ import android.view.View;
  */
 public abstract class KeyguardPinBasedInputView extends KeyguardAbsKeyInputView
         implements View.OnKeyListener, View.OnTouchListener {
+
+    private static final String TAG = "KeyguardPinBasedInputView" ;
+    private static final boolean DEBUG = KeyguardConstants.DEBUG;
 
     protected PasswordTextView mPasswordEntry;
     private View mOkButton;
@@ -248,6 +252,10 @@ public abstract class KeyguardPinBasedInputView extends KeyguardAbsKeyInputView
     @Override
     public boolean onKey(View v, int keyCode, KeyEvent event) {
         if (event.getAction() == KeyEvent.ACTION_DOWN) {
+            // M: add for debug
+            if (DEBUG) {
+                Log.d(TAG, "keyCode: " + keyCode + " event: " + event);
+            }
             return onKeyDown(keyCode, event);
         }
         return false;

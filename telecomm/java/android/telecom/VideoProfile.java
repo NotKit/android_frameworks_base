@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -115,6 +120,19 @@ public class VideoProfile implements Parcelable {
      * Video is paused.
      */
     public static final int STATE_PAUSED = 0x4;
+
+
+    /**
+     * Canceling upgrade to Video for user click
+     * @hide
+     */
+    public static final int STATE_CANCEL_UPGRADE = 0x8;
+
+     /**
+     * Canceling upgrade to Video for tiem out
+     * @hide
+     */
+    public static final int STATE_CANCEL_UPGRADE_FOR_TIMEOUT = 0x10;
 
     private final int mVideoState;
 
@@ -236,7 +254,11 @@ public class VideoProfile implements Parcelable {
         sb.append("Audio");
 
         if (isAudioOnly(videoState)) {
+            if (isCanceled(videoState)) {
+                sb.append(" Cancel");
+            } else {
             sb.append(" Only");
+            }
         } else {
             if (isTransmissionEnabled(videoState)) {
                 sb.append(" Tx");
@@ -317,6 +339,17 @@ public class VideoProfile implements Parcelable {
         return hasState(videoState, VideoProfile.STATE_PAUSED);
     }
 
+    /**
+     * Indicates whether the video state is canceled.
+     *
+     * @param videoState The video state.
+     * @return {@code True} if the video is canceled, {@code false} otherwise.
+     * @param videoState The video state.
+     * @hide
+     */
+    public static boolean isCanceled(@VideoState int videoState) {
+        return hasState(videoState, VideoProfile.STATE_CANCEL_UPGRADE);
+    }
     /**
      * Indicates if a specified state is set in a videoState bit-mask.
      *

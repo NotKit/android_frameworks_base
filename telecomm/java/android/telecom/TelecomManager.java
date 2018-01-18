@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
@@ -1490,4 +1495,64 @@ public class TelecomManager {
         }
         return isConnected;
     }
+
+    //--------------------------------------mtk---------------------------------------------------//
+    /// M: CC: TelecomManager API to get IMS specific feature capable PhoneAccounts @{
+    /**
+     * Returns a list of all {@link PhoneAccountHandle}s which are Volte call capable.
+     *
+     * @return All {@link PhoneAccountHandle}s.
+     * @hide
+     */
+    public List<PhoneAccountHandle> getVolteCallCapablePhoneAccounts() {
+        try {
+            if (isServiceConnected()) {
+                return getTelecomService().getVolteCallCapablePhoneAccounts();
+            }
+        } catch (RemoteException e) {
+            Log.e(TAG, "Error calling ITelecomService#getVolteCallCapablePhoneAccounts", e);
+        }
+        return Collections.EMPTY_LIST;
+    }
+
+    /**
+     * Returns a list of all {@link PhoneAccountHandle}s which are Video call capable.
+     *
+     * @return All {@link PhoneAccountHandle}s.
+     * @hide
+     */
+    public List<PhoneAccountHandle> getVideoCallCapablePhoneAccounts() {
+        try {
+            if (isServiceConnected()) {
+                return getTelecomService().getVideoCallCapablePhoneAccounts();
+            }
+        } catch (RemoteException e) {
+            Log.e(TAG, "Error calling ITelecomService#getVideoCallCapablePhoneAccounts", e);
+        }
+        return Collections.EMPTY_LIST;
+    }
+    /// @}
+
+    /**
+     * M: Returns if current has ongoing video call (can be in dialing, ringing, active or holding
+     * states).
+     *
+     * @hide
+     *
+     * <p>
+     * Requires permission: {@link android.Manifest.permission#READ_PHONE_STATE}
+     * </p>
+     * @return
+     */
+    public boolean isInVideoCall() {
+        try{
+            if (isServiceConnected()) {
+                return getTelecomService().isInVideoCall(mContext.getOpPackageName());
+            }
+        } catch(RemoteException e){
+            Log.e(TAG, "Err calling ITelecomService#isInViLTE", e);
+        }
+        return false;
+    }
+
 }

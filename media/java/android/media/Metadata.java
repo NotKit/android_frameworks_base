@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2009 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -200,6 +205,12 @@ import java.util.TimeZone;
 
     private static final int LAST_SYSTEM = 31;
     private static final int FIRST_CUSTOM = 8192;
+
+    /**
+     * M: The timeout(ms) of streaming server.
+     * {@hide}
+     */
+    public static final int SERVER_TIMEOUT = 8801;     //Integer
 
     // Shorthands to set the MediaPlayer's metadata filter.
     /**

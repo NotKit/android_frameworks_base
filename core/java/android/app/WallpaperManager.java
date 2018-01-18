@@ -70,7 +70,8 @@ import java.lang.annotation.RetentionPolicy;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-
+import com.mediatek.common.MPlugin;
+import com.mediatek.common.wallpaper.IWallpaperPlugin;
 /**
  * Provides access to the system wallpaper. With WallpaperManager, you can
  * get the current wallpaper, get the desired dimensions for the wallpaper, set
@@ -322,7 +323,7 @@ public class WallpaperManager {
             if (returnDefault) {
                 Bitmap defaultWallpaper = mDefaultWallpaper;
                 if (defaultWallpaper == null) {
-                    defaultWallpaper = getDefaultWallpaper(context, which);
+                    defaultWallpaper = getDefaultWallpaperLocked(context, which);
                     synchronized (this) {
                         mDefaultWallpaper = defaultWallpaper;
                     }
@@ -366,9 +367,31 @@ public class WallpaperManager {
             }
             return null;
         }
+        /// M: if operator WallpaperPlugin doesn't exist, use the default one.
+        private InputStream openDefaultWallpaperRes(Context context, @SetWallpaperFlags int which) {
+            IWallpaperPlugin mWallpaperPlugin = null;
+            InputStream is = null;
+            /// M: Init mWallpaperPlugin for Operators @{
+            try {
+                mWallpaperPlugin = (IWallpaperPlugin) MPlugin.createInstance(
+                        IWallpaperPlugin.class.getName(), context);
+            } catch (Exception e) {
+                Log.e(TAG, "Catch IWallpaperPlugin exception: ", e);
+            }
+            /// @}
+            if (mWallpaperPlugin == null || mWallpaperPlugin.getPluginResources(context) == null) {
+                is = context.getResources().openRawResource(
+                        com.android.internal.R.drawable.default_wallpaper);
+            } else {
+                Log.d(TAG, "get the wallpaper image from the plug-in");
+                is = mWallpaperPlugin.getPluginResources(context).openRawResource(
+                        mWallpaperPlugin.getPluginDefaultImage());
+            }
+            return is;
+        }
 
-        private Bitmap getDefaultWallpaper(Context context, @SetWallpaperFlags int which) {
-            InputStream is = openDefaultWallpaper(context, which);
+        private Bitmap getDefaultWallpaperLocked(Context context, @SetWallpaperFlags int which) {
+            InputStream is = openDefaultWallpaperRes(context, which);
             if (is != null) {
                 try {
                     BitmapFactory.Options options = new BitmapFactory.Options();
@@ -507,7 +530,7 @@ public class WallpaperManager {
         horizontalAlignment = Math.max(0, Math.min(1, horizontalAlignment));
         verticalAlignment = Math.max(0, Math.min(1, verticalAlignment));
 
-        InputStream wpStream = openDefaultWallpaper(mContext, which);
+        InputStream wpStream = sGlobals.openDefaultWallpaperRes(mContext, which);
         if (wpStream == null) {
             if (DEBUG) {
                 Log.w(TAG, "default wallpaper stream " + which + " is null");
@@ -531,13 +554,13 @@ public class WallpaperManager {
                         inHeight = options.outHeight;
                     } else {
                         Log.e(TAG, "default wallpaper dimensions are 0");
-                        return null;
+                          return null;
                     }
                 }
 
                 // Reopen the stream to do the full decode.  We know at this point
                 // that openDefaultWallpaper() will return non-null.
-                is = new BufferedInputStream(openDefaultWallpaper(mContext, which));
+                is = new BufferedInputStream(sGlobals.openDefaultWallpaperRes(mContext, which));
 
                 RectF cropRectF;
 
@@ -587,7 +610,7 @@ public class WallpaperManager {
                 if (crop == null) {
                     // BitmapRegionDecoder has failed, try to crop in-memory. We know at
                     // this point that openDefaultWallpaper() will return non-null.
-                    is = new BufferedInputStream(openDefaultWallpaper(mContext, which));
+                    is = new BufferedInputStream(sGlobals.openDefaultWallpaperRes(mContext, which));
                     Bitmap fullSize = null;
                     BitmapFactory.Options options = new BitmapFactory.Options();
                     if (scaleDownSampleSize > 1) {
@@ -1583,7 +1606,7 @@ public class WallpaperManager {
      * wallpaper.
      */
     public void clear() throws IOException {
-        setStream(openDefaultWallpaper(mContext, FLAG_SYSTEM), null, false);
+        setStream(sGlobals.openDefaultWallpaperRes(mContext, FLAG_SYSTEM), null, false);
     }
 
     /**

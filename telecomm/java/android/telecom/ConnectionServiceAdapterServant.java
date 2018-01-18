@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -66,6 +71,11 @@ final class ConnectionServiceAdapterServant {
     private static final int MSG_ON_CONNECTION_EVENT = 26;
     private static final int MSG_SET_CONNECTION_PROPERTIES = 27;
     private static final int MSG_SET_PULLING = 28;
+
+    // M: For Volte @{
+    private static final int MTK_MSG_BASE = 1000;
+    private static final int MSG_HANDLE_CREATE_CONFERENCE_COMPLETE = MTK_MSG_BASE;
+    /// @}
 
     private final IConnectionServiceAdapter mDelegate;
 
@@ -270,6 +280,21 @@ final class ConnectionServiceAdapterServant {
                     }
                     break;
                 }
+
+                /// M: For volte @{
+                case MSG_HANDLE_CREATE_CONFERENCE_COMPLETE: {
+                    SomeArgs args = (SomeArgs) msg.obj;
+                    try {
+                        mDelegate.handleCreateConferenceComplete(
+                                (String) args.arg1,
+                                (ConnectionRequest) args.arg2,
+                                (ParcelableConference) args.arg3);
+                    } finally {
+                        args.recycle();
+                    }
+                    break;
+                }
+                /// @}
             }
         }
     };
@@ -478,6 +503,20 @@ final class ConnectionServiceAdapterServant {
             args.arg3 = extras;
             mHandler.obtainMessage(MSG_ON_CONNECTION_EVENT, args).sendToTarget();
         }
+
+        /// M: For Volte @{
+        @Override
+        public void handleCreateConferenceComplete(
+                String conferenceId,
+                ConnectionRequest request,
+                ParcelableConference conference) {
+            SomeArgs args = SomeArgs.obtain();
+            args.arg1 = conferenceId;
+            args.arg2 = request;
+            args.arg3 = conference;
+            mHandler.obtainMessage(MSG_HANDLE_CREATE_CONFERENCE_COMPLETE, args).sendToTarget();
+        }
+        /// @}
     };
 
     public ConnectionServiceAdapterServant(IConnectionServiceAdapter delegate) {

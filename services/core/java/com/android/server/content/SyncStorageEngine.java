@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2009 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,6 +23,7 @@ package com.android.server.content;
 
 import android.accounts.Account;
 import android.accounts.AccountAndUser;
+import android.accounts.AccountManager;
 import android.app.backup.BackupManager;
 import android.content.ComponentName;
 import android.content.ContentResolver;
@@ -27,6 +33,7 @@ import android.content.PeriodicSync;
 import android.content.SyncInfo;
 import android.content.SyncRequest;
 import android.content.SyncStatusInfo;
+import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteException;
@@ -48,6 +55,9 @@ import com.android.internal.util.FastXmlSerializer;
 import org.xmlpull.v1.XmlPullParser;
 import org.xmlpull.v1.XmlPullParserException;
 import org.xmlpull.v1.XmlSerializer;
+
+import com.mediatek.common.accountsync.ISyncManagerExt;
+import com.mediatek.common.MPlugin;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -146,6 +156,60 @@ public class SyncStorageEngine extends Handler {
         sAuthorityRenames = new HashMap<String, String>();
         sAuthorityRenames.put("contacts", "com.android.contacts");
         sAuthorityRenames.put("calendar", "com.android.calendar");
+    }
+
+
+    private ISyncManagerExt mSyncManagerExt = null;
+
+    public static class PendingOperation {
+        final EndPoint target;
+        final int reason;
+        final int syncSource;
+        final Bundle extras;        // note: read-only.
+        final boolean expedited;
+
+        final int authorityId;
+        // No longer used.
+        // Keep around for sake up updating from pending.bin to pending.xml
+        byte[] flatExtras;
+
+        PendingOperation(AuthorityInfo authority, int reason, int source,
+                 Bundle extras, boolean expedited) {
+            this.target = authority.target;
+            this.syncSource = source;
+            this.reason = reason;
+            this.extras = extras != null ? new Bundle(extras) : extras;
+            this.expedited = expedited;
+            this.authorityId = authority.ident;
+        }
+
+        PendingOperation(PendingOperation other) {
+            this.reason = other.reason;
+            this.syncSource = other.syncSource;
+            this.target = other.target;
+            this.extras = other.extras;
+            this.authorityId = other.authorityId;
+            this.expedited = other.expedited;
+        }
+
+        /**
+         * Considered equal if they target the same sync adapter (A
+         * {@link android.content.SyncService}
+         * is considered an adapter), for the same userId.
+         * @param other PendingOperation to compare.
+         * @return true if the two pending ops are the same.
+         */
+        public boolean equals(PendingOperation other) {
+            return target.matchesSpec(other.target);
+        }
+
+        public String toString() {
+            return " user=" + target.userId
+                        + " auth=" + target
+                        + " account=" + target.account
+                        + " src=" + syncSource
+                        + " extras=" + extras;
+        }
     }
 
     static class AccountInfo {
@@ -350,6 +414,50 @@ public class SyncStorageEngine extends Handler {
         void onAuthorityRemoved(EndPoint removedAuthority);
     }
 
+    /**
+     * Validator that maintains a lazy cache of accounts and providers to tell if an authority or
+     * account is valid.
+     */
+    private static class AccountAuthorityValidator {
+        final private AccountManager mAccountManager;
+        final private PackageManager mPackageManager;
+        final private SparseArray<Account[]> mAccountsCache;
+        final private SparseArray<ArrayMap<String, Boolean>> mProvidersPerUserCache;
+
+        AccountAuthorityValidator(Context context) {
+            mAccountManager = context.getSystemService(AccountManager.class);
+            mPackageManager = context.getPackageManager();
+            mAccountsCache = new SparseArray<>();
+            mProvidersPerUserCache = new SparseArray<>();
+        }
+
+        // An account is valid if an installed authenticator has previously created that account
+        // on the device
+        boolean isAccountValid(Account account, int userId) {
+            Account[] accountsForUser = mAccountsCache.get(userId);
+            if (accountsForUser == null) {
+                accountsForUser = mAccountManager.getAccountsAsUser(userId);
+                mAccountsCache.put(userId, accountsForUser);
+            }
+            return ArrayUtils.contains(accountsForUser, account);
+        }
+
+        // An authority is only valid if it has a content provider installed on the system
+        boolean isAuthorityValid(String authority, int userId) {
+            ArrayMap<String, Boolean> authorityMap = mProvidersPerUserCache.get(userId);
+            if (authorityMap == null) {
+                authorityMap = new ArrayMap<>();
+                mProvidersPerUserCache.put(userId, authorityMap);
+            }
+            if (!authorityMap.containsKey(authority)) {
+                authorityMap.put(authority, mPackageManager.resolveContentProviderAsUser(authority,
+                        PackageManager.MATCH_DIRECT_BOOT_AWARE
+                                | PackageManager.MATCH_DIRECT_BOOT_UNAWARE, userId) != null);
+            }
+            return authorityMap.get(authority);
+        }
+    }
+
     // Primary list of all syncable authorities.  Also our global lock.
     private final SparseArray<AuthorityInfo> mAuthorities =
             new SparseArray<AuthorityInfo>();
@@ -442,6 +550,9 @@ public class SyncStorageEngine extends Handler {
         writeAccountInfoLocked();
         writeStatusLocked();
         writeStatisticsLocked();
+
+        /// M: for CMCC, set the auto sync false
+        mSyncManagerExt = MPlugin.createInstance(ISyncManagerExt.class.getName(), mContext);
     }
 
     public static SyncStorageEngine newTestInstance(Context context) {
@@ -861,7 +972,17 @@ public class SyncStorageEngine extends Handler {
     public boolean getMasterSyncAutomatically(int userId) {
         synchronized (mAuthorities) {
             Boolean auto = mMasterSyncAutomatically.get(userId);
-            return auto == null ? mDefaultMasterSyncAutomatically : auto;
+
+            ///M: add for cmccc when there is no account default auto sync is off
+            if (mSyncManagerExt == null) {
+                return auto == null ? true : auto;
+            }
+
+            boolean isAutomatically = mSyncManagerExt.getSyncAutomatically();
+            Log.d(TAG, "mSyncManagerExt.getSyncAutomatically() = " + isAutomatically);
+            return auto == null ? isAutomatically : auto;
+
+            //return auto == null ? mDefaultMasterSyncAutomatically : auto;
         }
     }
 
@@ -1502,12 +1623,13 @@ public class SyncStorageEngine extends Handler {
                 eventType = parser.next();
                 AuthorityInfo authority = null;
                 PeriodicSync periodicSync = null;
+                AccountAuthorityValidator validator = new AccountAuthorityValidator(mContext);
                 do {
                     if (eventType == XmlPullParser.START_TAG) {
                         tagName = parser.getName();
                         if (parser.getDepth() == 2) {
                             if ("authority".equals(tagName)) {
-                                authority = parseAuthority(parser, version);
+                                authority = parseAuthority(parser, version, validator);
                                 periodicSync = null;
                                 if (authority != null) {
                                     if (authority.ident > highestAuthorityId) {
@@ -1636,7 +1758,8 @@ public class SyncStorageEngine extends Handler {
         mMasterSyncAutomatically.put(userId, listen);
     }
 
-    private AuthorityInfo parseAuthority(XmlPullParser parser, int version) {
+    private AuthorityInfo parseAuthority(XmlPullParser parser, int version,
+            AccountAuthorityValidator validator) {
         AuthorityInfo authority = null;
         int id = -1;
         try {
@@ -1676,21 +1799,26 @@ public class SyncStorageEngine extends Handler {
                 if (Log.isLoggable(TAG_FILE, Log.VERBOSE)) {
                     Slog.v(TAG_FILE, "Creating authority entry");
                 }
-                EndPoint info = null;
                 if (accountName != null && authorityName != null) {
-                    info = new EndPoint(
+                    EndPoint info = new EndPoint(
                             new Account(accountName, accountType),
                             authorityName, userId);
-                }
-                if (info != null) {
-                    authority = getOrCreateAuthorityLocked(info, id, false);
-                    // If the version is 0 then we are upgrading from a file format that did not
-                    // know about periodic syncs. In that case don't clear the list since we
-                    // want the default, which is a daily periodic sync.
-                    // Otherwise clear out this default list since we will populate it later with
-                    // the periodic sync descriptions that are read from the configuration file.
-                    if (version > 0) {
-                        authority.periodicSyncs.clear();
+                    if (validator.isAccountValid(info.account, userId)
+                            && validator.isAuthorityValid(authorityName, userId)) {
+                        authority = getOrCreateAuthorityLocked(info, id, false);
+                        // If the version is 0 then we are upgrading from a file format that did not
+                        // know about periodic syncs. In that case don't clear the list since we
+                        // want the default, which is a daily periodic sync.
+                        // Otherwise clear out this default list since we will populate it later
+                        // with
+                        // the periodic sync descriptions that are read from the configuration file.
+                        if (version > 0) {
+                            authority.periodicSyncs.clear();
+                        }
+                    } else {
+                        EventLog.writeEvent(0x534e4554, "35028827", -1,
+                                "account:" + info.account + " provider:" + authorityName + " user:"
+                                        + userId);
                     }
                 }
             }

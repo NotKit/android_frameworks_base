@@ -93,6 +93,7 @@ import android.provider.Settings;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.NotificationListenerService.RankingMap;
 import android.service.notification.StatusBarNotification;
+import android.telephony.SubscriptionManager;
 import android.telecom.TelecomManager;
 import android.util.ArraySet;
 import android.util.DisplayMetrics;
@@ -115,6 +116,7 @@ import android.view.WindowManagerGlobal;
 import android.view.animation.AccelerateInterpolator;
 import android.view.animation.Interpolator;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import com.android.internal.logging.MetricsLogger;
@@ -196,6 +198,18 @@ import com.android.systemui.statusbar.stack.NotificationStackScrollLayout
 import com.android.systemui.statusbar.stack.StackStateAnimator;
 import com.android.systemui.statusbar.stack.StackViewState;
 import com.android.systemui.volume.VolumeComponent;
+/// M: BMW
+import com.mediatek.multiwindow.MultiWindowManager;
+
+
+import com.mediatek.systemui.ext.IStatusBarPlmnPlugin;
+import com.mediatek.systemui.PluginManager;
+/// M: Modify statusbar style for GMO
+import com.mediatek.systemui.statusbar.util.FeatureOptions;
+/// M: Add extra tiles
+import com.mediatek.systemui.statusbar.policy.HotKnotControllerImpl;
+import com.mediatek.systemui.statusbar.util.SIMHelper;
+// /@}
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -207,11 +221,29 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static android.app.StatusBarManager.NAVIGATION_HINT_BACK_ALT;
+import static android.app.StatusBarManager.NAVIGATION_HINT_IME_SHOWN;
+import static android.app.StatusBarManager.WINDOW_STATE_HIDDEN;
+import static android.app.StatusBarManager.WINDOW_STATE_SHOWING;
+import static android.app.StatusBarManager.windowStateToString;
+import static com.android.systemui.statusbar.phone.BarTransitions.MODE_LIGHTS_OUT;
+import static com.android.systemui.statusbar.phone.BarTransitions.MODE_LIGHTS_OUT_TRANSPARENT;
+import static com.android.systemui.statusbar.phone.BarTransitions.MODE_OPAQUE;
+import static com.android.systemui.statusbar.phone.BarTransitions.MODE_SEMI_TRANSPARENT;
+import static com.android.systemui.statusbar.phone.BarTransitions.MODE_TRANSLUCENT;
+import static com.android.systemui.statusbar.phone.BarTransitions.MODE_TRANSPARENT;
+import static com.android.systemui.statusbar.phone.BarTransitions.MODE_WARNING;
+
+/// M: BMW
+import com.android.systemui.recents.misc.SystemServicesProxy;
+import com.android.systemui.recents.Recents;
+
 public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
         DragDownHelper.DragDownCallback, ActivityStarter, OnUnlockMethodChangedListener,
         HeadsUpManager.OnHeadsUpChangedListener {
     static final String TAG = "PhoneStatusBar";
-    public static final boolean DEBUG = BaseStatusBar.DEBUG;
+    /// M: Enable the PhoneStatusBar log.
+    public static final boolean DEBUG = true;/**BaseStatusBar.DEBUG;*/
     public static final boolean SPEW = false;
     public static final boolean DUMPTRUCK = true; // extra dumpsys info
     public static final boolean DEBUG_GESTURES = false;
@@ -327,6 +359,10 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
     protected KeyguardMonitor mKeyguardMonitor;
     BrightnessMirrorController mBrightnessMirrorController;
     AccessibilityController mAccessibilityController;
+    /// M: Add extra tiles @{
+    //add HotKnot in quicksetting
+    HotKnotControllerImpl mHotKnotController;
+    // /@}
     FingerprintUnlockController mFingerprintUnlockController;
     LightStatusBarController mLightStatusBarController;
     protected LockscreenWallpaper mLockscreenWallpaper;
@@ -763,7 +799,8 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
         mStatusBarView.setBar(this);
         mStatusBarView.setPanel(mNotificationPanel);
 
-        if (!ActivityManager.isHighEndGfx()) {
+        //  M: setBackground in 512 low ram device
+        if (!ActivityManager.isHighEndGfx() && !FeatureOptions.LOW_RAM_SUPPORT) {
             mStatusBarWindow.setBackground(null);
             mNotificationPanel.setBackground(new FastColorDrawable(context.getColor(
                     R.color.notification_panel_solid_background)));
@@ -885,6 +922,18 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
         mHotspotController = new HotspotControllerImpl(mContext);
         mBluetoothController = new BluetoothControllerImpl(mContext, mHandlerThread.getLooper());
         mSecurityController = new SecurityControllerImpl(mContext);
+        /// M: add extra tiles @{
+        // add HotKnot in quicksetting
+        if (SIMHelper.isMtkHotKnotSupport()) {
+            Log.d(TAG, "makeStatusBarView : HotKnotControllerImpl");
+            mHotKnotController = new HotKnotControllerImpl(mContext);
+        } else {
+            mHotKnotController = null;
+        }
+
+        SIMHelper.setContext(mContext);
+        // /@}
+
         if (mContext.getResources().getBoolean(R.bool.config_showRotationLock)) {
             mRotationLockController = new RotationLockControllerImpl(mContext);
         }
@@ -893,11 +942,20 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
         if (mVolumeComponent != null) {
             mZenModeController = mVolumeComponent.getZenController();
         }
+        Log.d(TAG, "makeStatusBarView : CastControllerImpl +");
         mCastController = new CastControllerImpl(mContext);
 
         initSignalCluster(mStatusBarView);
         initSignalCluster(mKeyguardStatusBar);
         initEmergencyCryptkeeperText();
+
+        /// M: Support "Operator plugin - Customize Carrier Label for PLMN" @{
+        mStatusBarPlmnPlugin = PluginManager.getStatusBarPlmnPlugin(context);
+        if (supportCustomizeCarrierLabel()) {
+            mCustomizeCarrierLabel = mStatusBarPlmnPlugin.customizeCarrierLabel(
+                    mNotificationPanel, null);
+        }
+        /// M: Support "Operator plugin - Customize Carrier Label for PLMN" @}
 
         mFlashlightController = new FlashlightController(mContext);
         mKeyguardBottomArea.setFlashlightController(mFlashlightController);
@@ -925,7 +983,9 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
                     mCastController, mFlashlightController,
                     mUserSwitcherController, mUserInfoController, mKeyguardMonitor,
                     mSecurityController, mBatteryController, mIconController,
-                    mNextAlarmController);
+                    mNextAlarmController,
+                    /// M: add HotKnot in quicksetting
+                    mHotKnotController);
             mBrightnessMirrorController = new BrightnessMirrorController(mStatusBarWindow);
             container.addInflateListener(new InflateListener() {
                 @Override
@@ -1012,6 +1072,8 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
 
         // Private API call to make the shadows look better for Recents
         ThreadedRenderer.overrideProperty("ambientRatio", String.valueOf(1.5f));
+        mStatusBarPlmnPlugin.addPlmn((LinearLayout)mStatusBarView.
+                                     findViewById(R.id.status_bar_contents), mContext);
 
         return mStatusBarView;
     }
@@ -1322,6 +1384,16 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
         }
     };
 
+    /// M: BMW restore button@{
+    private View.OnClickListener mRestoreClickListener = new View.OnClickListener() {
+        public void onClick(View v) {
+            Log.d(TAG, "mRestoreClickListener");
+            SystemServicesProxy ssp = Recents.getSystemServices();
+            ssp.restoreWindow();
+        }
+    };
+   /// @}
+
     private View.OnLongClickListener mLongPressBackListener = new View.OnLongClickListener() {
         @Override
         public boolean onLongClick(View v) {
@@ -1439,6 +1511,14 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
         homeButton.setOnTouchListener(mHomeActionListener);
         homeButton.setOnLongClickListener(mLongPressHomeListener);
 
+        /// M: BMW  restore button @{
+        if (MultiWindowManager.isSupported()) {
+            ButtonDispatcher restoreButton = mNavigationBarView.getRestoreButton();
+            restoreButton.setOnClickListener(mRestoreClickListener);
+
+        }
+        /// @}
+
         mAssistManager.onConfigurationChanged();
     }
 
@@ -1526,7 +1606,13 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
     public void addNotification(StatusBarNotification notification, RankingMap ranking,
             Entry oldEntry) {
         if (DEBUG) Log.d(TAG, "addNotification key=" + notification.getKey());
-
+        /// M: [ALPS02738355] fix foreground service flag_hide_notification issue. @{
+        if (notification != null && notification.getNotification() != null &&
+               (notification.getNotification().flags & Notification.FLAG_HIDE_NOTIFICATION) != 0) {
+            Log.d(TAG, "Will not add the notification.flags contains FLAG_HIDE_NOTIFICATION");
+            return;
+        }
+        /// @}
         mNotificationData.updateRanking(ranking);
         Entry shadeEntry = createNotificationViews(notification);
         if (shadeEntry == null) {
@@ -1661,7 +1747,8 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
         // Let's remove the children if this was a summary
         handleGroupSummaryRemoved(key, ranking);
         StatusBarNotification old = removeNotificationViews(key, ranking);
-        if (SPEW) Log.d(TAG, "removeNotification key=" + key + " old=" + old);
+        /// M: Enable this log for unusual case debug.
+        /*if (SPEW)*/ Log.d(TAG, "removeNotification key=" + key + " old=" + old);
 
         if (old != null) {
             if (CLOSE_PANEL_WHEN_EMPTIED && !hasActiveNotifications()
@@ -2032,6 +2119,10 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
         }
 
         findAndUpdateMediaNotifications();
+
+        /// M: Support "Operator plugin - Customize Carrier Label for PLMN". @{
+        updateCarrierLabelVisibility(false);
+        /// M: Support "Operator plugin - Customize Carrier Label for PLMN". @}
     }
 
     public void findAndUpdateMediaNotifications() {
@@ -2422,8 +2513,14 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
         if ((diff1 & StatusBarManager.DISABLE_SYSTEM_INFO) != 0) {
             if ((state1 & StatusBarManager.DISABLE_SYSTEM_INFO) != 0) {
                 mIconController.hideSystemIconArea(animate);
+                if (mStatusBarPlmnPlugin != null) {
+                    mStatusBarPlmnPlugin.setPlmnVisibility(View.GONE);
+                }
             } else {
                 mIconController.showSystemIconArea(animate);
+                if (mStatusBarPlmnPlugin != null) {
+                    mStatusBarPlmnPlugin.setPlmnVisibility(View.VISIBLE);
+                }
             }
         }
 
@@ -2623,7 +2720,9 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
             } else {
                 mHeadsUpManager.updateNotification(entry, alertAgain);
             }
-        } else if (shouldPeek && alertAgain) {
+        /// M: Fix ALPS02328815, for update heads up, also needs mUseHeadsUp is true.
+        /// TODO:: Maybe no need this CR
+        } else if (mUseHeadsUp && shouldPeek && alertAgain) {
             // This notification was updated to be a heads-up, show it!
             mHeadsUpManager.showNotification(entry);
         }
@@ -2765,6 +2864,10 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
         }
 
         mExpandedVisible = true;
+
+        /// M: Support "Operator plugin - Customize Carrier Label for PLMN". @{
+        updateCarrierLabelVisibility(true);
+        /// M: Support "Operator plugin - Customize Carrier Label for PLMN". @}
 
         // Expand the window to encompass the full screen in anticipation of the drag.
         // This is only possible to do atomically because the status bar is at the top of the screen!
@@ -3125,11 +3228,20 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
     private void checkBarMode(int mode, int windowState, BarTransitions transitions,
             boolean noAnimation) {
         final boolean powerSave = mBatteryController.isPowerSave();
-        final boolean anim = !noAnimation && mDeviceInteractive
+        /*final */boolean anim = !noAnimation && mDeviceInteractive
                 && windowState != WINDOW_STATE_HIDDEN && !powerSave;
         if (powerSave && getBarState() == StatusBarState.SHADE) {
             mode = MODE_WARNING;
         }
+        /// M: Fix bug alps02830922 @{
+        if (FeatureOptions.LOW_RAM_SUPPORT && !ActivityManager.isHighEndGfx()
+                && getBarState() != StatusBarState.KEYGUARD
+                && (mode == MODE_SEMI_TRANSPARENT || mode == MODE_TRANSLUCENT
+                || mode == MODE_TRANSPARENT)) {
+                mode = MODE_OPAQUE;
+                anim = false;
+        }
+        /// @}
         transitions.transitionTo(mode, anim);
     }
 
@@ -4349,6 +4461,9 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
         updateStackScrollerState(goingToFullShade, fromShadeLocked);
         updateNotifications();
         checkBarModes();
+        /// M: Support "Operator plugin - Customize Carrier Label for PLMN". @{
+        updateCarrierLabelVisibility(false);
+        /// M: Support "Operator plugin - Customize Carrier Label for PLMN". @}
         updateMediaMetaData(false, mState != StatusBarState.KEYGUARD);
         mKeyguardMonitor.notifyKeyguardState(mStatusBarKeyguardViewManager.isShowing(),
                 mStatusBarKeyguardViewManager.isSecure(),
@@ -4870,7 +4985,7 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
     public void wakeUpIfDozing(long time, MotionEvent event) {
         if (mDozing && mDozeScrimController.isPulsing()) {
             PowerManager pm = (PowerManager) mContext.getSystemService(Context.POWER_SERVICE);
-            pm.wakeUp(time, "com.android.systemui:NODOZE");
+            // pm.wakeUp(time, "com.android.systemui:NODOZE");
             mWakeUpComingFromTouch = true;
             mWakeUpTouchLocation = new PointF(event.getX(), event.getY());
             mNotificationPanel.setTouchDisabled(false);
@@ -5136,4 +5251,40 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
             }
         }
     }
+ 
+    /// M: Support "Operator plugin - Customize Carrier Label for PLMN". @{
+    private IStatusBarPlmnPlugin mStatusBarPlmnPlugin = null;
+    private View mCustomizeCarrierLabel = null;
+
+    private final boolean supportCustomizeCarrierLabel() {
+        return mStatusBarPlmnPlugin != null && mStatusBarPlmnPlugin.supportCustomizeCarrierLabel()
+                && mNetworkController != null && mNetworkController.hasMobileDataFeature();
+    }
+
+    private final void updateCustomizeCarrierLabelVisibility(boolean force) {
+        if (DEBUG) {
+            Log.d(TAG, "updateCustomizeCarrierLabelVisibility(), force = " + force
+                    + ", mState = " + mState);
+        }
+
+        final boolean makeVisible = mStackScroller.getVisibility() == View.VISIBLE
+                && mState != StatusBarState.KEYGUARD;
+
+        mStatusBarPlmnPlugin.updateCarrierLabelVisibility(force, makeVisible);
+    }
+
+    protected void updateCarrierLabelVisibility(boolean force) {
+        if (supportCustomizeCarrierLabel()) {
+            if (mState == StatusBarState.KEYGUARD ||
+                    mNotificationPanel.isPanelVisibleBecauseOfHeadsUp()) {
+                if (mCustomizeCarrierLabel != null) {
+                    mCustomizeCarrierLabel.setVisibility(View.GONE);
+                }
+            } else {
+                updateCustomizeCarrierLabelVisibility(force);
+                return;
+            }
+        }
+    }
+    /// M: Support "Operator plugin - Customize Carrier Label for PLMN". @}
 }

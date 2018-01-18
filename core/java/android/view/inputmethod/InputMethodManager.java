@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007-2008 The Android Open Source Project
  * 
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not
@@ -24,6 +29,7 @@ import com.android.internal.view.IInputMethodClient;
 import com.android.internal.view.IInputMethodManager;
 import com.android.internal.view.IInputMethodSession;
 import com.android.internal.view.InputBindResult;
+import com.android.internal.widget.EditableInputConnection;
 import com.android.internal.view.InputMethodClient;
 
 import android.annotation.NonNull;
@@ -40,6 +46,7 @@ import android.os.Message;
 import android.os.RemoteException;
 import android.os.ResultReceiver;
 import android.os.ServiceManager;
+import android.os.SystemProperties;
 import android.os.Trace;
 import android.text.TextUtils;
 import android.text.style.SuggestionSpan;
@@ -212,7 +219,9 @@ import static android.Manifest.permission.WRITE_SECURE_SETTINGS;
  * </ul>
  */
 public final class InputMethodManager {
-    static final boolean DEBUG = false;
+    /// M: Changed for switch log on/off in the runtime. @{
+    static boolean DEBUG = false;
+    /// @}
     static final String TAG = "InputMethodManager";
 
     static final String PENDING_EVENT_COUNTER = "aq:imm";
@@ -321,6 +330,7 @@ public final class InputMethodManager {
     /**
      * The InputConnection that was last retrieved from the served view.
      */
+    InputConnection mServedInputConnection;
     ControlledInputConnectionWrapper mServedInputConnectionWrapper;
     /**
      * The completions that were last provided by the served view.
@@ -395,7 +405,11 @@ public final class InputMethodManager {
     static final int MSG_SEND_INPUT_EVENT = 5;
     static final int MSG_TIMEOUT_INPUT_EVENT = 6;
     static final int MSG_FLUSH_INPUT_EVENT = 7;
+    /// M: Feature UIBC support. @{
+    static final int MSG_SEND_CHAR = 100;
+    /// @}
     static final int MSG_SET_USER_ACTION_NOTIFICATION_SEQUENCE_NUMBER = 9;
+
 
     class H extends Handler {
         H(Looper looper) {
@@ -512,18 +526,41 @@ public final class InputMethodManager {
                     return;
                 }
                 case MSG_TIMEOUT_INPUT_EVENT: {
+                    if (DEBUG) {
+                    Log.w(TAG, "MSG_TIMEOUT_INPUT_EVENT recieved with seq =" + msg.arg1);
+                    }
                     finishedInputEvent(msg.arg1, false, true);
                     return;
                 }
                 case MSG_FLUSH_INPUT_EVENT: {
+                    if (DEBUG) {
+                      Log.w(TAG, "MSG_FLUSH_INPUT_EVENT recieved with seq =" + msg.arg1);
+                    }
                     finishedInputEvent(msg.arg1, false, false);
                     return;
                 }
+                /// M: Feature UIBC support: Imitate the ime character input. @{
+                case MSG_SEND_CHAR: {
+                    synchronized (mH) {
+                   if (mServedInputConnectionWrapper != null &&
+                   mServedInputConnectionWrapper.getInputConnection() != null) {
+                   if (DEBUG) Log.d(TAG, "uibc send char code: " + msg.arg1);
+                   //Finish composing mode, if it has been existed composing mode;
+                   mServedInputConnection = mServedInputConnectionWrapper.getInputConnection();
+                   mServedInputConnection.finishComposingText();
+                   mServedInputConnection.commitText(String.valueOf((char) msg.arg1), 1);
+                   restartInput(mServedView);
+                        }
+                    }
+                }
+                /// @}
+
                 case MSG_SET_USER_ACTION_NOTIFICATION_SEQUENCE_NUMBER: {
                     synchronized (mH) {
                         mNextUserActionNotificationSequenceNumber = msg.arg1;
                     }
                 }
+
             }
         }
     }
@@ -613,6 +650,12 @@ public final class InputMethodManager {
             mH.sendMessage(mH.obtainMessage(MSG_SET_ACTIVE, active ? 1 : 0, 0));
         }
 
+        /// M: Feature UIBC support. @{
+        @Override
+        public void sendCharacter(int unicode) {
+            mH.sendMessage(mH.obtainMessage(MSG_SEND_CHAR, unicode, 0));
+        }
+        /// @}
         @Override
         public void setUserActionNotificationSequenceNumber(int sequenceNumber) {
             mH.sendMessage(mH.obtainMessage(MSG_SET_USER_ACTION_NOTIFICATION_SEQUENCE_NUMBER,
@@ -628,6 +671,11 @@ public final class InputMethodManager {
         mH = new H(looper);
         mIInputContext = new ControlledInputConnectionWrapper(looper,
                 mDummyInputConnection, this);
+        /// M: add the system property for switch log on/off in the runtime.@{
+        DEBUG = "1".equals(SystemProperties.get("imm.debug", "0")) ? true : false;
+        BaseInputConnection.DEBUG = DEBUG;
+        EditableInputConnection.DEBUG = DEBUG;
+        /// @}
     }
 
     /**
@@ -905,6 +953,15 @@ public final class InputMethodManager {
     public static final int SHOW_FORCED = 0x0002;
     
     /**
+     * Flag for {@link #showSoftInput} to indicate that the user has forced
+     * the input method open by press the toggle IME key on the hard keyboard.
+     * @{
+     * @hide
+     */
+    public static final int SHOW_FORCED_FROM_KEY = 0x0004;
+    /* @} */
+
+    /**
      * Synonym for {@link #showSoftInput(View, int, ResultReceiver)} without
      * a result receiver: explicitly request that the current input method's
      * soft input area be shown to the user, if needed.
@@ -978,6 +1035,7 @@ public final class InputMethodManager {
      */
     public boolean showSoftInput(View view, int flags, ResultReceiver resultReceiver) {
         checkFocus();
+        if (DEBUG) Log.d(TAG, "ap request show soft input.", new Exception());
         synchronized (mH) {
             if (mServedView != view && (mServedView == null
                     || !mServedView.checkInputConnectionProxy(view))) {
@@ -985,6 +1043,7 @@ public final class InputMethodManager {
             }
 
             try {
+                if (DEBUG) Log.d(TAG, "Soft input will be shown");
                 return mService.showSoftInput(mClient, flags, resultReceiver);
             } catch (RemoteException e) {
                 throw e.rethrowFromSystemServer();
@@ -994,6 +1053,7 @@ public final class InputMethodManager {
     
     /** @hide */
     public void showSoftInputUnchecked(int flags, ResultReceiver resultReceiver) {
+        if (DEBUG) Log.d(TAG, "showSoftInputUnchecked.", new Exception());
         try {
             mService.showSoftInput(mClient, flags, resultReceiver);
         } catch (RemoteException e) {
@@ -1058,12 +1118,14 @@ public final class InputMethodManager {
     public boolean hideSoftInputFromWindow(IBinder windowToken, int flags,
             ResultReceiver resultReceiver) {
         checkFocus();
+        if (DEBUG) Log.d(TAG, "ap request hide soft input", new Exception());
         synchronized (mH) {
             if (mServedView == null || mServedView.getWindowToken() != windowToken) {
                 return false;
             }
 
             try {
+                if (DEBUG) Log.d(TAG, "Soft input will be hidden");
                 return mService.hideSoftInput(mClient, flags, resultReceiver);
             } catch (RemoteException e) {
                 throw e.rethrowFromSystemServer();
@@ -1354,7 +1416,7 @@ public final class InputMethodManager {
         if (mCurRootView != view.getRootView()) {
             // This is a request from a window that isn't in the window with
             // IME focus, so ignore it.
-            if (DEBUG) Log.v(TAG, "Not IME target window, ignoring");
+            /*if (DEBUG)*/ Log.v(TAG, "Not IME target window, ignoring");
             return;
         }
 
@@ -1473,7 +1535,7 @@ public final class InputMethodManager {
             boolean first, int windowFlags) {
         boolean forceNewFocus = false;
         synchronized (mH) {
-            if (DEBUG) Log.v(TAG, "onWindowFocus: " + focusedView
+            /*if (DEBUG) */Log.v(TAG, "onWindowFocus: " + focusedView
                     + " softInputMode=" + softInputMode
                     + " first=" + first + " flags=#"
                     + Integer.toHexString(windowFlags));
@@ -1792,6 +1854,7 @@ public final class InputMethodManager {
      * {@link #HIDE_NOT_ALWAYS} bit set.
      */
     public void hideSoftInputFromInputMethod(IBinder token, int flags) {
+        if (DEBUG) Log.d(TAG, "InputMethod request hide itself", new Exception());
         try {
             mService.hideMySoftInput(token, flags);
         } catch (RemoteException e) {
@@ -1813,6 +1876,7 @@ public final class InputMethodManager {
      * {@link #SHOW_FORCED} bit set.
      */
     public void showSoftInputFromInputMethod(IBinder token, int flags) {
+        if (DEBUG) Log.d(TAG, "InputMethod request show itself", new Exception());
         try {
             mService.showMySoftInput(token, flags);
         } catch (RemoteException e) {
@@ -1915,6 +1979,10 @@ public final class InputMethodManager {
 
             final InputEvent event = p.mEvent;
             final int seq = event.getSequenceNumber();
+            if (DEBUG) {
+            Log.w(TAG, "sendInputEventOnMainLooperLocked: sending event= " + event
+            + "seq = " + seq + "to sender =" + mCurSender + "channel=" + mCurChannel);
+          }
             if (mCurSender.sendInputEvent(seq, event)) {
                 mPendingEvents.put(seq, p);
                 Trace.traceCounter(Trace.TRACE_TAG_INPUT, PENDING_EVENT_COUNTER,
@@ -1925,9 +1993,6 @@ public final class InputMethodManager {
                 mH.sendMessageDelayed(msg, INPUT_METHOD_NOT_RESPONDING_TIMEOUT);
                 return DISPATCH_IN_PROGRESS;
             }
-
-            Log.w(TAG, "Unable to send input event to IME: "
-                    + mCurId + " dropping: " + event);
         }
         return DISPATCH_NOT_HANDLED;
     }
@@ -1936,6 +2001,9 @@ public final class InputMethodManager {
         final PendingEvent p;
         synchronized (mH) {
             int index = mPendingEvents.indexOfKey(seq);
+            if (DEBUG) {
+            Log.w(TAG, "finishedInputEvent: seq =" + seq + "has index =" + index);
+          }
             if (index < 0) {
                 return; // spurious, event already finished or timed out
             }
@@ -1945,8 +2013,7 @@ public final class InputMethodManager {
             Trace.traceCounter(Trace.TRACE_TAG_INPUT, PENDING_EVENT_COUNTER, mPendingEvents.size());
 
             if (timeout) {
-                Log.w(TAG, "Timeout waiting for IME to handle input event after "
-                        + INPUT_METHOD_NOT_RESPONDING_TIMEOUT + " ms: " + p.mInputMethodId);
+
             } else {
                 mH.removeMessages(MSG_TIMEOUT_INPUT_EVENT, p);
             }
@@ -2325,6 +2392,23 @@ public final class InputMethodManager {
 
     void doDump(FileDescriptor fd, PrintWriter fout, String[] args) {
         final Printer p = new PrintWriterPrinter(fout);
+        /// M: Changed for switch log on/off in the runtime. @{
+        if (args != null && args.length > 0) {
+            if ("enable".equals(args[0])) {
+                DEBUG = true;
+                BaseInputConnection.DEBUG = true;
+                EditableInputConnection.DEBUG = true;
+                p.println("InputMethodManager DEBUG is turn on!");
+                return;
+            } else if ("disable".equals(args[0])) {
+                DEBUG = false;
+                BaseInputConnection.DEBUG = false;
+                EditableInputConnection.DEBUG = false;
+                p.println("InputMethodManager DEBUG is turn off!");
+                return;
+            }
+        }
+        /// @}
         p.println("Input method client state for " + this + ":");
         
         p.println("  mService=" + mService);
@@ -2404,7 +2488,17 @@ public final class InputMethodManager {
             }
         }
     }
-
+     /**
+     * M:refreshImeWindowstatus when show keyguard
+     * @hide
+     */
+   public void refreshImeWindowVisibility() {
+    try {
+            mService.refreshImeWindowVisibilityLocked();
+        } catch (RemoteException e) {
+            throw new RuntimeException(e);
+        }
+  }
     private static String dumpViewInfo(@Nullable final View view) {
         if (view == null) {
             return "null";

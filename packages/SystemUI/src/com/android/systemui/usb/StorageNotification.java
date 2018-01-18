@@ -25,8 +25,10 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.res.Resources;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageManager.MoveCallback;
+import android.hardware.usb.UsbManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.UserHandle;
@@ -39,6 +41,7 @@ import android.text.TextUtils;
 import android.text.format.DateUtils;
 import android.util.Log;
 import android.util.SparseArray;
+import android.app.ActivityManager;
 
 import com.android.internal.R;
 import com.android.systemui.SystemUI;
@@ -56,10 +59,17 @@ public class StorageNotification extends SystemUI {
     private static final String ACTION_SNOOZE_VOLUME = "com.android.systemui.action.SNOOZE_VOLUME";
     private static final String ACTION_FINISH_WIZARD = "com.android.systemui.action.FINISH_WIZARD";
 
+    private static final boolean POP_UMS_ACTIVITY_ON_CONNECT = true;
+
     // TODO: delay some notifications to avoid bumpy fast operations
 
     private NotificationManager mNotificationManager;
+    private Notification mUsbStorageNotification;
+    //private HashSet mUsbNotifications;
     private StorageManager mStorageManager;
+    private boolean mIsUmsConnect = false;
+    private int mNotifcationState = 0;
+    private boolean mIsLastVisible = false;
 
     private static class MoveInfo {
         public int moveId;
@@ -123,6 +133,29 @@ public class StorageNotification extends SystemUI {
         }
     };
 
+    private final BroadcastReceiver mUsbReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            boolean available = (intent.getBooleanExtra(UsbManager.USB_CONFIGURED, false) &&
+                               intent.getBooleanExtra(UsbManager.USB_FUNCTION_MASS_STORAGE, false));
+
+            Log.i(TAG, "onReceive=" + intent.getAction() + ",available=" + available);
+
+            onUsbMassStorageConnectionChangedAsync(available);
+        }
+    };
+
+     private final BroadcastReceiver mUserReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            final String action = intent.getAction();
+
+            if (Intent.ACTION_USER_SWITCHED.equals(action)) {
+              updateUsbMassStorageNotification();
+            }
+        }
+    };
+
     private final MoveCallback mMoveCallback = new MoveCallback() {
         @Override
         public void onCreated(int moveId, Bundle extras) {
@@ -164,6 +197,8 @@ public class StorageNotification extends SystemUI {
                 android.Manifest.permission.MOUNT_UNMOUNT_FILESYSTEMS, null);
         mContext.registerReceiver(mFinishReceiver, new IntentFilter(ACTION_FINISH_WIZARD),
                 android.Manifest.permission.MOUNT_UNMOUNT_FILESYSTEMS, null);
+        mContext.registerReceiver(mUsbReceiver, new IntentFilter(UsbManager.ACTION_USB_STATE));
+        mContext.registerReceiver(mUserReceiver, new IntentFilter(Intent.ACTION_USER_SWITCHED));
 
         // Kick current state into place
         final List<DiskInfo> disks = mStorageManager.getDisks();
@@ -179,6 +214,149 @@ public class StorageNotification extends SystemUI {
         mContext.getPackageManager().registerMoveCallback(mMoveCallback, new Handler());
 
         updateMissingPrivateVolumes();
+    }
+
+    private int sharableStorageNum() {
+        int num = 0;
+        final List<VolumeInfo> infos = mStorageManager.getVolumes();
+        for (VolumeInfo info : infos) {
+            if ((info != null) &&
+                 info.isAllowUsbMassStorage(ActivityManager.getCurrentUser()) &&
+                 (info.getType() == VolumeInfo.TYPE_PUBLIC) &&
+                 ((info.getState() != VolumeInfo.STATE_UNMOUNTABLE) ||
+                  (info.getState() != VolumeInfo.STATE_REMOVED) ||
+                  (info.getState() != VolumeInfo.STATE_BAD_REMOVAL) ||
+                  (info.getState() != VolumeInfo.STATE_FORMATTING))
+                 ) {
+                     num++;
+            }
+        }
+        return num;
+    }
+
+    private int sharedStorageNum() {
+        int num = 0;
+        final List<VolumeInfo> infos = mStorageManager.getVolumes();
+        for (VolumeInfo info : infos) {
+            if ((info != null) &&
+                (info.getState() == VolumeInfo.STATE_MEDIA_SHARED) &&
+                (info.getType() == VolumeInfo.TYPE_PUBLIC)) {
+                 num++;
+            }
+        }
+        return num;
+    }
+
+    private void onUsbMassStorageConnectionChangedAsync(boolean connected) {
+        mIsUmsConnect = connected;
+        updateUsbMassStorageNotification();
+    }
+
+    void updateUsbMassStorageNotification() {
+        int canSharedNum = sharableStorageNum();
+        int sharedNum = sharedStorageNum();
+        Log.d(TAG, "updateUsbMassStorageNotification - canSharedNum=" + canSharedNum +
+                        ",sharedNum=" + sharedNum + ",mIsUmsConnect=" + mIsUmsConnect +
+                        ",mNotifcationState=" + mNotifcationState);
+
+        if (mIsUmsConnect && canSharedNum > 0 && (mNotifcationState != 1)) {
+            Log.d(TAG, "updateUsbMassStorageNotification - Turn on noti.");
+            /*Intent intent = new Intent();
+            intent.setClass(mContext, com.android.systemui.usb.UsbStorageActivity.class);
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+
+            PendingIntent pi = PendingIntent.getActivityAsUser(mContext, 0, intent, 0,
+                                                               null, UserHandle.CURRENT);
+            setUsbStorageNotification(
+                    com.android.internal.R.string.usb_storage_notification_title,
+                    com.android.internal.R.string.usb_storage_notification_message,
+                    com.android.internal.R.drawable.stat_sys_data_usb,
+                    false, true, pi);
+            */
+            mNotifcationState = 1;
+        } else if (mIsUmsConnect && sharedNum > 0 && (mNotifcationState != 2)) {
+            Log.d(TAG, "updateUsbMassStorageNotification - Turn off noti.");
+            /*Intent intent = new Intent();
+            intent.setClass(mContext, com.android.systemui.usb.UsbStorageActivity.class);
+
+            PendingIntent pi = PendingIntent.getActivityAsUser(mContext, 0, intent, 0,
+                                                               null, UserHandle.CURRENT);
+            setUsbStorageNotification(
+                    com.android.internal.R.string.usb_storage_stop_notification_title,
+                    com.android.internal.R.string.usb_storage_stop_notification_message,
+                    com.android.internal.R.drawable.stat_sys_warning, false, true, pi);
+            */
+            mNotifcationState = 2;
+        } else if ((!mIsUmsConnect || (canSharedNum == 0)) && (mNotifcationState != 0)) {
+            /* Cancel "USB Connected" notification, if the system want to cancel it and
+               there is no storage can be shared. Like SD hot-plug, remove the external
+               SD card, but still one storage can be shared. So don't cancel the notification. */
+            Log.d(TAG, "updateUsbMassStorageNotification - Cancel noti.");
+            setUsbStorageNotification(0, 0, 0, false, false, null);
+            mNotifcationState = 0;
+        } else {
+            Log.d(TAG, "updateUsbMassStorageNotification - What?");
+        }
+    }
+
+    private synchronized void setUsbStorageNotification(int titleId, int messageId, int icon,
+            boolean sound, boolean visible, PendingIntent pi) {
+
+        Log.d(TAG, "setUsbStorageNotification visible=" + visible +
+                   ",mIsLastVisible=" + mIsLastVisible);
+        if (!visible && mUsbStorageNotification == null) {
+            return;
+        }
+
+        NotificationManager notificationManager = (NotificationManager) mContext
+                .getSystemService(Context.NOTIFICATION_SERVICE);
+
+        if (notificationManager == null) {
+            return;
+        }
+
+        if (visible) {
+            Resources r = Resources.getSystem();
+            CharSequence title = r.getText(titleId);
+            CharSequence message = r.getText(messageId);
+
+            if (mUsbStorageNotification == null) {
+                mUsbStorageNotification = new Notification();
+                mUsbStorageNotification.icon = icon;
+                mUsbStorageNotification.when = 0;
+                mUsbStorageNotification.priority = Notification.PRIORITY_MIN;
+            }
+
+            if (sound) {
+                mUsbStorageNotification.defaults |= Notification.DEFAULT_SOUND;
+            } else {
+                mUsbStorageNotification.defaults &= ~Notification.DEFAULT_SOUND;
+            }
+
+            mUsbStorageNotification.flags = Notification.FLAG_ONGOING_EVENT;
+            mUsbStorageNotification.tickerText = title;
+
+            if (pi == null) {
+                Intent intent = new Intent();
+                pi = PendingIntent.getBroadcastAsUser(mContext, 0, intent, 0,
+                        UserHandle.CURRENT);
+            }
+            mUsbStorageNotification.color = mContext.getResources().getColor(
+                    com.android.internal.R.color.system_notification_accent_color);
+            mUsbStorageNotification.setLatestEventInfo(mContext, title, message, pi);
+            mUsbStorageNotification.visibility = Notification.VISIBILITY_PUBLIC;
+            mUsbStorageNotification.category = Notification.CATEGORY_SYSTEM;
+        }
+
+        final int notificationId = mUsbStorageNotification.icon;
+        if (visible) {
+            notificationManager.notifyAsUser(null, notificationId, mUsbStorageNotification,
+                    UserHandle.ALL);
+            mIsLastVisible = true;
+        } else {
+            notificationManager.cancelAsUser(null, notificationId, UserHandle.ALL);
+            mIsLastVisible = false;
+        }
     }
 
     private void updateMissingPrivateVolumes() {
@@ -302,10 +480,16 @@ public class StorageNotification extends SystemUI {
             case VolumeInfo.STATE_BAD_REMOVAL:
                 notif = onVolumeBadRemoval(vol);
                 break;
+            case VolumeInfo.STATE_MEDIA_SHARED:
+                notif = null;
+                break;
+
             default:
                 notif = null;
                 break;
         }
+
+        updateUsbMassStorageNotification();
 
         if (notif != null) {
             mNotificationManager.notifyAsUser(vol.getId(), PUBLIC_ID, notif, UserHandle.ALL);
@@ -336,6 +520,10 @@ public class StorageNotification extends SystemUI {
     private Notification onVolumeMounted(VolumeInfo vol) {
         final VolumeRecord rec = mStorageManager.findRecordByUuid(vol.getFsUuid());
         final DiskInfo disk = vol.getDisk();
+
+        if (rec == null) {
+            return null;
+        }
 
         // Don't annoy when user dismissed in past.  (But make sure the disk is adoptable; we
         // used to allow snoozing non-adoptable disks too.)
@@ -471,6 +659,9 @@ public class StorageNotification extends SystemUI {
             intent = buildWizardMovePendingIntent(move);
         } else {
             intent = buildWizardMigratePendingIntent(move);
+        }
+        if (intent == null) {
+            return;
         }
 
         Notification.Builder builder = new Notification.Builder(mContext)

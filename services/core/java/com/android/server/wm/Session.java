@@ -57,6 +57,9 @@ import com.android.server.wm.WindowManagerService.H;
 
 import java.io.PrintWriter;
 
+/// M: Add import.
+import android.os.Trace;
+
 /**
  * This class represents an active client session.  There is generally one
  * Session object per process that is interacting with the window manager.
@@ -255,7 +258,11 @@ final class Session extends IWindowSession.Stub
     public void finishDrawing(IWindow window) {
         if (WindowManagerService.localLOGV) Slog.v(
             TAG_WM, "IWindow finishDrawing called for " + window);
+        /// M: add systrace @{
+        Trace.traceBegin(Trace.TRACE_TAG_WINDOW_MANAGER, "wmFinishDrawing");
         mService.finishDrawingWindow(this, window);
+        Trace.traceEnd(Trace.TRACE_TAG_WINDOW_MANAGER);
+        /// @}
     }
 
     public void setInTouchMode(boolean mode) {

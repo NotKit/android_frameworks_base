@@ -118,6 +118,14 @@ interface IAudioService {
 
     int getCurrentAudioFocus();
 
+    /// M: Add for MTK_DOLBY_DAP_SUPPORT @{
+    /**
+     * Check whether the dolby client application is in audio focus or not.
+     * @param name the application's package name.
+     */
+    boolean isAppInFocus(String name);
+    /// @}
+
     void startBluetoothSco(IBinder cb, int targetSdkVersion);
     void startBluetoothScoVirtualCall(IBinder cb);
     void stopBluetoothSco(IBinder cb);
@@ -165,4 +173,7 @@ interface IAudioService {
     oneway void unregisterRecordingCallback(in IRecordingConfigDispatcher rcdb);
 
     List<AudioRecordingConfiguration> getActiveRecordingConfigurations();
+    boolean setAudioPathToFMTx(IBinder cb);
+    boolean setAudioPathOutofFMTx();
+
 }

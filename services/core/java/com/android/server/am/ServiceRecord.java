@@ -118,6 +118,11 @@ final class ServiceRecord extends Binder {
     
     private int lastStartId;    // identifier of most recent start request.
 
+    /// M: Running Booster @{
+    ArrayList<String> delayedServiceCallerPkg;
+    ArrayList<Integer> delayedServiceCallerUid;
+    /// M: Running Booster @}
+
     static class StartItem {
         final ServiceRecord sr;
         final boolean taskRemoved;

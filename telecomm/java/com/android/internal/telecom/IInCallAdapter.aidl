@@ -69,4 +69,29 @@ oneway interface IInCallAdapter {
     void putExtras(String callId, in Bundle extras);
 
     void removeExtras(String callId, in List<String> keys);
+
+    void startVoiceRecording();
+
+    void stopVoiceRecording();
+
+    void explicitCallTransfer(String callId);
+
+    void hangupAll();
+
+    void hangupAllHoldCalls();
+
+    void hangupActiveAndAnswerWaiting();
+
+    void updatePowerForSmartBook(boolean onOff);
+
+    /// M: For VoLTE @{
+    void inviteConferenceParticipants(String conferenceCallId, in List<String> numbers);
+    /// @}
+
+    /// M: For OP09 2W request.
+    void setSortedIncomingCallList(in List<String> list);
+
+    ///M: For blind/assured ECT @{
+    void blindAssuredEct(String callId, String number, int type);
+    /// @}
 }

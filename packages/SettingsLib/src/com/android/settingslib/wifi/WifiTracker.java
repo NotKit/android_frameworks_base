@@ -47,6 +47,10 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+/// M: ALPS02334170: Use ReadWriteLock to prevent multi-thread JE @{
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+/// @}
 
 /**
  * Tracks saved or available wifi networks and their state.
@@ -62,6 +66,9 @@ public class WifiTracker {
     // TODO: Allow control of this?
     // Combo scans can take 5-6s to complete - set to 10s.
     private static final int WIFI_RESCAN_INTERVAL_MS = 10 * 1000;
+
+    /// M: ALPS02334170: Use ReadWriteLock to prevent multi-thread JE
+    private static final ReadWriteLock mReadWriteLock = new ReentrantReadWriteLock();
 
     private final Context mContext;
     private final WifiManager mWifiManager;
@@ -235,7 +242,14 @@ public class WifiTracker {
      */
     public List<AccessPoint> getAccessPoints() {
         synchronized (mAccessPoints) {
-            return new ArrayList<>(mAccessPoints);
+            /// M: Add for Google original code shallow copy issue
+            ArrayList<AccessPoint> cachedaccessPoints = new ArrayList<>();
+            for (AccessPoint accessPoint : mAccessPoints) {
+                cachedaccessPoints.add((AccessPoint)accessPoint.clone());
+            }
+            return cachedaccessPoints;
+            /// M: Google code phased out to avoid shallow copy issue
+            // return new ArrayList<>(mAccessPoints);
         }
     }
 
@@ -324,98 +338,105 @@ public class WifiTracker {
         for (AccessPoint accessPoint : cachedAccessPoints) {
             accessPoint.clearConfig();
         }
+        /// M: ALPS02334170: Use ReadWriteLock to prevent multi-thread JE @{
+        mReadWriteLock.readLock().lock();
+        try {
+            /** Lookup table to more quickly update AccessPoints by only considering objects with
+             *  the correct SSID.  Maps SSID -> List of AccessPoints with the given SSID.  */
+            Multimap<String, AccessPoint> apMap = new Multimap<String, AccessPoint>();
+            WifiConfiguration connectionConfig = null;
+            if (mLastInfo != null) {
+                connectionConfig = getWifiConfigurationForNetworkId(mLastInfo.getNetworkId());
+            }
 
-        /** Lookup table to more quickly update AccessPoints by only considering objects with the
-         * correct SSID.  Maps SSID -> List of AccessPoints with the given SSID.  */
-        Multimap<String, AccessPoint> apMap = new Multimap<String, AccessPoint>();
-        WifiConfiguration connectionConfig = null;
-        if (mLastInfo != null) {
-            connectionConfig = getWifiConfigurationForNetworkId(mLastInfo.getNetworkId());
-        }
+            final Collection<ScanResult> results = fetchScanResults();
 
-        final Collection<ScanResult> results = fetchScanResults();
+            final List<WifiConfiguration> configs = mWifiManager.getConfiguredNetworks();
+            if (configs != null) {
+                mSavedNetworksExist = configs.size() != 0;
+                for (WifiConfiguration config : configs) {
+                    if (config.selfAdded && config.numAssociation == 0) {
+                        continue;
+                    }
+                    AccessPoint accessPoint = getCachedOrCreate(config, cachedAccessPoints);
+                    if (mLastInfo != null && mLastNetworkInfo != null) {
+                        if (config.isPasspoint() == false) {
+                            accessPoint.update(connectionConfig, mLastInfo, mLastNetworkInfo);
+                        }
+                    }
+                    if (mIncludeSaved) {
+                        if (!config.isPasspoint() || mIncludePasspoints) {
+                            // If saved network not present in scan result then set its Rssi
+                            // to MAX_VALUE
+                            boolean apFound = false;
+                            for (ScanResult result : results) {
+                                if (result.SSID.equals(accessPoint.getSsidStr())) {
+                                    apFound = true;
+                                    break;
+                                }
+                            }
+                            if (!apFound) {
+                                accessPoint.setRssi(Integer.MAX_VALUE);
+                            }
+                            accessPoints.add(accessPoint);
+                        }
 
-        final List<WifiConfiguration> configs = mWifiManager.getConfiguredNetworks();
-        if (configs != null) {
-            mSavedNetworksExist = configs.size() != 0;
-            for (WifiConfiguration config : configs) {
-                if (config.selfAdded && config.numAssociation == 0) {
-                    continue;
-                }
-                AccessPoint accessPoint = getCachedOrCreate(config, cachedAccessPoints);
-                if (mLastInfo != null && mLastNetworkInfo != null) {
-                    if (config.isPasspoint() == false) {
-                        accessPoint.update(connectionConfig, mLastInfo, mLastNetworkInfo);
+                        if (config.isPasspoint() == false) {
+                            apMap.put(accessPoint.getSsidStr(), accessPoint);
+                        }
+                    } else {
+                        // If we aren't using saved networks, drop them into the cache so that
+                        // we have access to their saved info.
+                        cachedAccessPoints.add(accessPoint);
                     }
                 }
-                if (mIncludeSaved) {
-                    if (!config.isPasspoint() || mIncludePasspoints) {
-                        // If saved network not present in scan result then set its Rssi to MAX_VALUE
-                        boolean apFound = false;
-                        for (ScanResult result : results) {
-                            if (result.SSID.equals(accessPoint.getSsidStr())) {
-                                apFound = true;
-                                break;
+            }
+
+            if (results != null) {
+                for (ScanResult result : results) {
+                    // Ignore hidden and ad-hoc networks.
+                    if (result.SSID == null || result.SSID.length() == 0 ||
+                            result.capabilities.contains("[IBSS]")) {
+                        continue;
+                    }
+
+                    boolean found = false;
+                    for (AccessPoint accessPoint : apMap.getAll(result.SSID)) {
+                        if (accessPoint.update(result)) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found && mIncludeScans) {
+                        AccessPoint accessPoint = getCachedOrCreate(result, cachedAccessPoints);
+                        if (mLastInfo != null && mLastNetworkInfo != null) {
+                            accessPoint.update(connectionConfig, mLastInfo, mLastNetworkInfo);
+                        }
+
+                        if (result.isPasspointNetwork()) {
+                            WifiConfiguration config = mWifiManager.getMatchingWifiConfig(result);
+                            if (config != null) {
+                                accessPoint.update(config);
                             }
                         }
-                        if (!apFound) {
-                            accessPoint.setRssi(Integer.MAX_VALUE);
-                        }
-                        accessPoints.add(accessPoint);
-                    }
 
-                    if (config.isPasspoint() == false) {
+                        if (mLastInfo != null && mLastInfo.getBSSID() != null
+                                && mLastInfo.getBSSID().equals(result.BSSID)
+                                && connectionConfig != null && connectionConfig.isPasspoint()) {
+                            /* This network is connected via this passpoint config */
+                            /* SSID match is not going to work for it; so update explicitly */
+                            accessPoint.update(connectionConfig);
+                        }
+
+                        accessPoints.add(accessPoint);
                         apMap.put(accessPoint.getSsidStr(), accessPoint);
                     }
-                } else {
-                    // If we aren't using saved networks, drop them into the cache so that
-                    // we have access to their saved info.
-                    cachedAccessPoints.add(accessPoint);
                 }
             }
+        } finally {
+            mReadWriteLock.readLock().unlock();
         }
-
-        if (results != null) {
-            for (ScanResult result : results) {
-                // Ignore hidden and ad-hoc networks.
-                if (result.SSID == null || result.SSID.length() == 0 ||
-                        result.capabilities.contains("[IBSS]")) {
-                    continue;
-                }
-
-                boolean found = false;
-                for (AccessPoint accessPoint : apMap.getAll(result.SSID)) {
-                    if (accessPoint.update(result)) {
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found && mIncludeScans) {
-                    AccessPoint accessPoint = getCachedOrCreate(result, cachedAccessPoints);
-                    if (mLastInfo != null && mLastNetworkInfo != null) {
-                        accessPoint.update(connectionConfig, mLastInfo, mLastNetworkInfo);
-                    }
-
-                    if (result.isPasspointNetwork()) {
-                        WifiConfiguration config = mWifiManager.getMatchingWifiConfig(result);
-                        if (config != null) {
-                            accessPoint.update(config);
-                        }
-                    }
-
-                    if (mLastInfo != null && mLastInfo.getBSSID() != null
-                            && mLastInfo.getBSSID().equals(result.BSSID)
-                            && connectionConfig != null && connectionConfig.isPasspoint()) {
-                        /* This network is connected via this passpoint config */
-                        /* SSID match is not going to work for it; so update explicitly */
-                        accessPoint.update(connectionConfig);
-                    }
-
-                    accessPoints.add(accessPoint);
-                    apMap.put(accessPoint.getSsidStr(), accessPoint);
-                }
-            }
-        }
+        /// @}
 
         // Pre-sort accessPoints to speed preference insertion
         Collections.sort(accessPoints);
@@ -479,22 +500,37 @@ public class WifiTracker {
             mMainHandler.sendEmptyMessage(MainHandler.MSG_RESUME_SCANNING);
         }
 
-        if (networkInfo != null) {
-            mLastNetworkInfo = networkInfo;
-        }
-
-        WifiConfiguration connectionConfig = null;
-        mLastInfo = mWifiManager.getConnectionInfo();
-        if (mLastInfo != null) {
-            connectionConfig = getWifiConfigurationForNetworkId(mLastInfo.getNetworkId());
-        }
-
-        boolean reorder = false;
-        for (int i = mAccessPoints.size() - 1; i >= 0; --i) {
-            if (mAccessPoints.get(i).update(connectionConfig, mLastInfo, mLastNetworkInfo)) {
-                reorder = true;
+        /// M: ALPS02334170: Use ReadWriteLock to prevent multi-thread JE @{
+        mReadWriteLock.writeLock().lock();
+        try {
+            if (networkInfo != null) {
+                mLastNetworkInfo = networkInfo;
             }
+        } finally {
+            mReadWriteLock.writeLock().unlock();
         }
+        /// @}
+
+        /// M: ALPS02334170: Use ReadWriteLock to prevent multi-thread JE @{
+        boolean reorder = false;
+        mReadWriteLock.readLock().lock();
+        try {
+            WifiConfiguration connectionConfig = null;
+            mLastInfo = mWifiManager.getConnectionInfo();
+            if (mLastInfo != null) {
+                connectionConfig = getWifiConfigurationForNetworkId(mLastInfo.getNetworkId());
+            }
+
+            for (int i = mAccessPoints.size() - 1; i >= 0; --i) {
+                if (mAccessPoints.get(i).update(connectionConfig, mLastInfo, mLastNetworkInfo)) {
+                    reorder = true;
+                }
+            }
+        } finally {
+            mReadWriteLock.readLock().unlock();
+        }
+        /// @}
+
         if (reorder) {
             synchronized (mAccessPoints) {
                 Collections.sort(mAccessPoints);
@@ -622,8 +658,15 @@ public class WifiTracker {
                             mScanner.resume();
                         }
                     } else {
-                        mLastInfo = null;
-                        mLastNetworkInfo = null;
+                        /// M: ALPS02334170: Use ReadWriteLock to prevent multi-thread JE @{
+                        mReadWriteLock.writeLock().lock();
+                        try {
+                            mLastInfo = null;
+                            mLastNetworkInfo = null;
+                        } finally {
+                            mReadWriteLock.writeLock().unlock();
+                        }
+                        /// @}
                         if (mScanner != null) {
                             mScanner.pause();
                         }

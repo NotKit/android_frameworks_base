@@ -35,6 +35,8 @@ import android.graphics.drawable.RippleDrawable;
 import android.os.CountDownTimer;
 import android.support.v4.graphics.ColorUtils;
 import android.util.AttributeSet;
+/// M: BMW
+import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewAnimationUtils;
@@ -56,6 +58,9 @@ import com.android.systemui.recents.events.ui.ShowApplicationInfoEvent;
 import com.android.systemui.recents.misc.SystemServicesProxy;
 import com.android.systemui.recents.misc.Utilities;
 import com.android.systemui.recents.model.Task;
+/// M: BMW
+import com.mediatek.multiwindow.MultiWindowManager;
+
 
 import static android.app.ActivityManager.StackId.FREEFORM_WORKSPACE_STACK_ID;
 import static android.app.ActivityManager.StackId.FULLSCREEN_WORKSPACE_STACK_ID;
@@ -241,6 +246,18 @@ public class TaskViewHeader extends FrameLayout
         mDismissButton = (ImageView) findViewById(R.id.dismiss_task);
         if (ssp.hasFreeformWorkspaceSupport()) {
             mMoveTaskButton = (ImageView) findViewById(R.id.move_task);
+            /// M: BMW. Split and freeform cannot coexist @{
+            if (MultiWindowManager.isSupported()) {
+                if (MultiWindowManager.DEBUG)
+                    Log.d("BMW", "onFinishInflate, ssp.hasDockedTask() = " + ssp.hasDockedTask());
+                if (ssp.hasDockedTask()) {
+                    mMoveTaskButton.setVisibility(View.INVISIBLE);
+                } else {
+                    mMoveTaskButton.setVisibility(View.VISIBLE);
+                }
+
+            }
+            /// @}
         }
 
         onConfigurationChanged();
@@ -345,6 +362,16 @@ public class TaskViewHeader extends FrameLayout
 
         mTitleView.setVisibility(showTitle ? View.VISIBLE : View.INVISIBLE);
         if (mMoveTaskButton != null) {
+            /// M: BMW. Split and freeform cannot coexist @{
+            if (MultiWindowManager.isSupported()) {
+                SystemServicesProxy ssp = Recents.getSystemServices();
+                if (MultiWindowManager.DEBUG)
+                    Log.d("BMW", "onFinishInflate, ssp.hasDockedTask() = " + ssp.hasDockedTask());
+                if (ssp.hasDockedTask() && showMoveIcon) {
+                    showMoveIcon = false;
+                }
+            }
+            /// @}
             mMoveTaskButton.setVisibility(showMoveIcon ? View.VISIBLE : View.INVISIBLE);
             mMoveTaskButton.setTranslationX(rightInset);
         }
@@ -559,6 +586,11 @@ public class TaskViewHeader extends FrameLayout
         mDismissButton.setAlpha(1f);
         mDismissButton.setClickable(true);
         if (mMoveTaskButton != null) {
+            /// M: BMW. Split and freeform cannot coexist @{
+            if (MultiWindowManager.isSupported() && Recents.getSystemServices().hasDockedTask()) {
+                return;
+            }
+            /// @}
             mMoveTaskButton.setVisibility(View.VISIBLE);
             mMoveTaskButton.animate().cancel();
             mMoveTaskButton.setAlpha(1f);

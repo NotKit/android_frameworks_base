@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -38,10 +43,13 @@ import android.graphics.drawable.LayerDrawable;
 import android.graphics.drawable.StateListDrawable;
 import android.graphics.drawable.shapes.RoundRectShape;
 import android.graphics.drawable.shapes.Shape;
+import android.os.Build;
+import android.os.Debug;
 import android.os.Parcel;
 import android.os.Parcelable;
 import android.util.AttributeSet;
 import android.util.FloatProperty;
+import android.util.Log;
 import android.util.MathUtils;
 import android.util.Pools.SynchronizedPool;
 import android.view.Gravity;
@@ -198,6 +206,8 @@ import java.util.ArrayList;
  */
 @RemoteView
 public class ProgressBar extends View {
+    private static final String LOG_TAG = "ProgressBar";
+    private static final boolean DBG = "eng".equals(Build.TYPE);
 
     private static final int MAX_LEVEL = 10000;
     private static final int TIMEOUT_SEND_ACCESSIBILITY_EVENT = 200;
@@ -1431,6 +1441,11 @@ public class ProgressBar extends View {
 
     @android.view.RemotableViewMethod
     synchronized boolean setProgressInternal(int progress, boolean fromUser, boolean animate) {
+        if (DBG) {
+            Log.d(LOG_TAG, "setProgress, old = " + mProgress + ", new = " + progress +
+                    ", max = " + mMax +
+                    ", backtrace = " + Debug.getCallers(5) + ", this = " + this);
+        }
         if (mIndeterminate) {
             // Not applicable.
             return false;
@@ -1462,6 +1477,12 @@ public class ProgressBar extends View {
      */
     @android.view.RemotableViewMethod
     public synchronized void setSecondaryProgress(int secondaryProgress) {
+        if (DBG) {
+            Log.d(LOG_TAG, "setSecondaryProgress, old = " + mSecondaryProgress +
+                    ", new = " + secondaryProgress + ", max = " + mMax +
+                    ", backtrace = " + Debug.getCallers(5) + ", this = " + this);
+        }
+
         if (mIndeterminate) {
             return;
         }
@@ -1539,6 +1560,11 @@ public class ProgressBar extends View {
      */
     @android.view.RemotableViewMethod
     public synchronized void setMax(int max) {
+        if (DBG) {
+            Log.d(LOG_TAG, "setMax, old = " + mMax + ", new = " + max +
+                    ", backtrace = " + Debug.getCallers(5) + ", this = " + this);
+        }
+
         if (max < 0) {
             max = 0;
         }
@@ -1681,7 +1707,7 @@ public class ProgressBar extends View {
     @Override
     public void invalidateDrawable(@NonNull Drawable dr) {
         if (!mInDrawing) {
-            if (verifyDrawable(dr)) {
+            if (dr == mProgressDrawable || dr == mIndeterminateDrawable) {
                 final Rect dirty = dr.getBounds();
                 final int scrollX = mScrollX + mPaddingLeft;
                 final int scrollY = mScrollY + mPaddingTop;

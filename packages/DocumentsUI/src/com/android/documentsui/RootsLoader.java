@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,8 +21,10 @@
 
 package com.android.documentsui;
 
+import static com.android.documentsui.DocumentsActivity.TAG;
 import android.content.AsyncTaskLoader;
 import android.content.Context;
+import android.util.Log;
 
 import com.android.documentsui.model.RootInfo;
 
@@ -50,7 +57,6 @@ public class RootsLoader extends AsyncTaskLoader<Collection<RootInfo>> {
         if (isReset()) {
             return;
         }
-
         mResult = result;
 
         if (isStarted()) {

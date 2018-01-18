@@ -25,7 +25,10 @@ import android.graphics.Rect;
 import android.graphics.drawable.Animatable;
 import android.graphics.drawable.AnimatedVectorDrawable;
 import android.graphics.drawable.Drawable;
+import android.os.SystemProperties;
 import android.telephony.SubscriptionInfo;
+import android.telephony.SubscriptionManager;
+import android.telephony.TelephonyManager;
 import android.util.ArraySet;
 import android.util.AttributeSet;
 import android.util.Log;
@@ -44,6 +47,10 @@ import com.android.systemui.statusbar.policy.NetworkControllerImpl;
 import com.android.systemui.statusbar.policy.SecurityController;
 import com.android.systemui.tuner.TunerService;
 import com.android.systemui.tuner.TunerService.Tunable;
+
+import com.mediatek.systemui.ext.ISystemUIStatusBarExt;
+import com.mediatek.systemui.PluginManager;
+import com.mediatek.systemui.statusbar.util.FeatureOptions;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -106,6 +113,15 @@ public class SignalClusterView
     private boolean mBlockWifi;
     private boolean mBlockEthernet;
 
+
+
+    /// M: Add for Plugin feature @ {
+    private ISystemUIStatusBarExt mStatusBarExt;
+    /// @ }
+
+    /// M: for vowifi
+    boolean mIsWfcEnable;
+
     public SignalClusterView(Context context) {
         this(context, null);
     }
@@ -131,6 +147,11 @@ public class SignalClusterView
         TypedValue typedValue = new TypedValue();
         res.getValue(R.dimen.status_bar_icon_scale_factor, typedValue, true);
         mIconScaleFactor = typedValue.getFloat();
+
+        /// M: Add for Plugin feature @ {
+        mStatusBarExt = PluginManager.getSystemUIStatusBarExt(context);
+        /// @ }
+        mIsWfcEnable = SystemProperties.get("persist.mtk_wfc_support").equals("1");
     }
 
     @Override
@@ -222,6 +243,13 @@ public class SignalClusterView
 
         TunerService.get(mContext).addTunable(this, StatusBarIconController.ICON_BLACKLIST);
 
+        /// M: Add for Plugin feature @ {
+        mStatusBarExt.setCustomizedNoSimView(mNoSims);
+        mStatusBarExt.setCustomizedNoSimView(mNoSimsDark);
+        mStatusBarExt.addSignalClusterCustomizedView(mContext, this,
+                indexOfChild(findViewById(R.id.mobile_signal_group)));
+        /// @ }
+
         apply();
         applyIconTint();
         mNC.addSignalCallback(this);
@@ -267,11 +295,11 @@ public class SignalClusterView
 
         apply();
     }
-
+    ///M: Support[Network Type and volte on StatusBar]. Add more parameter networkType and volte .
     @Override
     public void setMobileDataIndicators(IconState statusIcon, IconState qsIcon, int statusType,
-            int qsType, boolean activityIn, boolean activityOut, String typeContentDescription,
-            String description, boolean isWide, int subId) {
+            int networkType, int volteIcon, int qsType, boolean activityIn, boolean activityOut,
+            String typeContentDescription, String description, boolean isWide, int subId) {
         PhoneState state = getState(subId);
         if (state == null) {
             return;
@@ -282,6 +310,13 @@ public class SignalClusterView
         state.mMobileDescription = statusIcon.contentDescription;
         state.mMobileTypeDescription = typeContentDescription;
         state.mIsMobileTypeIconWide = statusType != 0 && isWide;
+        state.mNetworkIcon = networkType;
+        state.mVolteIcon = volteIcon;
+
+        /// M: Add for plugin features. @ {
+        state.mDataActivityIn = activityIn;
+        state.mDataActivityOut = activityOut;
+        /// @ }
 
         apply();
     }
@@ -298,6 +333,8 @@ public class SignalClusterView
     @Override
     public void setNoSims(boolean show) {
         mNoSimsVisible = show && !mBlockMobile;
+        // M: Bug fix ALPS02302143, in case UI need to be refreshed.
+        // MR1 also add this patch
         apply();
     }
 
@@ -485,6 +522,12 @@ public class SignalClusterView
                     mWifiStrengthId));
 
         boolean anyMobileVisible = false;
+        /// M: Support for [Network Type on Statusbar]
+        /// A spacer is set between networktype and WIFI icon @ {
+        if (FeatureOptions.MTK_CTA_SET) {
+            anyMobileVisible = true;
+        }
+        /// @ }
         int firstMobileTypeId = 0;
         for (PhoneState state : mPhoneStates) {
             if (state.apply(anyMobileVisible)) {
@@ -519,6 +562,10 @@ public class SignalClusterView
         }
 
         mNoSimsCombo.setVisibility(mNoSimsVisible ? View.VISIBLE : View.GONE);
+        /// M: Add for Plugin feature @ {
+        mStatusBarExt.setCustomizedNoSimsVisible(mNoSimsVisible);
+        mStatusBarExt.setCustomizedAirplaneView(mNoSimsCombo, mIsAirplaneMode);
+        /// @ }
 
         boolean anythingVisible = mNoSimsVisible || mWifiVisible || mIsAirplaneMode
                 || anyMobileVisible || mVpnVisible || mEthernetVisible;
@@ -557,6 +604,9 @@ public class SignalClusterView
         applyDarkIntensity(
                 StatusBarIconController.getDarkIntensity(mTintArea, mNoSims, mDarkIntensity),
                 mNoSims, mNoSimsDark);
+        /// M: Add for noSim view in tint mode. @{
+        mStatusBarExt.setNoSimIconTint(mIconTint, mNoSims);
+        /// @}
         applyDarkIntensity(
                 StatusBarIconController.getDarkIntensity(mTintArea, mWifi, mDarkIntensity),
                 mWifi, mWifiDark);
@@ -566,6 +616,7 @@ public class SignalClusterView
         for (int i = 0; i < mPhoneStates.size(); i++) {
             mPhoneStates.get(i).setIconTint(mIconTint, mDarkIntensity, mTintArea);
         }
+        
     }
 
     private void applyDarkIntensity(float darkIntensity, View lightIcon, View darkIcon) {
@@ -584,18 +635,38 @@ public class SignalClusterView
     private class PhoneState {
         private final int mSubId;
         private boolean mMobileVisible = false;
-        private int mMobileStrengthId = 0, mMobileTypeId = 0;
+        private int mMobileStrengthId = 0, mMobileTypeId = 0, mNetworkIcon = 0;
+        private int mVolteIcon = 0;
         private int mLastMobileStrengthId = -1;
         private int mLastMobileTypeId = -1;
         private boolean mIsMobileTypeIconWide;
         private String mMobileDescription, mMobileTypeDescription;
 
         private ViewGroup mMobileGroup;
+
         private ImageView mMobile, mMobileDark, mMobileType;
+
+        /// M: Add for new features @ {
+        // Add for [Network Type and volte on Statusbar]
+        private ImageView mNetworkType;
+        private ImageView mVolteType;
+        private boolean mIsWfcCase;
+        /// @ }
+
+        /// M: Add for plugin features. @ {
+        private boolean mDataActivityIn, mDataActivityOut;
+        private ISystemUIStatusBarExt mPhoneStateExt;
+        /// @ }
 
         public PhoneState(int subId, Context context) {
             ViewGroup root = (ViewGroup) LayoutInflater.from(context)
-                    .inflate(R.layout.mobile_signal_group, null);
+                    .inflate(R.layout.mobile_signal_group_ext, null);
+
+            /// M: Add data group for plugin feature. @ {
+            mPhoneStateExt = PluginManager.getSystemUIStatusBarExt(context);
+            mPhoneStateExt.addCustomizedView(subId, context, root);
+            /// @ }
+
             setViews(root);
             mSubId = subId;
         }
@@ -605,6 +676,8 @@ public class SignalClusterView
             mMobile         = (ImageView) root.findViewById(R.id.mobile_signal);
             mMobileDark     = (ImageView) root.findViewById(R.id.mobile_signal_dark);
             mMobileType     = (ImageView) root.findViewById(R.id.mobile_type);
+            mNetworkType    = (ImageView) root.findViewById(R.id.network_type);
+            mVolteType      = (ImageView) root.findViewById(R.id.volte_indicator_ext);
         }
 
         public boolean apply(boolean isSecondaryIcon) {
@@ -622,9 +695,20 @@ public class SignalClusterView
                 mMobileGroup.setContentDescription(mMobileTypeDescription
                         + " " + mMobileDescription);
                 mMobileGroup.setVisibility(View.VISIBLE);
+                showViewInWfcCase();
             } else {
-                mMobileGroup.setVisibility(View.GONE);
+                if (mIsAirplaneMode && (mIsWfcEnable && mVolteIcon != 0)) {
+                    /// M:Bug fix for show vowifi icon in flight mode
+                    mMobileGroup.setVisibility(View.VISIBLE);
+                    hideViewInWfcCase();
+                } else {
+                    mMobileGroup.setVisibility(View.GONE);
+                }
             }
+
+            /// M: Set all added or customised view. @ {
+            setCustomizeViewProperty();
+            /// @ }
 
             // When this isn't next to wifi, give it some extra padding between the signals.
             mMobileGroup.setPaddingRelative(isSecondaryIcon ? mSecondaryTelephonyPadding : 0,
@@ -639,7 +723,13 @@ public class SignalClusterView
             if (DEBUG) Log.d(TAG, String.format("mobile: %s sig=%d typ=%d",
                         (mMobileVisible ? "VISIBLE" : "GONE"), mMobileStrengthId, mMobileTypeId));
 
-            mMobileType.setVisibility(mMobileTypeId != 0 ? View.VISIBLE : View.GONE);
+            if(!mIsWfcCase) {
+                mMobileType.setVisibility(mMobileTypeId != 0 ? View.VISIBLE : View.GONE);
+            }
+
+            /// M: Add for support plugin featurs. @ {
+            setCustomizedOpViews();
+            /// @ }
 
             return mMobileVisible;
         }
@@ -699,6 +789,91 @@ public class SignalClusterView
                     StatusBarIconController.getDarkIntensity(tintArea, mMobile, darkIntensity),
                     mMobile, mMobileDark);
             setTint(mMobileType, StatusBarIconController.getTint(tintArea, mMobileType, tint));
+            setTint(mNetworkType, StatusBarIconController.getTint(tintArea, mNetworkType, tint));
+            setTint(mVolteType, StatusBarIconController.getTint(tintArea, mVolteType, tint));
+            /// M: Add for op views in tint mode. @{
+            mPhoneStateExt.setIconTint(tint, darkIntensity);
+            /// @}
+        }
+
+        /// M: Set all added or customised view. @ {
+        private void setCustomizeViewProperty() {
+            // Add for [Network Type on Statusbar], the place to set network type icon.
+            setNetworkIcon();
+            /// M: Add for volte icon.
+            setVolteIcon();
+        }
+
+        /// M: Add for volte icon on Statusbar @{
+        private void setVolteIcon() {
+            if (mVolteIcon == 0) {
+                mVolteType.setVisibility(View.GONE);
+            } else {
+                mVolteType.setImageResource(mVolteIcon);
+                mVolteType.setVisibility(View.VISIBLE);
+            }
+            /// M: customize VoLTE icon. @{
+            mStatusBarExt.setCustomizedVolteView(mVolteIcon, mVolteType);
+            /// M: customize VoLTE icon. @}
+        }
+        ///@}
+
+        /// M : Add for [Network Type on Statusbar]
+        private void setNetworkIcon() {
+            // Network type is CTA feature, so non CTA project should not set this.
+            if ((!FeatureOptions.MTK_CTA_SET) || mIsWfcCase) {
+                return;
+            }
+            if (mNetworkIcon == 0) {
+                mNetworkType.setVisibility(View.GONE);
+            } else {
+                mNetworkType.setImageResource(mNetworkIcon);
+                mNetworkType.setVisibility(View.VISIBLE);
+            }
+        }
+
+        /// M: Add for plugin features. @ {
+        private void setCustomizedOpViews() {
+            if (mMobileVisible && !mIsAirplaneMode) {
+                mPhoneStateExt.getServiceStateForCustomizedView(mSubId);
+
+                mPhoneStateExt.setCustomizedAirplaneView(
+                    mNoSimsCombo, mIsAirplaneMode);
+                mPhoneStateExt.setCustomizedNetworkTypeView(
+                    mSubId, mNetworkIcon, mNetworkType);
+                mPhoneStateExt.setCustomizedDataTypeView(
+                    mSubId, mMobileTypeId,
+                    mDataActivityIn, mDataActivityOut);
+                mPhoneStateExt.setCustomizedSignalStrengthView(
+                    mSubId, mMobileStrengthId, mMobile);
+                mPhoneStateExt.setCustomizedSignalStrengthView(
+                    mSubId, mMobileStrengthId, mMobileDark);
+                mPhoneStateExt.setCustomizedMobileTypeView(
+                    mSubId, mMobileType);
+                mPhoneStateExt.setCustomizedView(mSubId);
+            }
+        }
+        /// @ }
+
+        private void hideViewInWfcCase() {
+            Log.d(TAG, "hideViewInWfcCase, isWfcEnabled = " + mIsWfcEnable + " mSubId =" + mSubId);
+            mMobile.setVisibility(View.GONE);
+            mMobileDark.setVisibility(View.GONE);
+            mMobileType.setVisibility(View.GONE);
+            mNetworkType.setVisibility(View.GONE);
+            mIsWfcCase = true;
+        }
+
+        private void showViewInWfcCase() {
+            Log.d(TAG, "showViewInWfcCase: mSubId = " + mSubId + ", mIsWfcCase=" + mIsWfcCase);
+            if (mIsWfcCase) {
+                mMobile.setVisibility(View.VISIBLE);
+                mMobileDark.setVisibility(View.VISIBLE);
+                mMobileType.setVisibility(View.VISIBLE);
+                mNetworkType.setVisibility(View.VISIBLE);
+                mIsWfcCase = false;
+            }
         }
     }
+
 }

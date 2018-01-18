@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -303,6 +308,24 @@ public final class RemoteConnection {
             public void onPeerDimensionsChanged(VideoProvider videoProvider, int width,
                     int height) {}
 
+            /* M: ViLTE part start */
+            /* Different from AOSP, additional parameter "rotation" is added. */
+            /**
+             * Reports a change in the peer video dimensions received from the
+             * {@link Connection.VideoProvider} associated with a {@link RemoteConnection}.
+             *
+             * @param videoProvider The {@link RemoteConnection.VideoProvider} invoking this method.
+             * @param width  The updated peer video width.
+             * @param height The updated peer video height.
+             * @param rotation The updated peer video rotation.
+             * @see InCallService.VideoCall.Callback#onPeerDimensionsWithAngleChanged(int, int, int)
+             * @see Connection.VideoProvider#changePeerDimensionsWithAngle(int, int, int)
+             * @hide
+             */
+            public void onPeerDimensionsWithAngleChanged(VideoProvider videoProvider, int width,
+                    int height, int rotation) {}
+            /* M: ViLTE part end */
+
             /**
              * Reports a change in the data usage (in bytes) received from the
              * {@link Connection.VideoProvider} associated with a {@link RemoteConnection}.
@@ -374,6 +397,16 @@ public final class RemoteConnection {
                     l.onPeerDimensionsChanged(VideoProvider.this, width, height);
                 }
             }
+
+            /* M: ViLTE part start */
+            /* Different from AOSP, additional parameter "rotation" is added. */
+            @Override
+            public void changePeerDimensionsWithAngle(int width, int height, int rotation) {
+                for (Callback l : mCallbacks) {
+                    l.onPeerDimensionsWithAngleChanged(VideoProvider.this, width, height, rotation);
+                }
+            }
+            /* M: ViLTE part end */
 
             @Override
             public void changeCallDataUsage(long dataUsage) {
@@ -579,6 +612,19 @@ public final class RemoteConnection {
             } catch (RemoteException e) {
             }
         }
+
+        /* M: ViLTE part start */
+        /**
+         * @param mode UI mode of current inCall screen.
+         * @hide
+         */
+        public void setUIMode(int mode) {
+            try {
+                mVideoProviderBinder.setUIMode(mode);
+            } catch (RemoteException e) {
+            }
+        }
+        /* M: ViLTE part end */
     }
 
     private IConnectionService mConnectionService;

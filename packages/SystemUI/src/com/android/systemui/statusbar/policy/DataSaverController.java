@@ -19,11 +19,14 @@ import android.net.INetworkPolicyListener;
 import android.net.NetworkPolicyManager;
 import android.os.Handler;
 import android.os.RemoteException;
+import android.util.Log;
 
 import java.util.ArrayList;
 
 public class DataSaverController {
-
+    /// Add for Log TAG @ {
+    private static final String TAG = "DataSaverController";
+    /// @ }
     private final Handler mHandler = new Handler();
     private final ArrayList<Listener> mListeners = new ArrayList<>();
     private final NetworkPolicyManager mPolicyManager;
@@ -64,6 +67,7 @@ public class DataSaverController {
     }
 
     public void setDataSaverEnabled(boolean enabled) {
+        Log.d(TAG,"setDataSaverEnabled enabled = " + enabled);
         mPolicyManager.setRestrictBackground(enabled);
         try {
             mPolicyListener.onRestrictBackgroundChanged(enabled);
@@ -82,6 +86,7 @@ public class DataSaverController {
 
         @Override
         public void onRestrictBackgroundChanged(final boolean isDataSaving) throws RemoteException {
+            Log.d(TAG,"onRestrictBackgroundChanged isDataSaving = " + isDataSaving);
             mHandler.post(new Runnable() {
                 @Override
                 public void run() {

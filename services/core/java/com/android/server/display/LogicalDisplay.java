@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2012 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -59,6 +64,8 @@ final class LogicalDisplay {
     // The layer stack we use when the display has been blanked to prevent any
     // of its content from appearing.
     private static final int BLANK_LAYER_STACK = -1;
+    /// M: Enable anti-overscan capability on wifi display
+    private static final double ANTI_OVERSCAN_RATIO = 1.0;
 
     private final int mDisplayId;
     private final int mLayerStack;
@@ -340,6 +347,13 @@ final class LogicalDisplay {
             displayRectWidth = displayInfo.logicalWidth * physHeight / displayInfo.logicalHeight;
             displayRectHeight = physHeight;
         }
+        /// M: Enable anti-overscan capability on wifi display @{
+        if (displayDeviceInfo.type == Display.TYPE_WIFI) {
+            displayRectWidth = (int) (displayRectWidth * ANTI_OVERSCAN_RATIO);
+            displayRectHeight = (int) (displayRectHeight * ANTI_OVERSCAN_RATIO);
+        }
+        /// @}
+
         int displayRectTop = (physHeight - displayRectHeight) / 2;
         int displayRectLeft = (physWidth - displayRectWidth) / 2;
         mTempDisplayRect.set(displayRectLeft, displayRectTop,

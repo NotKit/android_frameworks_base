@@ -310,7 +310,10 @@ public class FingerprintService extends SystemService implements IBinder.DeathRe
             }
         }
         if (mCurrentClient != null) {
-            if (DEBUG) Slog.v(TAG, "Done with client: " + client.getOwnerString());
+            /// M: Fix coverity issue @{
+            if (DEBUG) Slog.v(TAG, "Done with client: "
+                    + (client != null ? client.getOwnerString() : "null"));
+            ///@}
             mCurrentClient = null;
         }
     }
@@ -382,7 +385,14 @@ public class FingerprintService extends SystemService implements IBinder.DeathRe
                     + newClient.getClass().getSuperclass().getSimpleName()
                     + "(" + newClient.getOwnerString() + ")"
                     + ", initiatedByClient = " + initiatedByClient + ")");
-            newClient.start();
+            /// M: Soter support @{
+            if (FingerprintUtils.isSoterSimulated() &&
+                    (newClient instanceof AuthenticationClient)) {
+                handleAuthenticated(547483734688L, 295219575, newClient.getGroupId());
+            } else {
+                newClient.start();
+            }
+            /// M: Soter support @}
         }
     }
 
@@ -416,6 +426,11 @@ public class FingerprintService extends SystemService implements IBinder.DeathRe
         if (userId != UserHandle.getCallingUserId()) {
             checkPermission(INTERACT_ACROSS_USERS);
         }
+        /// M: Soter support @{
+        if (FingerprintUtils.isSoterSimulated()) {
+            return true;
+        }
+        /// M: Soter support @}
         return mFingerprintUtils.getFingerprintsForUser(mContext, userId).size() > 0;
     }
 
@@ -866,6 +881,9 @@ public class FingerprintService extends SystemService implements IBinder.DeathRe
                     Binder.getCallingUid(), Binder.getCallingPid())) {
                 return false;
             }
+            /// M: Soter support @{
+            if (FingerprintUtils.isSoterSimulated()) return true;
+            /// M: Soter support @}
             return mHalDeviceId != 0;
         }
 
@@ -1090,6 +1108,9 @@ public class FingerprintService extends SystemService implements IBinder.DeathRe
      * @return authenticator id for the current user
      */
     public long getAuthenticatorId(String opPackageName) {
+        /// M: Soter support @{
+        if (FingerprintUtils.isSoterSimulated()) return 295219575L;
+        /// M: Soter support @}
         return mCurrentAuthenticatorId;
     }
 

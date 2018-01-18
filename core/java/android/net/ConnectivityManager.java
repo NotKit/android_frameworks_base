@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2008 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -60,6 +65,8 @@ import java.net.InetAddress;
 import java.util.HashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
+
+
 /**
  * Class that answers queries about the state of network connectivity. It also
  * notifies applications when network connectivity changes. Get an instance
@@ -80,6 +87,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class ConnectivityManager {
     private static final String TAG = "ConnectivityManager";
+    private static final boolean LEGACY_DBG = true; // STOPSHIP
 
     /**
      * A change in network connectivity has occurred. A default connection has either
@@ -549,11 +557,44 @@ public class ConnectivityManager {
      */
     public static final int TYPE_VPN = 17;
 
+    /** M: start */
+
+    /**
+     * Device Managment purpose.
+     * {@hide}
+     * @internal
+     */
+    public static final int TYPE_MOBILE_DM = 34;
+    /** {@hide} */
+    public static final int TYPE_MOBILE_WAP = 35;
+    /** {@hide} */
+    public static final int TYPE_MOBILE_NET = 36;
+    /** {@hide} */
+    public static final int TYPE_MOBILE_CMMAIL = 37;
+    /** {@hide} */
+    public static final int TYPE_MOBILE_TETHERING = 38;
+    /** {@hide} */
+    public static final int TYPE_MOBILE_RCSE = 39;
+    /** {@hide} */
+    public static final int TYPE_MOBILE_XCAP = 40;
+    /** {@hide} */
+    public static final int TYPE_MOBILE_RCS = 41;
+    /** {@hide} */
+    public static final int TYPE_MOBILE_BIP = 42;
+    /** M: end */
+
+    ///M @add  for 3gdongle
+    /** {@hide} */
+    public static final int TYPE_TEDONGLE = 49;
+
     /** {@hide} */
     public static final int MAX_RADIO_TYPE   = TYPE_VPN;
 
     /** {@hide} */
-    public static final int MAX_NETWORK_TYPE = TYPE_VPN;
+    public static final int MAX_AOSP_NETWORK_TYPE = TYPE_VPN;
+
+    /** {@hide} */
+    public static final int MAX_NETWORK_TYPE = TYPE_TEDONGLE;
 
     /**
      * If you want to set the default network preference,you can directly
@@ -568,6 +609,10 @@ public class ConnectivityManager {
      */
     @Deprecated
     public static final int DEFAULT_NETWORK_PREFERENCE = TYPE_WIFI;
+
+    /** M: support Tether dediated APN feature  for OP03APNSettingExt*/
+    /** @hide */
+    public static final String TETHER_CHANGED_DONE_ACTION = "android.net.conn.TETHER_CHANGED_DONE";
 
     /**
      * @hide
@@ -603,7 +648,8 @@ public class ConnectivityManager {
      *             validate a network type.
      */
     public static boolean isNetworkTypeValid(int networkType) {
-        return networkType >= 0 && networkType <= MAX_NETWORK_TYPE;
+        return (networkType >= 0 && networkType <= MAX_AOSP_NETWORK_TYPE)
+            || (networkType >= TYPE_MOBILE_DM && networkType <= MAX_NETWORK_TYPE);
     }
 
     /**
@@ -648,6 +694,12 @@ public class ConnectivityManager {
                 return "MOBILE_IA";
             case TYPE_MOBILE_EMERGENCY:
                 return "MOBILE_EMERGENCY";
+            case TYPE_MOBILE_XCAP:
+                return "MOBILE_XCAP";
+            case TYPE_MOBILE_RCS:
+                return "MOBILE_RCS";
+            case TYPE_MOBILE_BIP:
+                return "MOBILE_BIP";
             case TYPE_PROXY:
                 return "PROXY";
             case TYPE_VPN:
@@ -676,6 +728,9 @@ public class ConnectivityManager {
             case TYPE_MOBILE_CBS:
             case TYPE_MOBILE_IA:
             case TYPE_MOBILE_EMERGENCY:
+            case TYPE_MOBILE_XCAP:
+            case TYPE_MOBILE_RCS:
+            case TYPE_MOBILE_BIP:
                 return true;
             default:
                 return false;
@@ -1151,6 +1206,14 @@ public class ConnectivityManager {
 
         NetworkRequest request = null;
         synchronized (sLegacyRequests) {
+            if (LEGACY_DBG) {
+                Log.d(TAG, "Looking for legacyRequest for netCap with hash: " + netCap + " (" +
+                        netCap.hashCode() + ")");
+                Log.d(TAG, "sLegacyRequests has:");
+                for (NetworkCapabilities nc : sLegacyRequests.keySet()) {
+                    Log.d(TAG, "  " + nc + " (" + nc.hashCode() + ")");
+                }
+            }
             LegacyRequest l = sLegacyRequests.get(netCap);
             if (l != null) {
                 Log.d(TAG, "renewing startUsingNetworkFeature request " + l.networkRequest);
@@ -1225,8 +1288,14 @@ public class ConnectivityManager {
                 cap = NetworkCapabilities.NET_CAPABILITY_FOTA;
             } else if ("enableIMS".equals(feature)) {
                 cap = NetworkCapabilities.NET_CAPABILITY_IMS;
+            } else if ("enableEmergency".equals(feature)) {
+                cap = NetworkCapabilities.NET_CAPABILITY_EIMS;
             } else if ("enableCBS".equals(feature)) {
                 cap = NetworkCapabilities.NET_CAPABILITY_CBS;
+            } else if ("enableXCAP".equals(feature)) {
+                cap = NetworkCapabilities.NET_CAPABILITY_XCAP;
+            } else if ("enableRCS".equals(feature)) {
+                cap = NetworkCapabilities.NET_CAPABILITY_RCS;
             } else {
                 return null;
             }
@@ -1281,7 +1350,11 @@ public class ConnectivityManager {
         }
 
         // Do this only for SUPL, until GnssLocationProvider is fixed. http://b/25876485 .
-        if (!netCap.hasCapability(NetworkCapabilities.NET_CAPABILITY_SUPL)) {
+        // M: Add EIMS & IMS to be supported in LegacyTracker
+        //    because Emergency SUPL may use EIMS or IMS per the IR.92 requirement
+        if (!(netCap.hasCapability(NetworkCapabilities.NET_CAPABILITY_SUPL) ||
+                netCap.hasCapability(NetworkCapabilities.NET_CAPABILITY_EIMS) ||
+                netCap.hasCapability(NetworkCapabilities.NET_CAPABILITY_IMS))) {
             // NOTE: if this causes app breakage, we should not just comment out this early return;
             // instead, we should make this early return conditional on the requesting app's target
             // SDK version, as described in the comment above.
@@ -1297,6 +1370,9 @@ public class ConnectivityManager {
         } else if (netCap.hasCapability(NetworkCapabilities.NET_CAPABILITY_IMS)) {
             type = "enableIMS";
             result = TYPE_MOBILE_IMS;
+        } else if (netCap.hasCapability(NetworkCapabilities.NET_CAPABILITY_EIMS)) {
+            type = "enableEmergency";
+            result = TYPE_MOBILE_EMERGENCY;
         } else if (netCap.hasCapability(NetworkCapabilities.NET_CAPABILITY_FOTA)) {
             type = "enableFOTA";
             result = TYPE_MOBILE_FOTA;
@@ -1314,6 +1390,15 @@ public class ConnectivityManager {
         } else if (netCap.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
             type = "enableHIPRI";
             result = TYPE_MOBILE_HIPRI;
+        } else if (netCap.hasCapability(NetworkCapabilities.NET_CAPABILITY_XCAP)) {
+            type = "enableXCAP";
+            result = TYPE_MOBILE_XCAP;
+        } else if (netCap.hasCapability(NetworkCapabilities.NET_CAPABILITY_RCS)) {
+            type = "enableRCS";
+            result = TYPE_MOBILE_RCS;
+        } else if (netCap.hasCapability(NetworkCapabilities.NET_CAPABILITY_BIP)) {
+            type = "enableBIP";
+            result = TYPE_MOBILE_BIP;
         }
         if (type != null) {
             NetworkCapabilities testCap = networkCapabilitiesForFeature(TYPE_MOBILE, type);
@@ -1331,6 +1416,9 @@ public class ConnectivityManager {
         }
         if (netCap.hasCapability(NetworkCapabilities.NET_CAPABILITY_IMS)) {
             return TYPE_MOBILE_IMS;
+        }
+        if (netCap.hasCapability(NetworkCapabilities.NET_CAPABILITY_EIMS)) {
+            return TYPE_MOBILE_EMERGENCY;
         }
         if (netCap.hasCapability(NetworkCapabilities.NET_CAPABILITY_FOTA)) {
             return TYPE_MOBILE_FOTA;
@@ -2226,6 +2314,21 @@ public class ConnectivityManager {
     /** {@hide} */
     public static final int TETHER_ERROR_PROVISION_FAILED     = 11;
 
+    /** M: ipv6 tethering @{ */
+    /** {@hide}
+     * @internal
+     */
+    public static final int TETHER_ERROR_IPV6_NO_ERROR      = 0x10;
+    /** {@hide}
+     * @internal
+     */
+    public static final int TETHER_ERROR_IPV6_AVAIABLE      = 0x20;
+    /** {@hide}
+     * @internal
+     */
+    public static final int TETHER_ERROR_IPV6_UNAVAIABLE      = 0x30;
+    /** @} */
+
     /**
      * Get a more detailed error code after a Tethering or Untethering
      * request asynchronously failed.
@@ -2497,6 +2600,7 @@ public class ConnectivityManager {
      */
     public void setAirplaneMode(boolean enable) {
         try {
+            Thread.dumpStack();
             mService.setAirplaneMode(enable);
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
@@ -3380,6 +3484,7 @@ public class ConnectivityManager {
                 network == null ? NETID_UNSET : network.netId);
     }
 
+
     /**
      * Device is not restricting metered network activity while application is running on
      * background.
@@ -3449,6 +3554,48 @@ public class ConnectivityManager {
             return getNetworkPolicyManager().getRestrictBackgroundByCaller();
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
+        }
+    }
+
+
+
+    /**
+     * support Tether dediated APN feature  for OP03APNSettingExt
+     * @internal
+     * @return true if tethering is completed or false
+     * @hide
+     */
+    public boolean isTetheringChangeDone() {
+        try {
+            return mService.isTetheringChangeDone();
+        } catch (RemoteException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Ipv6 Tethering Feature
+     * @internal
+     * @param enable to set ipv6 tethering function
+     * @hide
+     */
+    public void setTetheringIpv6Enable(boolean enable) {
+        try {
+            mService.setTetheringIpv6Enable(enable);
+        } catch (RemoteException e) { }
+    }
+
+    /**
+     * Ipv6 Tethering Feature
+     * @internal
+     * @return the value to latest set by setTetheringIpv6Enable
+     * @hide
+     */
+    public boolean getTetheringIpv6Enable() {
+        try {
+            return mService.getTetheringIpv6Enable();
+        } catch (RemoteException e) {
+            return false;
         }
     }
 

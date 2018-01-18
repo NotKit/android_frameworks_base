@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2009 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -65,6 +70,42 @@ public class Credentials {
 
     /** Key prefix for user secret keys. */
     public static final String USER_SECRET_KEY = "USRSKEY_";
+
+    /// M: support for WAPI cert @{
+    /**
+     * Key prefix for WAPI server certificate.
+     * @internal
+     */
+    public static final String WAPI_SERVER_CERTIFICATE = "WAPISERVERCERT_";
+    /**
+     * Intent extra: name for the WAPI as server's certificate.
+     * @internal
+     */
+    public static final String EXTRA_WAPI_SERVER_CERTIFICATE_NAME = "wapi_server_certificate_name";
+
+    /**
+     * Intent extra: data for the WAPI as server's certificate .
+     * @internal
+     */
+    public static final String EXTRA_WAPI_SERVER_CERTIFICATE_DATA = "wapi_server_certificate_data";
+
+    /**
+     * Key prefix for WAPI user certificate (including private key).
+     * @internal
+     */
+    public static final String WAPI_USER_CERTIFICATE = "WAPIUSERCERT_";
+    /**
+     * Intent extra: name for the user's certificate.
+     * @internal
+     */
+    public static final String EXTRA_WAPI_USER_CERTIFICATE_NAME = "wapi_user_certificate_name";
+
+    /**
+     * Intent extra: data for the wapi user's certificate .
+     * @internal
+     */
+    public static final String EXTRA_WAPI_USER_CERTIFICATE_DATA = "wapi_user_certificate_data";
+    /// @}
 
     /** Key prefix for VPN. */
     public static final String VPN = "VPN_";

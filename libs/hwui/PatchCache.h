@@ -38,7 +38,7 @@ class Patch;
 
 // Debug
 #if DEBUG_PATCHES
-    #define PATCH_LOGD(...) ALOGD(__VA_ARGS__)
+    #define PATCH_LOGD(...) MLOGD(DEBUG_PATCHES, __VA_ARGS__)
 #else
     #define PATCH_LOGD(...)
 #endif

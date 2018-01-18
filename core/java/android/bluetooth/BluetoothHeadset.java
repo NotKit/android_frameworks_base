@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2008 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -47,7 +52,7 @@ import java.util.List;
 public final class BluetoothHeadset implements BluetoothProfile {
     private static final String TAG = "BluetoothHeadset";
     private static final boolean DBG = true;
-    private static final boolean VDBG = false;
+    private static final boolean VDBG = true;
 
     /**
      * Intent used to broadcast the change in connection state of the Headset
@@ -141,6 +146,66 @@ public final class BluetoothHeadset implements BluetoothProfile {
      */
     public static final String EXTRA_VENDOR_SPECIFIC_HEADSET_EVENT_CMD_TYPE =
             "android.bluetooth.headset.extra.VENDOR_SPECIFIC_HEADSET_EVENT_CMD_TYPE";
+
+    /// M: HF indicator support @{
+    /**
+     * Intent used to broadcast the HF's battery level event in the Headset
+     * profile.
+     *
+     * <p>This intent will have 2 extras:
+     * <ul>
+     *   <li> {@link #EXTRA_HF_BATTERY_LEVEL_EVENT_VALUE} - The value of HF's battery level. </li>
+     *   <li> {@link BluetoothDevice#EXTRA_DEVICE} - The remote device. </li>
+     * </ul>
+     *
+     * <p>Requires {@link android.Manifest.permission#BLUETOOTH} permission to
+     * receive.
+     *
+     * @hide
+     * */
+
+    public static final String ACTION_HF_BATTERY_LEVEL_EVENT =
+         "android.bluetooth.headset.profile.action.HF_BATTERY_LEVEL_EVENT";
+
+    /**
+     * Intent used to broadcast the HF's enhanced safety event in the Headset
+     * profile.
+     *
+     * <p>This intent will have 2 extras:
+     * <ul>
+     *   <li> {@link #EXTRA_HF_ENHANCED_SAFETY_EVENT_VALUE} - HF enhanced safety's value. </li>
+     *   <li> {@link BluetoothDevice#EXTRA_DEVICE} - The remote device. </li>
+     * </ul>
+     *
+     * <p>Requires {@link android.Manifest.permission#BLUETOOTH} permission to
+     * receive.
+     *
+     * @hide
+     * */
+
+    public static final String ACTION_HF_ENHANCED_SAFETY_EVENT =
+         "android.bluetooth.headset.profile.action.HF_ENHANCED_SAFETY_EVENT";
+
+
+    /**
+     * An int extra field in {@link #ACTION_HF_BATTERY_LEVEL_EVENT}
+     * intents that contains HF's battery level (0~100).
+     *
+     * @hide
+     * */
+    public static final String EXTRA_HF_BATTERY_LEVEL_EVENT_VALUE =
+            "android.bluetooth.headset.extra.HF_BATTERY_LEVEL_EVENT_VALUE";
+
+    /**
+     * An int extra field in {@link #ACTION_HF_ENHANCED_SAFETY_EVENT}
+     * intents that contains HF's Enhanced safety value (0, 1).
+     *
+     * @hide
+     * */
+    public static final String EXTRA_HF_ENHANCED_SAFETY_EVENT_VALUE =
+            "android.bluetooth.headset.extra.HF_ENHANCED_SAFETY_EVENT_VALUE";
+
+    /// @}
 
     /**
      * AT command type READ used with
@@ -303,6 +368,8 @@ public final class BluetoothHeadset implements BluetoothProfile {
         IBluetoothManager mgr = mAdapter.getBluetoothManager();
         if (mgr != null) {
             try {
+                if (VDBG) Log.d(TAG, "Register mBluetoothStateChangeCallback = "
+                                     + mBluetoothStateChangeCallback);
                 mgr.registerStateChangeCallback(mBluetoothStateChangeCallback);
             } catch (RemoteException e) {
                 Log.e(TAG,"",e);
@@ -324,14 +391,14 @@ public final class BluetoothHeadset implements BluetoothProfile {
 
     void doUnbind() {
         synchronized (mConnection) {
-            if (mService != null) {
+            //if (mService != null) { ///M: ALPS02565035 Ensure Headset do unbind
                 try {
                     mAdapter.getBluetoothManager().unbindBluetoothProfileService(
                             BluetoothProfile.HEADSET, mConnection);
                 } catch (RemoteException e) {
                     Log.e(TAG,"Unable to unbind HeadsetService", e);
                 }
-            }
+            //}
         }
     }
 
@@ -347,6 +414,8 @@ public final class BluetoothHeadset implements BluetoothProfile {
         IBluetoothManager mgr = mAdapter.getBluetoothManager();
         if (mgr != null) {
             try {
+                if (VDBG) Log.d(TAG, "Unregister mBluetoothStateChangeCallback = "
+                                     + mBluetoothStateChangeCallback);
                 mgr.unregisterStateChangeCallback(mBluetoothStateChangeCallback);
             } catch (Exception e) {
                 Log.e(TAG,"",e);
@@ -799,6 +868,10 @@ public final class BluetoothHeadset implements BluetoothProfile {
      * @hide
      */
     public boolean connectAudio() {
+        if (DBG) {
+            log("connectAudio()");
+        }
+
         if (mService != null && isEnabled()) {
             try {
                 return mService.connectAudio();
@@ -822,6 +895,10 @@ public final class BluetoothHeadset implements BluetoothProfile {
      * @hide
      */
     public boolean disconnectAudio() {
+        if (DBG) {
+            log("disconnectAudio()");
+        }
+
         if (mService != null && isEnabled()) {
             try {
                 return mService.disconnectAudio();
@@ -1036,14 +1113,18 @@ public final class BluetoothHeadset implements BluetoothProfile {
             = new IBluetoothProfileServiceConnection.Stub()  {
         @Override
         public void onServiceConnected(ComponentName className, IBinder service) {
-            if (DBG) Log.d(TAG, "Proxy object connected");
+            if (DBG) {
+                Log.d(TAG, "Proxy object connected");
+            }
             mService = IBluetoothHeadset.Stub.asInterface(service);
             mHandler.sendMessage(mHandler.obtainMessage(
                     MESSAGE_HEADSET_SERVICE_CONNECTED));
         }
         @Override
         public void onServiceDisconnected(ComponentName className) {
-            if (DBG) Log.d(TAG, "Proxy object disconnected");
+            if (DBG) {
+                Log.d(TAG, "Proxy object disconnected");
+            }
             mService = null;
             mHandler.sendMessage(mHandler.obtainMessage(
                     MESSAGE_HEADSET_SERVICE_DISCONNECTED));

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007-2008 The Android Open Source Project
  * 
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not
@@ -31,7 +36,9 @@ import android.view.inputmethod.InputConnection;
 import android.widget.TextView;
 
 public class EditableInputConnection extends BaseInputConnection {
-    private static final boolean DEBUG = false;
+    /// M: Changed for switch log on/off in the runtime. @{
+    public static boolean DEBUG = false;
+    /// @}
     private static final String TAG = "EditableInputConnection";
 
     private final TextView mTextView;

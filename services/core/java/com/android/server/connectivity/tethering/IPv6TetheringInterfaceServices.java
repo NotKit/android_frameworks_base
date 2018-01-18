@@ -58,6 +58,7 @@ class IPv6TetheringInterfaceServices {
     private LinkProperties mLastIPv6LinkProperties;
     private RouterAdvertisementDaemon mRaDaemon;
     private RaParams mLastRaParams;
+    private final static boolean VDBG = true;
 
     IPv6TetheringInterfaceServices(String ifname, INetworkManagementService nms) {
         mIfName = ifname;
@@ -65,6 +66,8 @@ class IPv6TetheringInterfaceServices {
     }
 
     public boolean start() {
+        Log.d(TAG, "start()");
+
         try {
             mNetworkInterface = NetworkInterface.getByName(mIfName);
         } catch (SocketException e) {
@@ -92,6 +95,8 @@ class IPv6TetheringInterfaceServices {
     }
 
     public void stop() {
+        Log.d(TAG, "stop()");
+
         mNetworkInterface = null;
         mHwAddr = null;
         setRaParams(null);
@@ -109,6 +114,7 @@ class IPv6TetheringInterfaceServices {
     // TODO: Evaluate using a data structure than is more directly suited to
     // communicating only the relevant information.
     public void updateUpstreamIPv6LinkProperties(LinkProperties v6only) {
+        Log.d(TAG, "updateUpstreamIPv6LinkProperties() mRaDaemon:" + mRaDaemon);
         if (mRaDaemon == null) return;
 
         // Avoid unnecessary work on spurious updates.
@@ -129,10 +135,12 @@ class IPv6TetheringInterfaceServices {
                 final IpPrefix prefix = new IpPrefix(
                         linkAddr.getAddress(), linkAddr.getPrefixLength());
                 params.prefixes.add(prefix);
+                Log.d(TAG, "params.prefixes.add(" + prefix);
 
                 final Inet6Address dnsServer = getLocalDnsIpFor(prefix);
                 if (dnsServer != null) {
                     params.dnses.add(dnsServer);
+                    Log.d(TAG, "params.dnses.add(" + dnsServer);
                 }
             }
         }
@@ -150,6 +158,7 @@ class IPv6TetheringInterfaceServices {
         if (!deprecatedPrefixes.isEmpty()) {
             final ArrayList<RouteInfo> toBeRemoved = getLocalRoutesFor(deprecatedPrefixes);
             try {
+                if (VDBG) { Log.i(TAG, "configureLocalRoutes toBeRemoved:" + toBeRemoved); }
                 final int removalFailures = mNMService.removeRoutesFromLocalNetwork(toBeRemoved);
                 if (removalFailures > 0) {
                     Log.e(TAG, String.format("Failed to remove %d IPv6 routes from local table.",
@@ -157,6 +166,8 @@ class IPv6TetheringInterfaceServices {
                 }
             } catch (RemoteException e) {
                 Log.e(TAG, "Failed to remove IPv6 routes from local table: ", e);
+            } catch (IllegalStateException e) {
+                Log.e(TAG, "Failed to removeRoutesFromLocalNetwork : ", e);
             }
         }
 
@@ -184,9 +195,12 @@ class IPv6TetheringInterfaceServices {
                     // the interface is already in the local_network. Note also
                     // that adding routes that already exist does not cause an
                     // error (EEXIST is silently ignored).
+                    if (VDBG) { Log.i(TAG, "configureLocalRoutes toBeAdded:" + toBeAdded); }
                     mNMService.addInterfaceToLocalNetwork(mIfName, toBeAdded);
                 } catch (RemoteException e) {
                     Log.e(TAG, "Failed to add IPv6 routes to local table: ", e);
+                } catch (IllegalStateException e) {
+                    Log.e(TAG, "Failed to addInterfaceToLocalNetwork : ", e);
                 }
             }
         }
@@ -206,6 +220,8 @@ class IPv6TetheringInterfaceServices {
             for (Inet6Address dns : deprecatedDnses) {
                 final String dnsString = dns.getHostAddress();
                 try {
+                    if (VDBG) { Log.i(TAG, "configureLocalDns " +
+                            "netd.interfaceDelAddress:" + dnsString); }
                     netd.interfaceDelAddress(mIfName, dnsString, RFC7421_IP_PREFIX_LENGTH);
                 } catch (ServiceSpecificException | RemoteException e) {
                     Log.e(TAG, "Failed to remove local dns IP: " + dnsString, e);
@@ -223,6 +239,8 @@ class IPv6TetheringInterfaceServices {
             for (Inet6Address dns : addedDnses) {
                 final String dnsString = dns.getHostAddress();
                 try {
+                    if (VDBG) { Log.i(TAG, "configureLocalDns " +
+                                "netd.interfaceAddAddress:" + dnsString); }
                     netd.interfaceAddAddress(mIfName, dnsString, RFC7421_IP_PREFIX_LENGTH);
                 } catch (ServiceSpecificException | RemoteException e) {
                     Log.e(TAG, "Failed to add local dns IP: " + dnsString, e);

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2008 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -258,6 +263,30 @@ android_media_MediaRecorder_setParameter(JNIEnv *env, jobject thiz, jstring para
     }
 
     process_media_recorder_call(env, mr->setParameters(String8(params8)), "java/lang/RuntimeException", "setParameter failed.");
+    env->ReleaseStringUTFChars(params,params8);
+}
+
+static void
+android_media_MediaRecorder_setParametersExtra(JNIEnv *env, jobject thiz, jstring params)
+{
+    ALOGE("setParametersExtra() ");
+    if (params == NULL)
+    {
+        ALOGE("Invalid or empty params string.  This parameter will be ignored.");
+        return;
+    }
+
+    sp<MediaRecorder> mr = getMediaRecorder(env, thiz);
+
+    const char* params8 = env->GetStringUTFChars(params, NULL);
+    if (params8 == NULL)
+    {
+        ALOGE("Failed to covert jstring to String8.  This parameter will be ignored.");
+        return;
+    }
+    #ifdef MTK_AOSP_ENHANCEMENT
+    process_media_recorder_call(env, mr->setParametersExtra(String8(params8)), "java/lang/RuntimeException", "setParametersExtra failed.");
+    #endif
     env->ReleaseStringUTFChars(params,params8);
 }
 
@@ -552,6 +581,7 @@ static const JNINativeMethod gMethods[] = {
                                                                 (void *)android_media_MediaRecorder_native_setup},
     {"native_finalize",      "()V",                             (void *)android_media_MediaRecorder_native_finalize},
     {"native_setInputSurface", "(Landroid/view/Surface;)V", (void *)android_media_MediaRecorder_setInputSurface },
+    {"setParametersExtra",   "(Ljava/lang/String;)V",           (void *)android_media_MediaRecorder_setParametersExtra},
 };
 
 // This function only registers the native methods, and is called from

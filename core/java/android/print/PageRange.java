@@ -20,6 +20,7 @@ import android.annotation.IntRange;
 import android.annotation.NonNull;
 import android.os.Parcel;
 import android.os.Parcelable;
+import android.util.Log;
 
 /**
  * Represents a range of pages. The start and end page indices of
@@ -32,9 +33,12 @@ public final class PageRange implements Parcelable {
      */
     public static final PageRange ALL_PAGES = new PageRange(0, Integer.MAX_VALUE);
 
+
     /** @hide */
     public static final PageRange[] ALL_PAGES_ARRAY = new PageRange[]{PageRange.ALL_PAGES};
 
+
+    private final static String LOG_TAG = "PageRange";
     private final int mStart;
     private final int mEnd;
 
@@ -55,7 +59,9 @@ public final class PageRange implements Parcelable {
             throw new IllegalArgumentException("end cannot be less than zero.");
         }
         if (start > end) {
-            throw new IllegalArgumentException("start must be lesser than end.");
+            Log.e(LOG_TAG, "Illegal Argument: start(" + start
+            + ") must be lesser than end(" + end + ").");
+            start = 0;
         }
         mStart = start;
         mEnd = end;

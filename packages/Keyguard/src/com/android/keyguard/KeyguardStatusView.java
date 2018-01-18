@@ -44,12 +44,14 @@ public class KeyguardStatusView extends GridLayout {
     private final LockPatternUtils mLockPatternUtils;
     private final AlarmManager mAlarmManager;
 
-    private TextView mAlarmStatusView;
-    private TextClock mDateView;
-    private TextClock mClockView;
-    private TextView mOwnerInfo;
+    /// M: add for mock testcase
+    TextView mAlarmStatusView;
+    TextClock mDateView;
+    TextClock mClockView;
+    TextView mOwnerInfo;
 
-    private KeyguardUpdateMonitorCallback mInfoCallback = new KeyguardUpdateMonitorCallback() {
+    /// M: add for mock testcase
+    KeyguardUpdateMonitorCallback mInfoCallback = new KeyguardUpdateMonitorCallback() {
 
         @Override
         public void onTimeChanged() {

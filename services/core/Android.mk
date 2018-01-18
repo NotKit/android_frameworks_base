@@ -19,7 +19,16 @@ LOCAL_AIDL_INCLUDES += \
 
 LOCAL_JAVA_LIBRARIES := services.net telephony-common
 LOCAL_STATIC_JAVA_LIBRARIES := tzdata_update
+LOCAL_STATIC_JAVA_LIBRARIES += anrmanager
+LOCAL_STATIC_JAVA_LIBRARIES += services.ipo
+LOCAL_STATIC_JAVA_LIBRARIES += com_mediatek_amplus
+LOCAL_STATIC_JAVA_LIBRARIES += lbsutil
+LOCAL_STATIC_JAVA_LIBRARIES += frc
+LOCAL_STATIC_JAVA_LIBRARIES += suppression
+LOCAL_STATIC_JAVA_LIBRARIES += running_booster
+LOCAL_STATIC_JAVA_LIBRARIES += appworkingset
 LOCAL_PROTOC_OPTIMIZE_TYPE := nano
+LOCAL_STATIC_JAVA_LIBRARIES += cta
 
 ifneq ($(INCREMENTAL_BUILDS),)
     LOCAL_PROGUARD_ENABLED := disabled
@@ -33,3 +42,7 @@ LOCAL_JACK_FLAGS := \
  -D jack.transformations.boost-locked-region-priority.reset=com.android.server.am.ActivityManagerService\#resetPriorityAfterLockedSection
 
 include $(BUILD_STATIC_JAVA_LIBRARY)
+
+include $(CLEAR_VARS)
+LOCAL_PREBUILT_STATIC_JAVA_LIBRARIES := lbsutil:java/com/mediatek/location/libs/lbsutils.jar
+include $(BUILD_MULTI_PREBUILT)

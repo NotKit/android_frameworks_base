@@ -244,8 +244,10 @@ void Texture::upload(const SkBitmap& bitmap) {
         SkCanvas canvas(rgbaBitmap);
         canvas.drawBitmap(bitmap, 0.0f, 0.0f, nullptr);
 
+        DUMP_TEXTURE(mId, rgbaBitmap.rowBytesAsPixels(), rgbaBitmap.height(), &rgbaBitmap);
         uploadSkBitmapToTexture(rgbaBitmap, needsAlloc, format, type);
     } else {
+        DUMP_TEXTURE(mId, bitmap.rowBytesAsPixels(), bitmap.height(), &bitmap);
         uploadSkBitmapToTexture(bitmap, needsAlloc, format, type);
     }
 

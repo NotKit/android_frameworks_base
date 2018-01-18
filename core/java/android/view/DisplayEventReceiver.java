@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,6 +23,7 @@ package android.view;
 
 import dalvik.system.CloseGuard;
 
+import android.os.Build;
 import android.os.Looper;
 import android.os.MessageQueue;
 import android.util.Log;
@@ -35,7 +41,9 @@ import java.lang.ref.WeakReference;
  */
 public abstract class DisplayEventReceiver {
     private static final String TAG = "DisplayEventReceiver";
-
+    /// M : log for sync barrier
+    private static final boolean IS_ENG_BUILD = "eng".equals(Build.TYPE);
+    private static final boolean DEBUG_DEFAULT = IS_ENG_BUILD;
     private final CloseGuard mCloseGuard = CloseGuard.get();
 
     private long mReceiverPtr;
@@ -131,6 +139,9 @@ public abstract class DisplayEventReceiver {
             Log.w(TAG, "Attempted to schedule a vertical sync pulse but the display event "
                     + "receiver has already been disposed.");
         } else {
+            if (DEBUG_DEFAULT) {
+                Log.v(TAG, "call nativeScheduleVsync mReceiverPtr = " + mReceiverPtr);
+            }
             nativeScheduleVsync(mReceiverPtr);
         }
     }

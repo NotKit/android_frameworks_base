@@ -44,6 +44,7 @@ void RecordingCanvas::resetRecording(int width, int height) {
 
     mDeferredBarrierType = DeferredBarrierType::InOrder;
     mState.setDirtyClip(false);
+    mState.resetForRecording(mDisplayList);
 }
 
 DisplayList* RecordingCanvas::finishRecording() {
@@ -54,6 +55,7 @@ DisplayList* RecordingCanvas::finishRecording() {
     DisplayList* displayList = mDisplayList;
     mDisplayList = nullptr;
     mSkiaCanvasProxy.reset(nullptr);
+    mState.resetForRecording();
     return displayList;
 }
 
@@ -157,7 +159,7 @@ int RecordingCanvas::saveLayer(float left, float top, float right, float bottom,
         layerBounds.doIntersect(unmappedBounds);
     }
 
-    int saveValue = mState.save((int) flags);
+    int saveValue = mState.save((int) flags, true); // M: mark in save layer
     Snapshot& snapshot = *mState.writableSnapshot();
 
     // layerBounds is in original bounds space, but clipped by current recording clip
@@ -649,6 +651,8 @@ int RecordingCanvas::addOp(RecordedOp* op) {
         // standard case - append to existing chunk
         mDisplayList->chunks.back().endOpIndex = insertIndex + 1;
     }
+
+    mState.flushAndAddOp(op); // M: record all draw ops
     return insertIndex;
 }
 

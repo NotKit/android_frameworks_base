@@ -57,7 +57,7 @@ public class UiAutomatorTestRunner {
     private static final int EXIT_OK = 0;
     private static final int EXIT_EXCEPTION = -1;
 
-    private static final String HANDLER_THREAD_NAME = "UiAutomatorHandlerThread";
+    private static final String HANDLER_THREAD_NAME = "UiAutomatorTestRunner-UiAutomatorHandlerThread";
 
     private boolean mDebug;
     private boolean mMonkey;
@@ -94,6 +94,7 @@ public class UiAutomatorTestRunner {
         mDebug = debug;
         mMonkey = monkey;
         start();
+        Log.i(LOGTAG, "calling System exit");
         System.exit(EXIT_OK);
     }
 
@@ -168,7 +169,12 @@ public class UiAutomatorTestRunner {
             resultPrinter.print(testRunResult, runTime, testRunOutput);
             automationWrapper.disconnect();
             automationWrapper.setRunAsMonkey(false);
-            mHandlerThread.quit();
+            boolean quit_result = mHandlerThread.quitSafely();
+            Log.i(LOGTAG, "all case run finished going to quit, HandlerThread quit result : " + quit_result);
+            try {
+                mHandlerThread.join();
+            } catch (InterruptedException e) {
+            }
         }
     }
 

@@ -67,8 +67,12 @@ public class WifiP2pProvDiscEvent {
         else if (tokens[0].endsWith("SHOW-PIN")) event = SHOW_PIN;
         else throw new IllegalArgumentException("Malformed event " + string);
 
-
-        device = new WifiP2pDevice();
+        if (event == PBC_REQ ||
+           event == ENTER_PIN) {
+            device = new WifiP2pDevice(string);
+        } else {
+            device = new WifiP2pDevice();
+        }
         device.deviceAddress = tokens[1];
 
         if (event == SHOW_PIN) {

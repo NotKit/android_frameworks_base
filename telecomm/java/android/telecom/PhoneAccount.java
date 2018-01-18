@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,6 +36,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Parcel;
 import android.os.Parcelable;
+import android.telephony.SubscriptionManager;
 import android.text.TextUtils;
 
 import java.lang.String;
@@ -38,6 +44,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.MissingResourceException;
+import java.util.Objects;
 
 /**
  * Represents a distinct method to place or receive a phone call. Apps which can place calls and
@@ -76,6 +83,23 @@ public final class PhoneAccount implements Parcelable {
      */
     public static final String EXTRA_CALL_SUBJECT_CHARACTER_ENCODING =
             "android.telecom.extra.CALL_SUBJECT_CHARACTER_ENCODING";
+
+    /**
+     * M: {@link PhoneAccount} extras key which determines the sort key about phoneAccount.
+     * <p>
+     * See {@link PhoneAccount#getExtras()}
+     * @hide
+     */
+    public static final String EXTRA_PHONE_ACCOUNT_SORT_KEY =
+            "android.telecom.extra.EXTRA_PHONE_ACCOUNT_SORT_KEY";
+
+    /**
+     * M: {@link PhoneAccount} extras key which indicates the sub id of the phoneAccount.
+     * See {@link PhoneAccount#getSubscriptionId()}, {@link PhoneAccount#getExtras()}
+     * @hide
+     */
+    public static final String EXTRA_EXT_SUBSCRIPTION_ID =
+            "android.telecom.extra.EXTRA_EXT_SUBSCRIPTION_ID";
 
     /**
      * Flag indicating that this {@code PhoneAccount} can act as a connection manager for
@@ -177,6 +201,55 @@ public final class PhoneAccount implements Parcelable {
      * @hide
      */
     public static final int CAPABILITY_EMERGENCY_VIDEO_CALLING = 0x200;
+
+    /**
+     * M: Notice: this is the base of Added custom capabilities. This value MUST be LARGER
+     * than the largest value of the google default ones above.
+     * We reserve the lower 16 bit for google upgrading in future.
+     * We add our own mask with the higher 16 bit. The first value should be 0x8000 << 1 = 0x1 0000
+     */
+    private static final int CUSTOM_CAPABILITY_BASE = 0x8000;
+
+    /**
+     * M: gitFlag indicating that this {@code PhoneAccount} is capable of placing volte calls.
+     * This flag will be set only when the IMS service camped on the IMS server, which
+     * means it is possible to try placing a volte call at this time.
+     * <p>
+     * See {@link #getCapabilities()}
+     * @hide
+     * @internal
+     */
+    public static final int CAPABILITY_VOLTE_CALLING = CUSTOM_CAPABILITY_BASE << 1;
+
+    /**
+     * M: Flag indicating that this {@code PhoneAccount} is capable of placing a volte conference
+     * call at a time. This flag will be set only when the IMS service camped on the IMS
+     * server and and the following features are available on the Network:
+     * 1. Launch a conference with multiple participants at a time
+     * 2. TBD
+     * <p>
+     * See {@link #getCapabilities()}
+     * @hide
+     */
+    public static final int CAPABILITY_VOLTE_CONFERENCE_ENHANCED = CUSTOM_CAPABILITY_BASE << 2;
+
+    /**
+     * M: Flag indicating that this {@code PhoneAccount} is capable of placing a call via CDMA
+     * network. This flag will be set only when the phone for this account is CDMA type.
+     * <p>
+     * See {@link #getCapabilities()}
+     * @hide
+     */
+    public static final int CAPABILITY_CDMA_CALL_PROVIDER = CUSTOM_CAPABILITY_BASE << 3;
+
+    /**
+     * M: Flag indicating that this {@code PhoneAccount} is capable of placing wifi calls.
+     * This flag will be set only when the phone for this account is WFC type.
+     * <p>
+     * See {@link #getCapabilities()}
+     * @hide
+     */
+    public static final int CAPABILITY_WIFI_CALLING = CUSTOM_CAPABILITY_BASE << 4;
 
     /**
      * URI scheme for telephone number URIs.
@@ -640,6 +713,12 @@ public final class PhoneAccount implements Parcelable {
      * @hide
      */
     public void setIsEnabled(boolean isEnabled) {
+        /// M: [log optimize] @{
+        if (mIsEnabled != isEnabled) {
+            Log.d(this, "[setIsEnabled]" + Log.pii(mAccountHandle.getId())
+                    + mIsEnabled + " -> " + isEnabled);
+        }
+        /// @}
         mIsEnabled = isEnabled;
     }
 
@@ -733,26 +812,30 @@ public final class PhoneAccount implements Parcelable {
         mGroupId = in.readString();
     }
 
+    /// M: modified the toString() for more understandable log @{
     @Override
     public String toString() {
-        StringBuilder sb = new StringBuilder().append("[[")
-                .append(mIsEnabled ? 'X' : ' ')
-                .append("] PhoneAccount: ")
+        StringBuilder sb = new StringBuilder().append("PhoneAccount{[")
+                .append(mIsEnabled ? 'V' : 'X')
+                .append("]")
                 .append(mAccountHandle)
-                .append(" Capabilities: ")
+                .append(", subId: ")
+                .append(getSubscriptionId())
+                .append(", Capabilities: [")
                 .append(capabilitiesToString(mCapabilities))
-                .append(" Schemes: ");
+                .append("], Schemes: ");
         for (String scheme : mSupportedUriSchemes) {
             sb.append(scheme)
                     .append(" ");
         }
-        sb.append(" Extras: ");
+        sb.append(", Extras: ");
         sb.append(mExtras);
         sb.append(" GroupId: ");
         sb.append(Log.pii(mGroupId));
-        sb.append("]");
+        sb.append("}");
         return sb.toString();
     }
+    /// @}
 
     /**
      * Generates a string representation of a capabilities bitmask.
@@ -792,6 +875,61 @@ public final class PhoneAccount implements Parcelable {
         if (hasCapabilities(CAPABILITY_SIM_SUBSCRIPTION)) {
             sb.append("SimSub ");
         }
+
+        /// M: added capabilities @{
+        if (hasCapabilities(CAPABILITY_VOLTE_CALLING)) {
+            sb.append("Volte ");
+        }
+        if (hasCapabilities(CAPABILITY_VOLTE_CONFERENCE_ENHANCED)) {
+            sb.append("VolteConf ");
+        }
+        if (hasCapabilities(CAPABILITY_WIFI_CALLING)) {
+            sb.append("WFC ");
+        }
+        if (hasCapabilities(CAPABILITY_CDMA_CALL_PROVIDER)) {
+            sb.append("Cdma ");
+        }
+        /// @}
+
         return sb.toString();
+    }
+
+    /**
+     * M: we have to compare 2 phone accounts to decide whether a re-register necessary.
+     * FIXME: Can't compare the mIcon, now.
+     * @param other the other PhoneAccount.
+     * @return true if equal.
+     * @hide
+     */
+    @Override
+    public boolean equals(Object other) {
+        if (other == null || !(other instanceof PhoneAccount)) {
+            return false;
+        }
+
+        PhoneAccount targetAccount = (PhoneAccount) other;
+        return Objects.equals(targetAccount.getCapabilities(), getCapabilities())
+                && Objects.equals(targetAccount.getHighlightColor(), getHighlightColor())
+                && Objects.equals(targetAccount.getLabel(), getLabel())
+                && Objects.equals(targetAccount.getShortDescription(), getShortDescription())
+                && Objects.equals(targetAccount.getAddress(), getAddress())
+                && Objects.equals(targetAccount.getSubscriptionAddress(), getSubscriptionAddress())
+                && Objects.equals(targetAccount.getSupportedUriSchemes(), getSupportedUriSchemes())
+                && Objects.equals(targetAccount.getAccountHandle(), getAccountHandle());
+    }
+
+    /**
+     * M: get subId from phoneAccount.
+     * This method is much more convenient and faster than
+     * {@link android.telephony.TelephonyManager#getSubIdForPhoneAccount}
+     * @return the subId if this is a valid Telephony PhoneAccount. Otherwise return
+     *         {@link android.telephony.SubscriptionManager#INVALID_SUBSCRIPTION_ID}
+     * @hide
+     */
+    public int getSubscriptionId() {
+        return mExtras == null ?
+                SubscriptionManager.INVALID_SUBSCRIPTION_ID :
+                mExtras.getInt(EXTRA_EXT_SUBSCRIPTION_ID,
+                        SubscriptionManager.INVALID_SUBSCRIPTION_ID);
     }
 }

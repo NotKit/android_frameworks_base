@@ -130,4 +130,9 @@ interface IImsCallSessionListener {
      */
     void callSessionSuppServiceReceived(in IImsCallSession session,
          in ImsSuppServiceNotification suppSrvNotification);
+
+    /// M: MTK added functions @{
+    void callSessionTransferred(in IImsCallSession session);
+    void callSessionTransferFailed(in IImsCallSession session, in ImsReasonInfo reasonInfo);
+    /// @}
 }

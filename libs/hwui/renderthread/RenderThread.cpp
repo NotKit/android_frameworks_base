@@ -158,6 +158,7 @@ RenderThread::RenderThread() : Thread(true)
         , mFrameCallbackTask(nullptr)
         , mRenderState(nullptr)
         , mEglManager(nullptr) {
+    setDebugLog(); /// M: enable log in the beginning
     Properties::load();
     mFrameCallbackTask = new DispatchFrameCallbacks(this);
     mLooper = new Looper(false);
@@ -206,6 +207,7 @@ int RenderThread::displayEventReceiverCallback(int fd, int events, void* data) {
         return 1; // keep the callback
     }
 
+    ATRACE_CALL_L2();
     reinterpret_cast<RenderThread*>(data)->drainDisplayEventQueue();
 
     return 1; // keep the callback
@@ -264,6 +266,7 @@ void RenderThread::dispatchFrameCallbacks() {
 
 void RenderThread::requestVsync() {
     if (!mVsyncRequested) {
+        ATRACE_CALL_L2();
         mVsyncRequested = true;
         status_t status = mDisplayEventReceiver->requestNextVsync();
         LOG_ALWAYS_FATAL_IF(status != NO_ERROR,

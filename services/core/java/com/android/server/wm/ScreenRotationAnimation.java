@@ -43,6 +43,9 @@ import android.view.animation.Transformation;
 
 import java.io.PrintWriter;
 
+/// M: Add import.
+import android.os.Trace;
+
 class ScreenRotationAnimation {
     static final String TAG = TAG_WITH_CLASS_NAME ? "ScreenRotationAnimation" : TAG_WM;
     static final boolean DEBUG_STATE = false;
@@ -250,6 +253,15 @@ class ScreenRotationAnimation {
         mOriginalWidth = originalWidth;
         mOriginalHeight = originalHeight;
 
+        /// M: Add systrace for orientation chagnge performance analysis
+        Trace.traceBegin(Trace.TRACE_TAG_WINDOW_MANAGER, "ScreenRotationAnimation:Create");
+        Slog.i(WindowManagerService.TAG, "  FREEZE " + mSurfaceControl
+                + ": CREATE, w = " + mWidth + ", h = " + mHeight + ", r=" + originalRotation);
+        Trace.traceEnd(Trace.TRACE_TAG_WINDOW_MANAGER);
+
+        /// M: Enable rotation boost
+        mDisplayContent.mService.setRotationBoost(true);
+
         if (!inTransaction) {
             if (SHOW_LIGHT_TRANSACTIONS) Slog.i(TAG_WM,
                     ">>> OPEN TRANSACTION ScreenRotationAnimation");
@@ -321,14 +333,32 @@ class ScreenRotationAnimation {
                     mTmpFloats[Matrix.MSCALE_X], mTmpFloats[Matrix.MSKEW_Y],
                     mTmpFloats[Matrix.MSKEW_X], mTmpFloats[Matrix.MSCALE_Y]);
             mSurfaceControl.setAlpha(alpha);
+
+            /// M: Add systrace for orientation detail matrix information
+            Trace.traceBegin(Trace.TRACE_TAG_WINDOW_MANAGER, "ScreenRotationAnimation:SetMatrix"
+                    + " dsdx=" + mTmpFloats[Matrix.MSCALE_X]
+                    + " dtdx=" + mTmpFloats[Matrix.MSKEW_Y]
+                    + " dsdy=" + mTmpFloats[Matrix.MSKEW_X]
+                    + " dtdy=" + mTmpFloats[Matrix.MSCALE_Y]);
+            if (DEBUG_TRANSFORMS) {
+                Slog.v(WindowManagerService.TAG, "SetSnapshotTransformInTransaction SetMatrix"
+                        + " dsdx=" + mTmpFloats[Matrix.MSCALE_X]
+                        + " dtdx=" + mTmpFloats[Matrix.MSKEW_Y]
+                        + " dsdy=" + mTmpFloats[Matrix.MSKEW_X]
+                        + " dtdy=" + mTmpFloats[Matrix.MSCALE_Y]);
+            }
+            Trace.traceEnd(Trace.TRACE_TAG_WINDOW_MANAGER);
+
             if (DEBUG_TRANSFORMS) {
                 float[] srcPnts = new float[] { 0, 0, mWidth, mHeight };
                 float[] dstPnts = new float[4];
                 matrix.mapPoints(dstPnts, srcPnts);
-                Slog.i(TAG, "Original  : (" + srcPnts[0] + "," + srcPnts[1]
+                /// M: Change the tag to WindowManager {@
+                Slog.i(WindowManagerService.TAG, "Original  : (" + srcPnts[0] + "," + srcPnts[1]
                         + ")-(" + srcPnts[2] + "," + srcPnts[3] + ")");
-                Slog.i(TAG, "Transformed: (" + dstPnts[0] + "," + dstPnts[1]
+                Slog.i(WindowManagerService.TAG, "Transformed: (" + dstPnts[0] + "," + dstPnts[1]
                         + ")-(" + dstPnts[2] + "," + dstPnts[3] + ")");
+                /// @}
             }
         }
     }
@@ -643,7 +673,10 @@ class ScreenRotationAnimation {
      */
     public boolean dismiss(SurfaceSession session, long maxAnimationDuration,
             float animationScale, int finalWidth, int finalHeight, int exitAnim, int enterAnim) {
-        if (DEBUG_STATE) Slog.v(TAG, "Dismiss!");
+        /// M: Add systrace for orientation chagnge performance analysis
+        Trace.traceBegin(Trace.TRACE_TAG_WINDOW_MANAGER, "ScreenRotationAnimation:Begin");
+        Slog.v(WindowManagerService.TAG, "Dismiss!");
+        Trace.traceEnd(Trace.TRACE_TAG_WINDOW_MANAGER);
         if (mSurfaceControl == null) {
             // Can't do animation.
             return false;
@@ -666,6 +699,13 @@ class ScreenRotationAnimation {
             if (SHOW_TRANSACTIONS ||
                     SHOW_SURFACE_ALLOC) Slog.i(TAG_WM,
                             "  FREEZE " + mSurfaceControl + ": DESTROY");
+
+            /// M: Add systrace for orientation chagnge performance analysis {@
+            Trace.traceBegin(Trace.TRACE_TAG_WINDOW_MANAGER, "ScreenRotationAnimation:End");
+            Slog.i(WindowManagerService.TAG, "  FREEZE " + mSurfaceControl + ": DESTROY");
+            Trace.traceEnd(Trace.TRACE_TAG_WINDOW_MANAGER);
+            /// @}
+
             mSurfaceControl.destroy();
             mSurfaceControl = null;
         }
@@ -721,6 +761,8 @@ class ScreenRotationAnimation {
             mRotateEnterAnimation.cancel();
             mRotateEnterAnimation = null;
         }
+        /// M: Disable rotation boost
+        mDisplayContent.mService.setRotationBoost(false);
     }
 
     public boolean isAnimating() {

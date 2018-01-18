@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,11 +32,14 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.res.TypedArray;
 import android.graphics.drawable.Drawable;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Parcel;
 import android.os.Parcelable;
+import android.os.SystemProperties;
 import android.text.TextUtils;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.view.AbsSavedState;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
@@ -82,6 +90,12 @@ import java.util.Set;
  * @attr ref android.R.styleable#Preference_shouldDisableView
  */
 public class Preference implements Comparable<Preference> {
+    /**
+     * M: MTK debug logs
+     */
+    private static final String TAG = "Preference";
+    private static final boolean DBG = "eng".equals(Build.TYPE);
+
     /**
      * Specify for {@link #setOrder(int)} if a specific order is not required.
      */
@@ -761,6 +775,11 @@ public class Preference implements Comparable<Preference> {
      * @param enabled Set true to enable it.
      */
     public void setEnabled(boolean enabled) {
+        if (DBG) {
+            Log.v(TAG, "setEnabled, mEnabled = " + mEnabled +
+                       ", enabled = " + enabled + ", key = " + mKey + ", title = " + mTitle);
+        }
+
         if (mEnabled != enabled) {
             mEnabled = enabled;
 
@@ -777,6 +796,13 @@ public class Preference implements Comparable<Preference> {
      * @return True if this Preference is enabled, false otherwise.
      */
     public boolean isEnabled() {
+        if (DBG) {
+            Log.v(TAG, "isEnabled, mEnabled = " + mEnabled +
+                       ", mDependencyMet = " + mDependencyMet +
+                       ", mParentDependencyMet = " + mParentDependencyMet +
+                       ", key = " + mKey + ", title = " + mTitle);
+        }
+
         return mEnabled && mDependencyMet && mParentDependencyMet;
     }
 
@@ -1311,6 +1337,12 @@ public class Preference implements Comparable<Preference> {
      * @param disableChild Set true to disable this Preference.
      */
     public void onParentChanged(Preference parent, boolean disableChild) {
+        if (DBG) {
+            Log.d(TAG, "onParentChanged, mParentDependencyMet = " + mParentDependencyMet +
+                       ", disableChild = " + disableChild +
+                       ", key = " + mKey + ", title = " + mTitle);
+        }
+
         if (mParentDependencyMet == disableChild) {
             mParentDependencyMet = !disableChild;
 

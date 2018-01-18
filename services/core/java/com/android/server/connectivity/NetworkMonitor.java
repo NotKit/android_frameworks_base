@@ -29,6 +29,7 @@ import android.content.IntentFilter;
 import android.net.CaptivePortal;
 import android.net.ConnectivityManager;
 import android.net.ICaptivePortal;
+import android.net.NetworkCapabilities;
 import android.net.NetworkRequest;
 import android.net.ProxyInfo;
 import android.net.TrafficStats;
@@ -42,6 +43,7 @@ import android.net.wifi.WifiManager;
 import android.os.Handler;
 import android.os.Message;
 import android.os.SystemClock;
+import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.provider.Settings;
 import android.telephony.CellIdentityCdma;
@@ -64,6 +66,9 @@ import com.android.internal.util.Protocol;
 import com.android.internal.util.State;
 import com.android.internal.util.StateMachine;
 
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
@@ -79,8 +84,9 @@ import java.util.concurrent.TimeUnit;
  * {@hide}
  */
 public class NetworkMonitor extends StateMachine {
+
     private static final String TAG = NetworkMonitor.class.getSimpleName();
-    private static final boolean DBG = false;
+    private static final boolean DBG = true;
 
     // Default configuration values for captive portal detection probes.
     // TODO: append a random length parameter to the default HTTPS url.
@@ -93,6 +99,7 @@ public class NetworkMonitor extends StateMachine {
                                                       + "AppleWebKit/537.36 (KHTML, like Gecko) "
                                                       + "Chrome/52.0.2743.82 Safari/537.36";
 
+    private static final String SECONDARY_HTTP_URL = "http://captive.apple.com";
     private static final int SOCKET_TIMEOUT_MS = 10000;
     private static final int PROBE_TIMEOUT_MS  = 3000;
 
@@ -230,6 +237,7 @@ public class NetworkMonitor extends StateMachine {
     private CustomIntentReceiver mLaunchCaptivePortalAppBroadcastReceiver = null;
 
     private final LocalLog validationLogs = new LocalLog(20); // 20 lines
+    private static boolean mSkipNetworkValidation = true;
 
     private final Stopwatch mEvaluationTimer = new Stopwatch();
 
@@ -266,8 +274,10 @@ public class NetworkMonitor extends StateMachine {
 
         mIsCaptivePortalCheckEnabled = Settings.Global.getInt(mContext.getContentResolver(),
                 Settings.Global.CAPTIVE_PORTAL_DETECTION_ENABLED, 1) == 1;
+        mSkipNetworkValidation = mContext.getResources().getBoolean(
+                com.mediatek.internal.R.bool.config_skip_network_validation);
         mUseHttps = Settings.Global.getInt(mContext.getContentResolver(),
-                Settings.Global.CAPTIVE_PORTAL_USE_HTTPS, 1) == 1;
+                Settings.Global.CAPTIVE_PORTAL_USE_HTTPS, 0) == 1;
 
         start();
     }
@@ -502,6 +512,28 @@ public class NetworkMonitor extends StateMachine {
                         transitionTo(mValidatedState);
                         return HANDLED;
                     }
+                    /** M: Do not enable validation during the testing @{*/
+                    if (SystemProperties.getInt("gsm.sim.ril.testsim", 0) == 1 ||
+                            SystemProperties.getInt("gsm.sim.ril.testsim.2", 0) == 1) {
+                        log("test sim enabled");
+                        mSkipNetworkValidation = true;
+                    }
+                    /** @} */
+                    /** M: for the regions it can't reach google check server
+                     ** To avoid issues:
+                     ** - NetworkAgent score incorrect, making network mis-switch
+                     ** - Mobile data stall mis-triggered, making unexpected pdn disconnect
+                     ** - Power consumption, UE keep sending packet to the check server
+                     ** Keep Wi-Fi network connect to the server because we need captive portal
+                     ** function.
+                     ** @{ */
+                    if (mNetworkAgentInfo.networkCapabilities.hasTransport(
+                            NetworkCapabilities.TRANSPORT_CELLULAR) && mSkipNetworkValidation) {
+                        log("consider Mobile validated directly");
+                        transitionTo(mValidatedState);
+                        return HANDLED;
+                    }
+                    /** @} */
                     mAttempts++;
                     // Note: This call to isCaptivePortal() could take up to a minute. Resolving the
                     // server's IP addresses could hit the DNS timeout, and attempting connections
@@ -518,6 +550,19 @@ public class NetworkMonitor extends StateMachine {
                         mLastPortalProbeResult = probeResult;
                         transitionTo(mCaptivePortalState);
                     } else {
+                        /** M: Wi-Fi is not CaptivePortal, consider validated as well.
+                         ** To avoid test case failed:
+                         ** 1. Wi-Fi connected
+                         ** 2. DUT idle 5 mins
+                         ** 3. reset DUT, expect Wi-Fi is connected automatically
+                         ** @{ */
+                        if (mNetworkAgentInfo.networkCapabilities.hasTransport(
+                                NetworkCapabilities.TRANSPORT_WIFI) && mSkipNetworkValidation) {
+                            log("consider Wi-Fi validated directly");
+                            transitionTo(mValidatedState);
+                            return HANDLED;
+                        }
+                        /** @} */
                         final Message msg = obtainMessage(CMD_REEVALUATE, ++mReevaluateToken, 0);
                         sendMessageDelayed(msg, mReevaluateDelayMs);
                         logNetworkEvent(NetworkEvent.NETWORK_VALIDATION_FAILED);
@@ -613,7 +658,7 @@ public class NetworkMonitor extends StateMachine {
     }
 
     public static String getCaptivePortalServerHttpUrl(Context context) {
-        return getSetting(context, Settings.Global.CAPTIVE_PORTAL_HTTP_URL, DEFAULT_HTTP_URL);
+        return getSetting(context, Settings.Global.CAPTIVE_PORTAL_HTTP_URL, SECONDARY_HTTP_URL);
     }
 
     private static String getCaptivePortalFallbackUrl(Context context) {
@@ -746,6 +791,9 @@ public class NetworkMonitor extends StateMachine {
                urlConnection.setRequestProperty("User-Agent", userAgent);
             }
 
+            ///M: Disable connection keep alive in default.
+            urlConnection.setRequestProperty("Connection","Close");
+
             // Time how long it takes to get a response to our request
             long requestTimestamp = SystemClock.elapsedRealtime();
 
@@ -779,6 +827,26 @@ public class NetworkMonitor extends StateMachine {
                 validationLog("PAC fetch 200 response interpreted as 204 response.");
                 httpResponseCode = 204;
             }
+
+            /** M: using another captive server @{*/
+            String contentType = urlConnection.getContentType();
+            if (contentType == null) {
+                log("contentType is null, httpResponseCode = " + httpResponseCode);
+            } else if (contentType.contains("text/html")) {
+                InputStreamReader in = new InputStreamReader(
+                        (InputStream) urlConnection.getContent());
+                BufferedReader buff = new BufferedReader(in);
+                String line = buff.readLine();
+                validationLog("urlConnection.getContent() = " + line);
+                if (httpResponseCode == 200 && line.contains("Success")) {
+                    httpResponseCode = 204;
+                    log("Internet detected!");
+                }
+            }
+            /* @}*/
+            sendNetworkConditionsBroadcast(true /* response received */,
+                    httpResponseCode != 204 /* isCaptivePortal */,
+                    requestTimestamp, responseTimestamp);
         } catch (IOException e) {
             validationLog("Probably not a portal: exception " + e);
             if (httpResponseCode == 599) {

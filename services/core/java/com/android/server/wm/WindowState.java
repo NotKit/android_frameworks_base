@@ -733,7 +733,10 @@ final class WindowState implements WindowManagerPolicy.WindowState {
         // The offset from the layout containing frame to the actual containing frame.
         final int layoutXDiff;
         final int layoutYDiff;
-        if (fullscreenTask || layoutInParentFrame()) {
+
+        /// M: [ALPS02795616] Fix wfd feature just show half screen on second display
+        /// If the window is not shown in default display, we jsut set it as full screen.
+        if (fullscreenTask || layoutInParentFrame() || !isDefaultDisplay()) {
             // We use the parent frame as the containing frame for fullscreen and child windows
             mContainingFrame.set(pf);
             mDisplayFrame.set(df);
@@ -1759,7 +1762,7 @@ final class WindowState implements WindowManagerPolicy.WindowState {
             mWinAnimator.applyEnterAnimationLocked();
         }
         if ((mAttrs.flags & FLAG_TURN_SCREEN_ON) != 0) {
-            if (DEBUG_VISIBILITY) Slog.v(TAG, "Relayout window turning screen on: " + this);
+            if (true || DEBUG_VISIBILITY) Slog.v(TAG, "Relayout window turning screen on: " + this);
             mTurnOnScreen = true;
         }
         if (isConfigChanged()) {
@@ -2692,6 +2695,7 @@ final class WindowState implements WindowManagerPolicy.WindowState {
                 pw.print(" mShownPosition="); mShownPosition.printShortString(pw);
                 pw.print(" isReadyForDisplay()="); pw.print(isReadyForDisplay());
                 pw.print(" hasSavedSurface()="); pw.print(hasSavedSurface());
+                pw.print(" canReceiveKeys()="); pw.print(canReceiveKeys());
                 pw.print(" mWindowRemovalAllowed="); pw.println(mWindowRemovalAllowed);
         if (dumpAll) {
             pw.print(prefix); pw.print("mFrame="); mFrame.printShortString(pw);
@@ -3005,4 +3009,11 @@ final class WindowState implements WindowManagerPolicy.WindowState {
                 || mRemoveOnExit || mWindowRemovalAllowed
                 || mViewVisibility == View.GONE;
     }
+
+    /// M: [App Launch Reponse Time Enhancement][FSW] WS utility. {@
+    public boolean isFastStartingWindow() {
+        return (mAttrs.type == WindowManager.LayoutParams.TYPE_APPLICATION_STARTING)
+            && (mAttrs.getTitle().equals("FastStarting"));
+    }
+    /// @}
 }

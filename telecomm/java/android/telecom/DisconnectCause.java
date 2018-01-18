@@ -75,6 +75,21 @@ public final class DisconnectCause implements Parcelable {
      */
     public static final int CALL_PULLED = 12;
 
+    ///M: WFC @{
+    /**
+     * @hide  Disconnected because of WFC related reasons
+     * mode.
+     */
+    public static final int WFC_CALL_ERROR = 13;
+    ///@}
+
+    /// M: ALPS02501206. For OP07 requirement. @{
+    /**
+     * @hide  Disconnected because of operator customized SIP error codes.
+     */
+    public static final int SIP_INVITE_ERROR = 14;
+    /// @}
+
     private int mDisconnectCode;
     private CharSequence mDisconnectLabel;
     private CharSequence mDisconnectDescription;
@@ -281,6 +296,11 @@ public final class DisconnectCause implements Parcelable {
             case ANSWERED_ELSEWHERE:
                 code = "ANSWERED_ELSEWHERE";
                 break;
+            ///M: WFC @{
+            case WFC_CALL_ERROR:
+                code = "WFC_CALL_ERROR";
+                break;
+            ///@}
             default:
                 code = "invalid code: " + mDisconnectCode;
                 break;

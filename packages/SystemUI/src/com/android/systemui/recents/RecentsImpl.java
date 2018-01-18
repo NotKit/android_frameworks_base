@@ -781,7 +781,9 @@ public class RecentsImpl implements ActivityOptions.OnAnimationFinishedListener 
     private Bitmap drawThumbnailTransitionBitmap(Task toTask, TaskViewTransform toTransform,
             Bitmap thumbnail) {
         SystemServicesProxy ssp = Recents.getSystemServices();
-        if (toTransform != null && toTask.key != null) {
+        /// M: Avoid JE when thumbnail == null @{
+        if (toTransform != null && toTask.key != null && thumbnail != null) {
+        // /@}
             synchronized (mHeaderBarLock) {
                 boolean disabledInSafeMode = !toTask.isSystemApp && ssp.isInSafeMode();
                 mHeaderBar.onTaskViewSizeChanged((int) toTransform.rect.width(),

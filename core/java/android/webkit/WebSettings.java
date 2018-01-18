@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -453,6 +458,16 @@ public abstract class WebSettings {
      * @see #setTextZoom
      */
     public abstract int getTextZoom();
+
+    /**
+     * M: Set the double-tap zoom of the page in percent. Default is 100.
+     * @param doubleTapZoom A percent value for increasing or decreasing the double-tap zoom.
+     * @hide
+     * @internal
+     */
+    public void setDoubleTapZoom(int doubleTapZoom) {
+        // Because others will extend WebSettings, don't throw exception.
+    }
 
     /**
      * Sets policy for third party cookies.

@@ -43,10 +43,14 @@ public interface NetworkController {
     public interface SignalCallback {
         default void setWifiIndicators(boolean enabled, IconState statusIcon, IconState qsIcon,
                 boolean activityIn, boolean activityOut, String description) {}
-
+        /** M: Support [Network Type on Statusbar]
+          * Add one more parameter networkIcon to signal view and show the network type beside
+          * the signal.
+          *  @ {*/
         default void setMobileDataIndicators(IconState statusIcon, IconState qsIcon, int statusType,
-                int qsType, boolean activityIn, boolean activityOut, String typeContentDescription,
-                String description, boolean isWide, int subId) {}
+                int networkIcon, int volteType, int qsType, boolean activityIn, boolean activityOut,
+                String typeContentDescription, String description, boolean isWide, int subId) {}
+        /** @ } */
         default void setSubs(List<SubscriptionInfo> subs) {}
         default void setNoSims(boolean show) {}
 

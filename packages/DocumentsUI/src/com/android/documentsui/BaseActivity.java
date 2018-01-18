@@ -58,6 +58,7 @@ import com.android.documentsui.dirlist.Model;
 import com.android.documentsui.model.DocumentInfo;
 import com.android.documentsui.model.DocumentStack;
 import com.android.documentsui.model.RootInfo;
+import android.widget.Toast;
 
 import java.io.FileNotFoundException;
 import java.util.ArrayList;
@@ -843,4 +844,19 @@ public abstract class BaseActivity extends Activity
             }
         }
     }
+
+    /// M: use a class member variable to show toast to avoid show toast too many times. {@
+    private Toast mToast;
+    /**
+     * M: Show toast with given string.
+     * @param resId res id to get string.
+     */
+    public void showToast(int resId) {
+        if (mToast == null) {
+            mToast = Toast.makeText(BaseActivity.this, resId, Toast.LENGTH_SHORT);
+        }
+        mToast.setText(resId);
+        mToast.show();
+    }
+    /// @}
 }

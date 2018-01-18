@@ -29,11 +29,15 @@ import android.util.AttributeSet;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.accessibility.AccessibilityEvent;
+import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
 import com.android.internal.widget.LockPatternUtils;
 import com.android.keyguard.KeyguardSecurityContainer.SecurityCallback;
 import com.android.keyguard.KeyguardSecurityModel.SecurityMode;
+
+import com.mediatek.keyguard.AntiTheft.AntiTheftManager;
+import com.mediatek.keyguard.VoiceWakeup.VoiceWakeupManager;
 
 import java.io.File;
 
@@ -136,6 +140,11 @@ public class KeyguardHostView extends FrameLayout implements SecurityCallback {
         mCancelAction = cancelAction;
     }
 
+    // M: add for voice unlock,
+    public boolean hasOnDismissAction() {
+        return mDismissAction != null ? true : false;
+    }
+
     public void cancelDismissAction() {
         setOnDismissAction(null, null);
     }
@@ -181,6 +190,10 @@ public class KeyguardHostView extends FrameLayout implements SecurityCallback {
      *  @return True if the keyguard is done.
      */
     public boolean dismiss() {
+        /// M: If dm lock is on, should not let user by pass lockscreen
+        if (!AntiTheftManager.isDismissable()) {
+            return false ;
+        }
         return dismiss(false);
     }
 
@@ -211,6 +224,21 @@ public class KeyguardHostView extends FrameLayout implements SecurityCallback {
         return mSecurityContainer.showNextSecurityScreenOrFinish(authenticated);
     }
 
+    // M: force update
+    @Override
+    public void updateNavbarStatus() {
+        mViewMediatorCallback.updateNavbarStatus() ;
+    }
+
+    /**
+     * Sets an action to run when keyguard finishes.
+     *
+     * @param action
+     */
+    public void setOnDismissAction(OnDismissAction action) {
+        mDismissAction = action;
+    }
+
     /**
      * Authentication has happened and it's time to dismiss keyguard. This function
      * should clean up and inform KeyguardViewMediator.
@@ -227,7 +255,16 @@ public class KeyguardHostView extends FrameLayout implements SecurityCallback {
             deferKeyguardDone = mDismissAction.onDismiss();
             mDismissAction = null;
             mCancelAction = null;
+        } else if (VoiceWakeupManager.getInstance().isDismissAndLaunchApp()) {
+            if (DEBUG) Log.d(TAG, "finish() - call VoiceWakeupManager.getInstance().onDismiss().");
+            VoiceWakeupManager.getInstance().onDismiss();
+            //we need to launch app & dismiss keyguard immediately
+            deferKeyguardDone = false ;
+            // since we need to dismiss keyguard directly, skip onDismiss() of
+            // current security view.
+            // mDismissAction = null;
         }
+
         if (mViewMediatorCallback != null) {
             if (deferKeyguardDone) {
                 mViewMediatorCallback.keyguardDonePending(strongAuth);
@@ -261,6 +298,7 @@ public class KeyguardHostView extends FrameLayout implements SecurityCallback {
     public void onPause() {
         if (DEBUG) Log.d(TAG, String.format("screen off, instance %s at %s",
                 Integer.toHexString(hashCode()), SystemClock.uptimeMillis()));
+        KeyguardUpdateMonitor.getInstance(mContext).setAlternateUnlockEnabled(true);
         mSecurityContainer.showPrimarySecurityScreen(true);
         mSecurityContainer.onPause();
         clearFocus();
@@ -439,4 +477,17 @@ public class KeyguardHostView extends FrameLayout implements SecurityCallback {
     public SecurityMode getCurrentSecurityMode() {
         return mSecurityContainer.getCurrentSecurityMode();
     }
+
+    ///M: added for DiglLayout
+    public void setNotificationPanelView(ViewGroup notificationPanelView) {
+        mSecurityContainer.setNotificationPanelView(notificationPanelView) ;
+    }
+
+    /**
+       * M: on screen turned off.
+       */
+    public void onScreenTurnedOff() {
+        mSecurityContainer.onScreenTurnedOff();
+    }
+
 }

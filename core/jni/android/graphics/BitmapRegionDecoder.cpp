@@ -131,6 +131,11 @@ static jobject nativeDecodeRegion(JNIEnv* env, jobject, jlong brdHandle, jint in
     bool requireUnpremul = false;
     jobject javaBitmap = NULL;
 
+    #ifdef MTK_IMAGE_ENABLE_PQ_FOR_JPEG
+    int postproc = 0;
+    int postprocflag = 0;
+    #endif
+
     // Update the default options with any options supplied by the client.
     if (NULL != options) {
         sampleSize = env->GetIntField(options, gOptions_sampleSizeFieldID);
@@ -138,6 +143,10 @@ static jobject nativeDecodeRegion(JNIEnv* env, jobject, jlong brdHandle, jint in
         colorType = GraphicsJNI::getNativeBitmapColorType(env, jconfig);
         requireUnpremul = !env->GetBooleanField(options, gOptions_premultipliedFieldID);
         javaBitmap = env->GetObjectField(options, gOptions_bitmapFieldID);
+        #ifdef MTK_IMAGE_ENABLE_PQ_FOR_JPEG
+        postproc = env->GetBooleanField(options, gOptions_postprocFieldID);
+        postprocflag = env->GetIntField(options, gOptions_postprocflagFieldID);
+        #endif
         // The Java options of ditherMode and preferQualityOverSpeed are deprecated.  We will
         // ignore the values of these fields.
 
@@ -175,6 +184,13 @@ static jobject nativeDecodeRegion(JNIEnv* env, jobject, jlong brdHandle, jint in
     SkIRect subset = SkIRect::MakeXYWH(inputX, inputY, inputWidth, inputHeight);
     SkBitmapRegionDecoder* brd =
             reinterpret_cast<SkBitmapRegionDecoder*>(brdHandle);
+
+    #ifdef MTK_IMAGE_ENABLE_PQ_FOR_JPEG
+    if (brd->getEncodedFormat() == SkEncodedFormat::kJPEG_SkEncodedFormat) {
+        brd->setPostProcFlag(postproc | (postprocflag << 4));
+    }
+    #endif
+
     SkBitmap bitmap;
     if (!brd->decodeRegion(&bitmap, allocator, subset, sampleSize, colorType, requireUnpremul)) {
         return nullObjectReturn("Failed to decode region.");

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2012 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -46,6 +51,16 @@ import android.view.WindowManagerPolicy;
 
 import java.io.PrintWriter;
 
+// Mediatek AAL support
+import android.content.BroadcastReceiver;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.os.SystemProperties;
+import android.os.UserHandle;
+import android.provider.Settings;
+
+
+
 /**
  * Controls the power state of the display.
  *
@@ -72,7 +87,7 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
     private static final String TAG = "DisplayPowerController";
     private static final String SCREEN_ON_BLOCKED_TRACE_NAME = "Screen on blocked";
 
-    private static boolean DEBUG = false;
+    private static boolean DEBUG = true;
     private static final boolean DEBUG_PRETEND_PROXIMITY_SENSOR_ABSENT = false;
 
     // If true, uses the color fade on animation.
@@ -97,13 +112,27 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
 
     // Proximity sensor debounce delay in milliseconds for positive or negative transitions.
     private static final int PROXIMITY_SENSOR_POSITIVE_DEBOUNCE_DELAY = 0;
-    private static final int PROXIMITY_SENSOR_NEGATIVE_DEBOUNCE_DELAY = 250;
+    private static final int PROXIMITY_SENSOR_NEGATIVE_DEBOUNCE_DELAY = 50;//250;
 
     // Trigger proximity if distance is less than 5 cm.
     private static final float TYPICAL_PROXIMITY_THRESHOLD = 5.0f;
 
     // Brightness animation ramp rate in brightness units per second.
     private static final int BRIGHTNESS_RAMP_RATE_SLOW = 40;
+
+    // Mediatek AAL support
+    private int BRIGHTNESS_RAMP_RATE_BRIGHTEN = BRIGHTNESS_RAMP_RATE_SLOW;
+    private int BRIGHTNESS_RAMP_RATE_DARKEN = BRIGHTNESS_RAMP_RATE_SLOW;
+
+    public static final boolean MTK_AAL_SUPPORT =
+            SystemProperties.get("ro.mtk_aal_support").equals("1");
+
+    public static final boolean MTK_ULTRA_DIMMING_SUPPORT = PowerManager.MTK_ULTRA_DIMMING_SUPPORT;
+
+    public static final boolean MTK_AAL_RUNTIME_TUNING_SUPPORT =
+            nativeRuntimeTuningIsSupported();
+
+    private static final String MTK_AAL_UPDATE_CONFIG_ACTION = "com.mediatek.aal.update_config";
 
     private static final int REPORTED_TO_POLICY_SCREEN_OFF = 0;
     private static final int REPORTED_TO_POLICY_SCREEN_TURNING_ON = 1;
@@ -270,17 +299,32 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
         mContext = context;
 
         final Resources resources = context.getResources();
-        final int screenBrightnessSettingMinimum = clampAbsoluteBrightness(resources.getInteger(
-                com.android.internal.R.integer.config_screenBrightnessSettingMinimum));
+
+        boolean screenBrightnessVirtualValues = false;
+        if (MTK_ULTRA_DIMMING_SUPPORT) {
+            screenBrightnessVirtualValues = resources.getBoolean(
+                    com.mediatek.internal.R.bool.config_screenBrightnessVirtualValues);
+        }
+
+        // Mediatek AAL: ultra dimming modified
+        int screenBrightnessSettingMinimum = clampAbsoluteBrightness(resources.getInteger(
+                com.android.internal.R.integer.config_screenBrightnessSettingMinimum),
+                screenBrightnessVirtualValues);
+        if (MTK_ULTRA_DIMMING_SUPPORT) {
+            screenBrightnessSettingMinimum = PowerManager.ULTRA_DIMMING_BRIGHTNESS_MINIMUM;
+        }
 
         mScreenBrightnessDozeConfig = clampAbsoluteBrightness(resources.getInteger(
-                com.android.internal.R.integer.config_screenBrightnessDoze));
+                com.android.internal.R.integer.config_screenBrightnessDoze),
+                screenBrightnessVirtualValues);
 
         mScreenBrightnessDimConfig = clampAbsoluteBrightness(resources.getInteger(
-                com.android.internal.R.integer.config_screenBrightnessDim));
+                com.android.internal.R.integer.config_screenBrightnessDim),
+                screenBrightnessVirtualValues);
 
         mScreenBrightnessDarkConfig = clampAbsoluteBrightness(resources.getInteger(
-                com.android.internal.R.integer.config_screenBrightnessDark));
+                com.android.internal.R.integer.config_screenBrightnessDark),
+                screenBrightnessVirtualValues);
         if (mScreenBrightnessDarkConfig > mScreenBrightnessDimConfig) {
             Slog.w(TAG, "Expected config_screenBrightnessDark ("
                     + mScreenBrightnessDarkConfig + ") to be less than or equal to "
@@ -333,7 +377,9 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
                     com.android.internal.R.fraction.config_screenAutoBrightnessDozeScaleFactor,
                     1, 1);
 
-            Spline screenAutoBrightnessSpline = createAutoBrightnessSpline(lux, screenBrightness);
+            // Mediatek AAL: ultra dimming modified
+            Spline screenAutoBrightnessSpline = createAutoBrightnessSpline(lux, screenBrightness,
+                    screenBrightnessVirtualValues);
             if (screenAutoBrightnessSpline == null) {
                 Slog.e(TAG, "Error in config.xml.  config_autoBrightnessLcdBacklightValues "
                         + "(size " + screenBrightness.length + ") "
@@ -343,7 +389,8 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
                         + "Auto-brightness will be disabled.");
                 mUseSoftwareAutoBrightnessConfig = false;
             } else {
-                int bottom = clampAbsoluteBrightness(screenBrightness[0]);
+                int bottom = clampAbsoluteBrightness(screenBrightness[0],
+                        screenBrightnessVirtualValues);
                 if (mScreenBrightnessDarkConfig > bottom) {
                     Slog.w(TAG, "config_screenBrightnessDark (" + mScreenBrightnessDarkConfig
                             + ") should be less than or equal to the first value of "
@@ -360,6 +407,17 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
                         brighteningLightDebounce, darkeningLightDebounce,
                         autoBrightnessResetAmbientLuxAfterWarmUp,
                         ambientLightHorizon, autoBrightnessAdjustmentMaxGamma);
+
+                if (MTK_AAL_SUPPORT && (lux.length + 1 == screenBrightness.length)) {
+                    int[] curve = new int[lux.length + 1 + screenBrightness.length];
+                    curve[0] = 0;
+                    System.arraycopy(lux, 0, curve, 1, lux.length);
+                    System.arraycopy(screenBrightness, 0, curve,
+                            lux.length + 1, screenBrightness.length);
+                    // We should not write the config to AALService here,
+                    // because the service may be not ready yet.
+                    mTuningInitCurve = curve;
+                }
             }
         }
 
@@ -375,14 +433,21 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
                         TYPICAL_PROXIMITY_THRESHOLD);
             }
         }
-
     }
+
 
     /**
      * Returns true if the proximity sensor screen-off function is available.
      */
     public boolean isProximitySensorAvailable() {
         return mProximitySensor != null;
+    }
+
+    /**
+     * set IPO screen on delay
+     */
+    public void setIPOScreenOnDelay(int msec) {
+        mPowerState.setIPOScreenOnDelay(msec);
     }
 
     /**
@@ -401,11 +466,6 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
      */
     public boolean requestPowerState(DisplayPowerRequest request,
             boolean waitForNegativeProximity) {
-        if (DEBUG) {
-            Slog.d(TAG, "requestPowerState: "
-                    + request + ", waitForNegativeProximity=" + waitForNegativeProximity);
-        }
-
         synchronized (mLock) {
             boolean changed = false;
 
@@ -430,6 +490,12 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
             if (changed && !mPendingRequestChangedLocked) {
                 mPendingRequestChangedLocked = true;
                 sendUpdatePowerStateLocked();
+            }
+
+            if (DEBUG && changed) {
+                Slog.d(TAG, "requestPowerState: " + request +
+                    ", waitForNegativeProximity=" + waitForNegativeProximity +
+                    ", changed=" + changed);
             }
 
             return mDisplayReadyLocked;
@@ -499,6 +565,8 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
     private final RampAnimator.Listener mRampAnimatorListener = new RampAnimator.Listener() {
         @Override
         public void onAnimationEnd() {
+            // Mediatek AAL support
+            mTuningQuicklyApply = false;
             sendUpdatePowerState();
         }
     };
@@ -532,11 +600,26 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
             }
 
             mustNotify = !mDisplayReadyLocked;
+
+            Slog.d(TAG, "updatePowerState: " + mPowerRequest +
+                ", mWaitingForNegativeProximity=" + mWaitingForNegativeProximity +
+                ", autoBrightnessAdjustmentChanged=" + autoBrightnessAdjustmentChanged +
+                ", mustNotify=" + mustNotify);
         }
 
         // Initialize things the first time the power state is changed.
         if (mustInitialize) {
             initialize();
+
+            if (MTK_AAL_RUNTIME_TUNING_SUPPORT) {
+                IntentFilter filter = new IntentFilter(MTK_AAL_UPDATE_CONFIG_ACTION);
+                mContext.registerReceiver(new UpdateConfigReceiver(), filter);
+                writeInitConfig();
+            }
+        }
+
+        if (MTK_AAL_RUNTIME_TUNING_SUPPORT) {
+            updateRuntimeConfig();
         }
 
         // Compute the basic display state using the policy.
@@ -582,7 +665,14 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
                     && state != Display.STATE_OFF) {
                 setProximitySensorEnabled(true);
             } else {
-                setProximitySensorEnabled(false);
+                if (mPowerRequest.useProximitySensor) {
+                    if (mScreenOffBecauseOfProximity) {
+                        mProximity = PROXIMITY_UNKNOWN;
+                    }
+                    setProximitySensorEnabled(true);
+                } else {
+                    setProximitySensorEnabled(false);
+                }
                 mWaitingForNegativeProximity = false;
             }
             if (mScreenOffBecauseOfProximity
@@ -618,7 +708,15 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
                     && brightness < 0;
             final boolean userInitiatedChange = autoBrightnessAdjustmentChanged
                     && mPowerRequest.brightnessSetByUser;
-            mAutomaticBrightnessController.configure(autoBrightnessEnabled,
+
+            Slog.d(TAG, "ABC configure: enabledInDoze=" + mAllowAutoBrightnessWhileDozingConfig +
+                ", lowDimmingProtectionEnabled=" + mLowDimmingProtectionEnabled +
+                ", adjustment=" + mPowerRequest.screenAutoBrightnessAdjustment +
+                ", state=" + state +
+                ", brightness=" + brightness);
+
+            mAutomaticBrightnessController.configure(
+                    autoBrightnessEnabled || mLowDimmingProtectionEnabled,
                     mPowerRequest.screenAutoBrightnessAdjustment, state != Display.STATE_ON,
                     userInitiatedChange, mPowerRequest.useTwilight);
         }
@@ -665,13 +763,59 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
         // is not ready yet.
         if (brightness < 0) {
             brightness = clampScreenBrightness(mPowerRequest.screenBrightness);
+
+            // Mediatek AAL: ultra dimming modified
+            if (LOW_DIMMING_PROTECTION_SUPPORT) {
+                if (!isScreenStateBright()) {
+                    // Consider a scenario:
+                    // low dimming -> send protection -> screen off -> a while -> screen on
+                    // the protection may be ignored during the screen off
+                    // We have to resend the protection when screen on
+                    mLowDimmingProtectionTriggerBrightness = 0;
+                }
+
+                mLowDimmingProtectionEnabled = (brightness < LOW_DIMMING_PROTECTION_THRESHOLD);
+                final boolean userInitiatedChange = autoBrightnessAdjustmentChanged
+                    && mPowerRequest.brightnessSetByUser;
+                mAutomaticBrightnessController.configure(
+                        autoBrightnessEnabled || mLowDimmingProtectionEnabled,
+                        mPowerRequest.screenAutoBrightnessAdjustment, state != Display.STATE_ON,
+                        userInitiatedChange, mPowerRequest.useTwilight);
+
+                int minBrightness = protectedMinimumBrightness();
+                if (getBrightnessSetting() == mPowerRequest.screenBrightness &&
+                        brightness < minBrightness &&
+                        brightness != mLowDimmingProtectionTriggerBrightness &&
+                        isScreenStateBright())
+                {
+                    long current = SystemClock.uptimeMillis();
+                    mHandler.removeMessages(MSG_PROTECT_LOW_DIMMING);
+                    mHandler.sendEmptyMessageAtTime(MSG_PROTECT_LOW_DIMMING,
+                            current + LOW_DIMMING_PROTECTION_DURATION);
+
+                    Slog.d(TAG, "Trigger low dimming protection : " + brightness +
+                            " < " + minBrightness + ", auto = " +
+                            mAutomaticBrightnessController.getAutomaticScreenBrightness());
+
+                    // If we have emitted a protection for some brightness and another
+                    // updatePowerState() is invoked, do not remove the protection
+                    // message and re-emit if the brightness is not chaged by user.
+                    // That is, the calling of updatePowerState() is not due to user operations.
+                    mLowDimmingProtectionTriggerBrightness = brightness;
+                }
+            }
         }
 
         // Apply dimming by at least some minimum amount when user activity
         // timeout is about to expire.
         if (mPowerRequest.policy == DisplayPowerRequest.POLICY_DIM) {
             if (brightness > mScreenBrightnessRangeMinimum) {
-                brightness = Math.max(Math.min(brightness - SCREEN_DIM_MINIMUM_REDUCTION,
+                // Mediatek AAL modified
+                if (brightness - SCREEN_DIM_MINIMUM_REDUCTION > 0)
+                    brightness = brightness - SCREEN_DIM_MINIMUM_REDUCTION;
+                else
+                    brightness = brightness / 2;
+                brightness = Math.max(Math.min(brightness,
                         mScreenBrightnessDimConfig), mScreenBrightnessRangeMinimum);
             }
             if (!mAppliedDimming) {
@@ -702,10 +846,24 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
         // Skip the animation when the screen is off or suspended.
         if (!mPendingScreenOff) {
             if (state == Display.STATE_ON || state == Display.STATE_DOZE) {
-                animateScreenBrightness(brightness,
-                        slowChange ? BRIGHTNESS_RAMP_RATE_SLOW : mBrightnessRampRateFast);
-            } else {
-                animateScreenBrightness(brightness, 0);
+                // Mediatek AAL modified
+                int rate = BRIGHTNESS_RAMP_RATE_SLOW;
+
+                if (MTK_AAL_SUPPORT) {
+                    if (mTuningQuicklyApply) { // was set in updateRuntimeConfig()
+                        slowChange = false;
+                    }
+                    if (mPowerState.getScreenBrightness() < brightness) {
+                        rate = BRIGHTNESS_RAMP_RATE_BRIGHTEN;
+                    } else {
+                        rate = BRIGHTNESS_RAMP_RATE_DARKEN;
+                    }
+                }
+
+                if (!slowChange) {
+                    rate = mBrightnessRampRateFast;
+                }
+                animateScreenBrightness(brightness, rate);
             }
         }
 
@@ -958,6 +1116,9 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
     private void setProximitySensorEnabled(boolean enable) {
         if (enable) {
             if (!mProximitySensorEnabled) {
+                if (DEBUG) {
+                    Slog.d(TAG, "setProximitySensorEnabled : True");
+                }
                 // Register the listener.
                 // Proximity sensor state already cleared initially.
                 mProximitySensorEnabled = true;
@@ -966,6 +1127,9 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
             }
         } else {
             if (mProximitySensorEnabled) {
+                if (DEBUG) {
+                    Slog.d(TAG, "setProximitySensorEnabled : False");
+                }
                 // Unregister the listener.
                 // Clear the proximity sensor state for next time.
                 mProximitySensorEnabled = false;
@@ -1132,8 +1296,10 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
         pw.println("  mPendingScreenOff=" + mPendingScreenOff);
         pw.println("  mReportedToPolicy=" + reportedToPolicyToString(mReportedScreenStateToPolicy));
 
-        pw.println("  mScreenBrightnessRampAnimator.isAnimating()=" +
-                mScreenBrightnessRampAnimator.isAnimating());
+        if (mScreenBrightnessRampAnimator != null) {
+            pw.println("  mScreenBrightnessRampAnimator.isAnimating()=" +
+                    mScreenBrightnessRampAnimator.isAnimating());
+        }
 
         if (mColorFadeOnAnimator != null) {
             pw.println("  mColorFadeOnAnimator.isStarted()=" +
@@ -1180,7 +1346,9 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
         }
     }
 
-    private static Spline createAutoBrightnessSpline(int[] lux, int[] brightness) {
+    // Mediatek AAL: ultra dimming modified
+    private static Spline createAutoBrightnessSpline(int[] lux,
+            int[] brightness, boolean virtualValues) {
         if (lux == null || lux.length == 0 || brightness == null || brightness.length == 0) {
             Slog.e(TAG, "Could not create auto-brightness spline.");
             return null;
@@ -1189,10 +1357,11 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
             final int n = brightness.length;
             float[] x = new float[n];
             float[] y = new float[n];
-            y[0] = normalizeAbsoluteBrightness(brightness[0]);
+            // Mediatek AAL: ultra dimming modified
+            y[0] = normalizeAbsoluteBrightness(brightness[0], virtualValues);
             for (int i = 1; i < n; i++) {
                 x[i] = lux[i - 1];
-                y[i] = normalizeAbsoluteBrightness(brightness[i]);
+                y[i] = normalizeAbsoluteBrightness(brightness[i], virtualValues);
             }
 
             Spline spline = Spline.createSpline(x, y);
@@ -1209,11 +1378,15 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
         }
     }
 
-    private static float normalizeAbsoluteBrightness(int value) {
-        return (float)clampAbsoluteBrightness(value) / PowerManager.BRIGHTNESS_ON;
+    // Mediatek AAL: ultra dimming modified
+    private static float normalizeAbsoluteBrightness(int value, boolean virtualValue) {
+        return (float) clampAbsoluteBrightness(value, virtualValue) / PowerManager.BRIGHTNESS_ON;
     }
 
-    private static int clampAbsoluteBrightness(int value) {
+    // Mediatek AAL: ultra dimming modified
+    private static int clampAbsoluteBrightness(int value, boolean virtualValue) {
+        if (!virtualValue)
+            value = PowerManager.dimmingPhysicalToVirtual(value);
         return MathUtils.constrain(value, PowerManager.BRIGHTNESS_OFF, PowerManager.BRIGHTNESS_ON);
     }
 
@@ -1238,6 +1411,10 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
                         unblockScreenOn();
                         updatePowerState();
                     }
+                    break;
+
+                case MSG_PROTECT_LOW_DIMMING:
+                    handleProtectLowDimming();
                     break;
             }
         }
@@ -1267,5 +1444,201 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
             msg.setAsynchronous(true);
             mHandler.sendMessage(msg);
         }
+    }
+
+    // Mediatek AAL support
+
+    // Must sync with IAALService::AdaptFieldId
+    private static final int TUNING_ALI2BLI_CURVE_LENGTH = 0;
+    private static final int TUNING_ALI2BLI_CURVE = 1;
+    private static final int TUNING_BLI_RAMP_RATE_BRIGHTEN = 2;
+    private static final int TUNING_BLI_RAMP_RATE_DARKEN = 3;
+
+    private int[] mTuningInitCurve = null;
+    private int mTuningAli2BliSerial = 0;
+    private int mTuningBliBrightenSerial = -1;
+    private int mTuningBliDarkenSerial = -1;
+    private boolean mTuningQuicklyApply = false;
+
+    private static native boolean nativeRuntimeTuningIsSupported();
+    private static native int nativeSetTuningInt(int field, int value);
+    private static native int nativeSetTuningIntArray(int field, int[] array);
+    private static native int nativeGetTuningInt(int field);
+    private static native int nativeGetTuningSerial(int field);
+    private static native void nativeGetTuningIntArray(int field, int[] array);
+    public static native void nativeSetDebouncedAmbientLight(int ambientLight);
+
+    // Sync the initial config to AAL service
+    private void writeInitConfig() {
+        synchronized (mLock) {
+            if (mTuningInitCurve != null) {
+                mTuningAli2BliSerial = nativeSetTuningIntArray(TUNING_ALI2BLI_CURVE,
+                        mTuningInitCurve);
+                mTuningInitCurve = null;
+            }
+            if (mTuningBliBrightenSerial == -1) {
+                mTuningBliBrightenSerial = nativeSetTuningInt(TUNING_BLI_RAMP_RATE_BRIGHTEN,
+                        BRIGHTNESS_RAMP_RATE_BRIGHTEN);
+            }
+            if (mTuningBliDarkenSerial == -1) {
+                mTuningBliDarkenSerial = nativeSetTuningInt(TUNING_BLI_RAMP_RATE_DARKEN,
+                        BRIGHTNESS_RAMP_RATE_DARKEN);
+            }
+        }
+    }
+
+    private void updateRuntimeConfig() {
+        synchronized (mLock) {
+            boolean updated = false;
+            int serial;
+
+            serial = nativeGetTuningSerial(TUNING_ALI2BLI_CURVE);
+            if (serial != mTuningAli2BliSerial) {
+                int length = nativeGetTuningInt(TUNING_ALI2BLI_CURVE_LENGTH);
+                if (length > 0) {
+                    int[] curve = new int[length * 2];
+                    nativeGetTuningIntArray(TUNING_ALI2BLI_CURVE, curve);
+
+                    if (curve[0] != 0) {
+                        Slog.w(TAG, "AALRuntimeTuning: lux[0] is not 0: " + curve[0]);
+                    }
+
+                    int[] lux = new int[length - 1];
+                    int[] brightness = new int[length];
+
+                    System.arraycopy(curve, 1, lux, 0, length - 1);
+                    System.arraycopy(curve, length, brightness, 0, length);
+
+                    Spline spline = createAutoBrightnessSpline(lux, brightness, false);
+                    if (spline != null) {
+                        mAutomaticBrightnessController.setScreenAutoBrightnessSpline(spline);
+
+                        mTuningAli2BliSerial = serial;
+                        updated = true;
+
+                        Slog.d(TAG, "AALRuntimeTuning: curve updated. Length = " + length +
+                                ", serial = " + serial);
+                        Slog.d(TAG, "AALRuntimeTuning: lux = " + curve[0] + "-" +
+                                lux[lux.length - 1] + " brightness = " + brightness[0] +
+                                "-" + brightness[brightness.length - 1]);
+                    } else {
+                        Slog.e(TAG, "AALRuntimeTuning: invalid curve is given.");
+
+                        StringBuffer buffer = new StringBuffer();
+                        buffer.append("AALRuntimeTuning: curve = ");
+                        for (int i = 0; i < length; i++) {
+                            buffer.append(curve[i]);
+                            buffer.append(":");
+                            buffer.append(curve[length + i]);
+                            buffer.append(" ");
+                        }
+                        Slog.e(TAG, buffer.toString());
+                    }
+                } else {
+                    Slog.e(TAG, "AALRuntimeTuning: invalid curve length: " + length);
+                }
+            }
+
+            if (updated) {
+                mAutomaticBrightnessController.updateRuntimeConfig();
+                mTuningQuicklyApply = true;
+            }
+
+            serial = nativeGetTuningSerial(TUNING_BLI_RAMP_RATE_BRIGHTEN);
+            if (serial != mTuningBliBrightenSerial) {
+                BRIGHTNESS_RAMP_RATE_BRIGHTEN = nativeGetTuningInt(TUNING_BLI_RAMP_RATE_BRIGHTEN);
+                if (BRIGHTNESS_RAMP_RATE_BRIGHTEN <= 0)
+                    BRIGHTNESS_RAMP_RATE_BRIGHTEN = BRIGHTNESS_RAMP_RATE_SLOW;
+                mTuningBliBrightenSerial = serial;
+
+                Slog.d(TAG, "AALRuntimeTuning: brighten = " + BRIGHTNESS_RAMP_RATE_BRIGHTEN +
+                        ", serial = " + serial);
+            }
+
+            serial = nativeGetTuningSerial(TUNING_BLI_RAMP_RATE_DARKEN);
+            if (serial != mTuningBliDarkenSerial) {
+                BRIGHTNESS_RAMP_RATE_DARKEN = nativeGetTuningInt(TUNING_BLI_RAMP_RATE_DARKEN);
+                if (BRIGHTNESS_RAMP_RATE_DARKEN <= 0)
+                    BRIGHTNESS_RAMP_RATE_DARKEN = BRIGHTNESS_RAMP_RATE_SLOW;
+                mTuningBliDarkenSerial = serial;
+
+                Slog.d(TAG, "AALRuntimeTuning: darken = " + BRIGHTNESS_RAMP_RATE_DARKEN +
+                        ", serial = " + serial);
+            }
+        }
+    }
+
+    private class UpdateConfigReceiver extends BroadcastReceiver {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            Slog.d(TAG, "AALRuntimeTuning: UpdateConfigReceiver received an intent.");
+            sendUpdatePowerState();
+        }
+    }
+
+    // Mediatek AAL: ultra dimming support
+    private static final boolean LOW_DIMMING_PROTECTION_SUPPORT = MTK_ULTRA_DIMMING_SUPPORT;
+
+    // The time which allow low dimming
+    private static final long LOW_DIMMING_PROTECTION_DURATION = 5000;
+
+    // Allow protection only if brightness < LOW_DIMMING_PROTECTION_THRESHOLD
+    private static final int LOW_DIMMING_PROTECTION_THRESHOLD = 40;
+
+    private static final int MSG_PROTECT_LOW_DIMMING = 100;
+
+    private static final String MTK_AAL_LOW_DIMMING_PROTECTION_TRIGGERED =
+            "com.mediatek.aal.low_dimming_protection_triggered";
+
+    private boolean mLowDimmingProtectionEnabled = false;
+    private int mLowDimmingProtectionTriggerBrightness = 0;
+
+    private boolean isScreenStateBright() {
+        return (mPowerRequest.policy == DisplayPowerRequest.POLICY_BRIGHT);
+    }
+
+    private int protectedMinimumBrightness() {
+        int autoBrightness = mAutomaticBrightnessController.getAutomaticScreenBrightness();
+
+        // Calculate the minimum brightness from auto brightness value
+        // return Math.min(Math.max(1, autoBrightness / 8), LOW_DIMMING_PROTECTION_THRESHOLD);
+
+        return (autoBrightness < LOW_DIMMING_PROTECTION_THRESHOLD * 2)
+                ? 1 : LOW_DIMMING_PROTECTION_THRESHOLD;
+    }
+
+    private int getBrightnessSetting() {
+        return Settings.System.getIntForUser(mContext.getContentResolver(),
+                Settings.System.SCREEN_BRIGHTNESS, mPowerRequest.screenBrightness,
+                UserHandle.USER_CURRENT);
+    }
+
+    // Handler of MSG_PROTECT_LOW_DIMMING
+    private void handleProtectLowDimming() {
+        if (!mAppliedAutoBrightness) {
+            int minBrightness = protectedMinimumBrightness();
+
+            if (isScreenStateBright() &&
+                    !mPowerRequest.useAutoBrightness &&
+                    getBrightnessSetting() == mPowerRequest.screenBrightness &&
+                    mPowerRequest.screenBrightness < LOW_DIMMING_PROTECTION_THRESHOLD &&
+                    mPowerRequest.screenBrightness < minBrightness)
+            {
+                Slog.d(TAG, "Low dimming protection : " + mPowerRequest.screenBrightness +
+                        " -> " + minBrightness + ", auto = " +
+                        mAutomaticBrightnessController.getAutomaticScreenBrightness());
+
+                Settings.System.putIntForUser(mContext.getContentResolver(),
+                        Settings.System.SCREEN_BRIGHTNESS, minBrightness,
+                        UserHandle.USER_CURRENT);
+
+                Intent intent = new Intent(MTK_AAL_LOW_DIMMING_PROTECTION_TRIGGERED);
+                intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
+                mContext.sendBroadcast(intent);
+            }
+        }
+
+        // Let the protection can be checked again if minBrightness changed
+        mLowDimmingProtectionTriggerBrightness = 0;
     }
 }

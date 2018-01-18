@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2008 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -34,7 +39,7 @@ public final class BluetoothMap implements BluetoothProfile {
 
     private static final String TAG = "BluetoothMap";
     private static final boolean DBG = true;
-    private static final boolean VDBG = false;
+    private static final boolean VDBG = true;
 
     public static final String ACTION_CONNECTION_STATE_CHANGED =
         "android.bluetooth.map.profile.action.CONNECTION_STATE_CHANGED";
@@ -370,17 +375,21 @@ public final class BluetoothMap implements BluetoothProfile {
 
     private final ServiceConnection mConnection = new ServiceConnection() {
         public void onServiceConnected(ComponentName className, IBinder service) {
-            if (DBG) log("Proxy object connected");
-            mService = IBluetoothMap.Stub.asInterface(service);
-            if (mServiceListener != null) {
-                mServiceListener.onServiceConnected(BluetoothProfile.MAP, BluetoothMap.this);
+            synchronized (mConnection) {
+                if (DBG) log("Proxy object connected");
+                mService = IBluetoothMap.Stub.asInterface(service);
+                if (mServiceListener != null) {
+                    mServiceListener.onServiceConnected(BluetoothProfile.MAP, BluetoothMap.this);
+                }
             }
         }
         public void onServiceDisconnected(ComponentName className) {
-            if (DBG) log("Proxy object disconnected");
-            mService = null;
-            if (mServiceListener != null) {
-                mServiceListener.onServiceDisconnected(BluetoothProfile.MAP);
+            synchronized (mConnection) {
+                if (DBG) log("Proxy object disconnected");
+                mService = null;
+                if (mServiceListener != null) {
+                    mServiceListener.onServiceDisconnected(BluetoothProfile.MAP);
+                }
             }
         }
     };

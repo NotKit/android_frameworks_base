@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2008 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -469,7 +474,8 @@ public class VibratorService extends IVibratorService.Stub
                 if (mode == AppOpsManager.MODE_ERRORED) {
                     Slog.w(TAG, "Would be an error: vibrate from uid " + vib.mUid);
                 }
-                mH.post(mVibrationRunnable);
+        //MTK Modify, do nothing with App related control in MTK solution
+                //mH.post(mVibrationRunnable);
                 return;
             }
         } catch (RemoteException e) {

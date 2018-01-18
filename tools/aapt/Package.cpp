@@ -1,3 +1,8 @@
+/*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
 //
 // Copyright 2006 The Android Open Source Project
 //
@@ -33,7 +38,8 @@ static const char* kNoCompressExt[] = {
     ".mpg", ".mpeg", ".mid", ".midi", ".smf", ".jet",
     ".rtttl", ".imy", ".xmf", ".mp4", ".m4a",
     ".m4v", ".3gp", ".3gpp", ".3g2", ".3gpp2",
-    ".amr", ".awb", ".wma", ".wmv", ".webm", ".mkv"
+    ".amr", ".awb", ".wma", ".wmv", ".webm", ".mkv",
+    ".ktx" /// M:Support ktx file format
 };
 
 /* fwd decls, so I can write this downward */

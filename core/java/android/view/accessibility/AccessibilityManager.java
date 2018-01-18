@@ -176,6 +176,9 @@ public final class AccessibilityManager {
             // is now off an exception will be thrown. We want to have the exception
             // enforcement to guard against apps that fire unnecessary accessibility
             // events when accessibility is off.
+            if (DEBUG) {
+                Log.d(LOG_TAG, "setState: state = " + state, new Throwable("setState"));
+            }
             mHandler.obtainMessage(MyHandler.MSG_SET_STATE, state, 0).sendToTarget();
         }
     };
@@ -559,6 +562,15 @@ public final class AccessibilityManager {
         mIsEnabled = enabled;
         mIsTouchExplorationEnabled = touchExplorationEnabled;
         mIsHighTextContrastEnabled = highTextContrastEnabled;
+        if (DEBUG) {
+            Log.d(LOG_TAG, "setStateLocked: wasEnabled = " + wasEnabled
+                    + ", mIsEnabled = " + mIsEnabled
+                    + ", wasTouchExplorationEnabled = " + wasTouchExplorationEnabled
+                    + ", mIsTouchExplorationEnabled = " + mIsTouchExplorationEnabled
+                    + ", wasHighTextContrastEnabled = " + wasHighTextContrastEnabled
+                    + ", mIsHighTextContrastEnabled = " + mIsHighTextContrastEnabled
+                    , new Throwable("setStateLocked"));
+        }
 
         if (wasEnabled != enabled) {
             mHandler.sendEmptyMessage(MyHandler.MSG_NOTIFY_ACCESSIBILITY_STATE_CHANGED);

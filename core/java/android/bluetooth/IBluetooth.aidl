@@ -76,6 +76,9 @@ interface IBluetooth
     boolean setPin(in BluetoothDevice device, boolean accept, int len, in byte[] pinCode);
     boolean setPasskey(in BluetoothDevice device, boolean accept, int len, in byte[]
     passkey);
+    /// M: For Google Passkey Pairing Issues
+    boolean setPasskeyEx(in BluetoothDevice device, boolean accept, int len, in int
+    passkey);
     boolean setPairingConfirmation(in BluetoothDevice device, boolean accept);
 
     int getPhonebookAccessPermission(in BluetoothDevice device);

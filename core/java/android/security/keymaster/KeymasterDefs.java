@@ -206,6 +206,27 @@ public final class KeymasterDefs {
     public static final int KM_ERROR_VERSION_MISMATCH = -101;
     public static final int KM_ERROR_UNKNOWN_ERROR = -1000;
 
+    /// M: Soter support @{
+    public static final int KM_TAG_SOTER_IS_FROM_SOTER =
+            KM_BOOL | 11000;
+    public static final int KM_TAG_SOTER_IS_AUTO_SIGNED_WITH_ATTK_WHEN_GET_PUBLIC_KEY =
+            KM_BOOL | 11001;
+    public static final int KM_TAG_SOTER_IS_AUTO_SIGNED_WITH_COMMON_KEY_WHEN_GET_PUBLIC_KEY =
+            KM_BOOL | 11002;
+    public static final int KM_TAG_SOTER_AUTO_SIGNED_COMMON_KEY_WHEN_GET_PUBLIC_KEY =
+            KM_BYTES | 11003;
+    public static final int KM_TAG_SOTER_AUTO_ADD_COUNTER_WHEN_GET_PUBLIC_KEY =
+            KM_BOOL | 11004;
+    public static final int KM_TAG_SOTER_IS_SECMSG_FID_COUNTER_SIGNED_WHEN_SIGN =
+            KM_BOOL | 11005;
+    public static final int KM_TAG_SOTER_USE_NEXT_ATTK =
+            KM_BOOL | 11006;
+    public static final int KM_TAG_SOTER_UID =
+            KM_UINT | 11007;
+    public static final int KM_TAG_SOTER_AUTO_SIGNED_COMMON_KEY_WHEN_GET_PUBLIC_KEY_BLOB =
+            KM_BYTES | 11008;
+    /// M: Soter support @}
+
     public static final Map<Integer, String> sErrorCodeToString = new HashMap<Integer, String>();
     static {
         sErrorCodeToString.put(KM_ERROR_OK, "OK");

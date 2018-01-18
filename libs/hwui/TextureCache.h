@@ -38,7 +38,7 @@ class Texture;
 
 // Debug
 #if DEBUG_TEXTURES
-    #define TEXTURE_LOGD(...) ALOGD(__VA_ARGS__)
+    #define TEXTURE_LOGD(...) MLOGD(DEBUG_TEXTURES, __VA_ARGS__)
 #else
     #define TEXTURE_LOGD(...)
 #endif

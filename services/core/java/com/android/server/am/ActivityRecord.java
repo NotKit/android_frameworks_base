@@ -72,6 +72,11 @@ import com.android.server.AttributeCache;
 import com.android.server.am.ActivityStack.ActivityState;
 import com.android.server.am.ActivityStackSupervisor.ActivityContainer;
 
+import com.mediatek.am.AMEventHookData;
+import com.mediatek.am.AMEventHookResult;
+import com.mediatek.server.am.AMEventHook;
+import com.mediatek.server.am.BootEvent;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -576,6 +581,17 @@ final class ActivityRecord {
             }
             return r;
         }
+
+        /// M:KeyDispatchingTimeout predump mechanism @{
+        @Override
+        public int getFocusAppPid() throws RemoteException {
+            ActivityRecord activity = weakActivity.get();
+            if (activity != null) {
+                return activity.getFocusAppPid();
+            }
+            return -1;
+        }
+        /// KeyDispatchingTimeout predump mechanism @}
 
         @Override
         public String toString() {
@@ -1237,6 +1253,10 @@ final class ActivityRecord {
                 sb.append(")");
             }
             Log.i(TAG, sb.toString());
+
+            /// M: Add BootEvent for profiling
+            BootEvent.addBootEvent("AP_Launch: " + shortComponentName +
+                    " " + thisTime + "ms");
         }
         mStackSupervisor.reportActivityLaunchedLocked(false, this, thisTime, totalTime);
         if (totalTime > 0) {
@@ -1285,6 +1305,12 @@ final class ActivityRecord {
             }
             service.scheduleAppGcsLocked();
         }
+
+        /// M: AMEventHook event @{
+        AMEventHookData.WindowsVisible eventData = null;
+        eventData = AMEventHookData.WindowsVisible.createInstance();
+        service.getAMEventHook().hook(AMEventHook.Event.AM_WindowsVisible, eventData);
+        /// M: AMEventHook event @}
     }
 
     ActivityRecord getWaitingHistoryRecordLocked() {
@@ -1304,6 +1330,16 @@ final class ActivityRecord {
         }
         return this;
     }
+
+    /// M: KeyDispatchingTimeout predump mechanism @{
+    public int getFocusAppPid() {
+        ActivityRecord r = this;
+        if (r != null && r.app != null) {
+            return r.app.pid;
+        }
+        return -1;
+    }
+    /// KeyDispatchingTimeout predump mechanism @}
 
     /**
      * This method will return true if the activity is either visible, is becoming visible, is

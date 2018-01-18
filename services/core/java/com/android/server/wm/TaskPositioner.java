@@ -56,6 +56,8 @@ import android.view.WindowManager;
 import com.android.server.input.InputApplicationHandle;
 import com.android.server.input.InputWindowHandle;
 import com.android.server.wm.WindowManagerService.H;
+/// M: BMW
+import com.mediatek.multiwindow.MultiWindowManager;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -191,14 +193,19 @@ class TaskPositioner implements DimLayer.DimLayerUser {
                         endDragLocked();
                     }
                     try {
-                        if (wasResizing) {
+                        /// M: BMW. [ALPS02898518] Some devices will not generate move action,that
+                        /// will not assign to mWindowDragBounds,and it will be empty.
+                        if (wasResizing && mWindowDragBounds != null
+                                && !mWindowDragBounds.isEmpty()) {
                             // We were using fullscreen surface during resizing. Request
                             // resizeTask() one last time to restore surface to window size.
                             mService.mActivityManager.resizeTask(
                                     mTask.mTaskId, mWindowDragBounds, RESIZE_MODE_USER_FORCED);
                         }
 
-                        if (mCurrentDimSide != CTRL_NONE) {
+                        /// M: BMW. [ALPS02855642] Forbid changing window from freeform
+                        /// to split mode by moving window.
+                        if (mCurrentDimSide != CTRL_NONE && !MultiWindowManager.isSupported()) {
                             final int createMode = mCurrentDimSide == CTRL_LEFT
                                     ? DOCKED_STACK_CREATE_MODE_TOP_OR_LEFT
                                     : DOCKED_STACK_CREATE_MODE_BOTTOM_OR_RIGHT;
@@ -436,7 +443,12 @@ class TaskPositioner implements DimLayer.DimLayerUser {
         }
 
         updateWindowDragBounds(nX, nY);
-        updateDimLayerVisibility(nX);
+        /// M: BMW. [ALPS02855642] Forbid changing window from freeform
+        /// to split mode by moving window. @{
+        if (!MultiWindowManager.isSupported()) {
+            updateDimLayerVisibility(nX);
+        }
+        /// @}
         return dragEnded;
     }
 

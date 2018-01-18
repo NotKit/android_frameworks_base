@@ -72,6 +72,11 @@ public class LinkAddress implements Parcelable {
     private int scope;
 
     /**
+     * M: add for enhance ipv6
+     */
+    private long valid;
+
+    /**
      * Utility function to determines the scope of a unicast address. Per RFC 4291 section 2.5 and
      * RFC 6724 section 3.2.
      * @hide
@@ -141,6 +146,22 @@ public class LinkAddress implements Parcelable {
     }
 
     /**
+     * M: for ipv6 enhance.
+     * Constructs a new {@code LinkAddress} from an {@code InetAddress} and prefix length, with
+     * the specified flags and scope. Flags and scope are not checked for validity.
+     * @param address The IP address.
+     * @param prefixLength The prefix length.
+     * @param flags A bitmask of {@code IFA_F_*} values representing properties of the address.
+     * @param scope An integer defining the scope in which the address is unique (e.g.,
+     *              {@link OsConstants#RT_SCOPE_LINK} or {@link OsConstants#RT_SCOPE_SITE}).
+     * @hide
+     */
+    public LinkAddress(InetAddress address, int prefixLength, int flags, int scope, long valid) {
+        init(address, prefixLength, flags, scope);
+        this.valid = valid;
+    }
+
+    /**
      * Constructs a new {@code LinkAddress} from an {@code InetAddress} and a prefix length.
      * The flags are set to zero and the scope is determined from the address.
      * @param address The IP address.
@@ -186,6 +207,23 @@ public class LinkAddress implements Parcelable {
         // This may throw an IllegalArgumentException; catching it is the caller's responsibility.
         Pair<InetAddress, Integer> ipAndMask = NetworkUtils.parseIpAndMask(address);
         init(ipAndMask.first, ipAndMask.second, flags, scope);
+    }
+
+    /**
+     * M: for ipv6 enhance.
+     * Constructs a new {@code LinkAddress} from a string such as "192.0.2.5/24" or
+     * "2001:db8::1/64", with the specified flags and scope.
+     * @param string The string to parse.
+     * @param flags The address flags.
+     * @param scope The address scope.
+     * @param valid The address valid.
+     * @hide
+     */
+    public LinkAddress(String address, int flags, int scope, long valid) {
+        // This may throw an IllegalArgumentException; catching it is the caller's responsibility.
+        Pair<InetAddress, Integer> ipAndMask = NetworkUtils.parseIpAndMask(address);
+        init(ipAndMask.first, ipAndMask.second, flags, scope);
+        this.valid = valid;
     }
 
     /**
@@ -279,6 +317,14 @@ public class LinkAddress implements Parcelable {
         return scope;
     }
 
+   /**
+     * M:Returns the valid of this {@code LinkAddress}.
+     * @hide
+     */
+    public long getValid() {
+        return valid;
+    }
+
     /**
      * Returns true if this {@code LinkAddress} is global scope and preferred.
      * @hide
@@ -311,6 +357,7 @@ public class LinkAddress implements Parcelable {
         dest.writeInt(prefixLength);
         dest.writeInt(this.flags);
         dest.writeInt(scope);
+        dest.writeLong(valid);
     }
 
     /**
@@ -330,7 +377,8 @@ public class LinkAddress implements Parcelable {
                 int prefixLength = in.readInt();
                 int flags = in.readInt();
                 int scope = in.readInt();
-                return new LinkAddress(address, prefixLength, flags, scope);
+                long valid = in.readLong();
+                return new LinkAddress(address, prefixLength, flags, scope, valid);
             }
 
             public LinkAddress[] newArray(int size) {

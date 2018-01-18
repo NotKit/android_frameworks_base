@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2016 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2016 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -416,7 +421,8 @@ class ActivityStarter {
         // If permissions need a review before any of the app components can run, we
         // launch the review activity and pass a pending intent to start the activity
         // we are to launching now after the review is completed.
-        if (Build.PERMISSIONS_REVIEW_REQUIRED && aInfo != null) {
+        /// M: CTA requirement - permission control
+        if (Build.isPermissionReviewRequired() && aInfo != null) {
             if (mService.getPackageManagerInternalLocked().isPermissionsReviewRequired(
                     aInfo.packageName, userId)) {
                 IIntentSender target = mService.getIntentSenderLocked(
@@ -444,7 +450,8 @@ class ActivityStarter {
                 aInfo = mSupervisor.resolveActivity(intent, rInfo, startFlags,
                         null /*profilerInfo*/);
 
-                if (DEBUG_PERMISSIONS_REVIEW) {
+                /// M: Permission review log enhancement @{
+                if (DEBUG_PERMISSIONS_REVIEW || !ActivityManagerService.IS_USER_BUILD) {
                     Slog.i(TAG, "START u" + userId + " {" + intent.toShortString(true, true,
                             true, false) + "} from uid " + callingUid + " on display "
                             + (container == null ? (mSupervisor.mFocusedStack == null ?
@@ -452,6 +459,7 @@ class ActivityStarter {
                             (container.mActivityDisplay == null ? Display.DEFAULT_DISPLAY :
                                     container.mActivityDisplay.mDisplayId)));
                 }
+                /// M: Permission review log enhancement @}
             }
         }
 
@@ -1032,6 +1040,12 @@ class ActivityStarter {
 
         computeSourceStack();
 
+        /// M: AMS log enhancement @{
+        if (!ActivityManagerService.IS_USER_BUILD || DEBUG_TASKS) {
+            Slog.d(TAG, "launchFlags(update): 0x" + Integer.toHexString(mLaunchFlags));
+        }
+        /// @}
+
         mIntent.setFlags(mLaunchFlags);
 
         mReusedActivity = getReusableIntentActivity();
@@ -1077,6 +1091,13 @@ class ActivityStarter {
                         top.task.setIntent(mStartActivity);
                     }
                     ActivityStack.logStartActivity(AM_NEW_INTENT, mStartActivity, top.task);
+
+                    /// M: AMS log enhancement @{
+                    if (DEBUG_TASKS) {
+                        Slog.d(TAG, "ACT-AM_NEW_INTENT " + mStartActivity + " " + top.task);
+                    }
+                    /// @}
+
                     top.deliverNewIntentLocked(mCallingUid, mStartActivity.intent,
                             mStartActivity.launchedFromPackage);
                 }
@@ -1091,6 +1112,13 @@ class ActivityStarter {
                 // if that is the case, so this is it!  And for paranoia, make sure we have
                 // correctly resumed the top activity.
                 resumeTargetStackIfNeeded();
+
+                /// M: AMS log enhancement @{
+                if (DEBUG_TASKS) {
+                    Slog.d(TAG, "START_RETURN_INTENT_TO_CALLER");
+                }
+                /// @}
+
                 return START_RETURN_INTENT_TO_CALLER;
             }
             setTaskFromIntentActivity(mReusedActivity);
@@ -1099,6 +1127,13 @@ class ActivityStarter {
                 // We didn't do anything...  but it was needed (a.k.a., client don't use that
                 // intent!)  And for paranoia, make sure we have correctly resumed the top activity.
                 resumeTargetStackIfNeeded();
+
+                /// M: AMS log enhancement @{
+                if (DEBUG_TASKS) {
+                    Slog.d(TAG, "START_TASK_TO_FRONT");
+                }
+                /// @}
+
                 return START_TASK_TO_FRONT;
             }
         }
@@ -1110,6 +1145,13 @@ class ActivityStarter {
                         mStartActivity.requestCode, RESULT_CANCELED, null);
             }
             ActivityOptions.abort(mOptions);
+
+            /// M: AMS log enhancement @{
+            if (DEBUG_TASKS) {
+                Slog.d(TAG, "START_CLASS_NOT_FOUND");
+            }
+            /// @}
+
             return START_CLASS_NOT_FOUND;
         }
 
@@ -1136,6 +1178,13 @@ class ActivityStarter {
                 // anything if that is the case, so this is it!
                 return START_RETURN_INTENT_TO_CALLER;
             }
+
+            /// M: AMS log enhancement @{
+            if (DEBUG_TASKS) {
+                Slog.d(TAG, "ACT-AM_NEW_INTENT " + mStartActivity + " " + top.task);
+            }
+            /// @}
+
             top.deliverNewIntentLocked(
                     mCallingUid, mStartActivity.intent, mStartActivity.launchedFromPackage);
 
@@ -1158,6 +1207,9 @@ class ActivityStarter {
             setTaskFromReuseOrCreateNewTask(taskToAffiliate);
 
             if (mSupervisor.isLockTaskModeViolation(mStartActivity.task)) {
+                /// M: ALPS02270164, Show lock task toast when in violation
+                mSupervisor.showLockTaskToast();
+
                 Slog.e(TAG, "Attempted Lock Task Mode violation mStartActivity=" + mStartActivity);
                 return START_RETURN_LOCK_TASK_MODE_VIOLATION;
             }
@@ -1170,6 +1222,9 @@ class ActivityStarter {
             }
         } else if (mSourceRecord != null) {
             if (mSupervisor.isLockTaskModeViolation(mSourceRecord.task)) {
+                /// M: ALPS02270164, Show lock task toast when in violation
+                mSupervisor.showLockTaskToast();
+
                 Slog.e(TAG, "Attempted Lock Task Mode violation mStartActivity=" + mStartActivity);
                 return START_RETURN_LOCK_TASK_MODE_VIOLATION;
             }
@@ -1182,6 +1237,9 @@ class ActivityStarter {
             // The caller is asking that the new activity be started in an explicit
             // task it has provided to us.
             if (mSupervisor.isLockTaskModeViolation(mInTask)) {
+                /// M: ALPS02270164, Show lock task toast when in violation
+                mSupervisor.showLockTaskToast();
+
                 Slog.e(TAG, "Attempted Lock Task Mode violation mStartActivity=" + mStartActivity);
                 return START_RETURN_LOCK_TASK_MODE_VIOLATION;
             }
@@ -1205,9 +1263,22 @@ class ActivityStarter {
         if (newTask) {
             EventLog.writeEvent(
                     EventLogTags.AM_CREATE_TASK, mStartActivity.userId, mStartActivity.task.taskId);
+
+            /// M: AMS log enhancement @{
+            if (DEBUG_TASKS) {
+                Slog.d(TAG, "ACT-AM_CREATE_TASK " + mStartActivity + " " + mStartActivity.task);
+            }
+            /// @}
         }
         ActivityStack.logStartActivity(
                 EventLogTags.AM_CREATE_ACTIVITY, mStartActivity, mStartActivity.task);
+
+        /// M: AMS log enhancement @{
+        if (DEBUG_TASKS) {
+           Slog.d(TAG, "ACT-AM_CREATE_ACTIVITY " + mStartActivity + " " + mStartActivity.task);
+        }
+        /// @}
+
         mTargetStack.mLastPausedActivity = null;
 
         sendPowerHintForLaunchStartIfNeeded(false /* forceSend */);
@@ -1287,6 +1358,14 @@ class ActivityStarter {
                 mLaunchFlags |= FLAG_ACTIVITY_MULTIPLE_TASK;
             }
         }
+
+        /// M: AMS log enhancement @{
+        if (!ActivityManagerService.IS_USER_BUILD || DEBUG_TASKS) {
+            Slog.d(TAG, "ACT-launchFlags(mLaunchFlags): 0x" + Integer.toHexString(mLaunchFlags) +
+                ", launchMode:" + r.launchMode + ", startFlags: " + startFlags +
+                ", doResume:" + doResume);
+        }
+        /// @}
 
         // We'll invoke onUserLeaving before onPause only if the launching
         // activity did not explicitly state that this is an automated launch.
@@ -1642,6 +1721,12 @@ class ActivityStarter {
                     mTargetStack.addTask(task,
                             !mLaunchTaskBehind /* toTop */, "startActivityUnchecked");
                 }
+
+                /// M: AMS log enhancement @{
+                if (!ActivityManagerService.IS_USER_BUILD || DEBUG_TASKS) {
+                    Slog.d(TAG, "special case: the activity is not currently running");
+                }
+                /// @}
             }
         } else if (mStartActivity.realActivity.equals(intentActivity.task.realActivity)) {
             // In this case the top activity on the task is the same as the one being launched,
@@ -1655,6 +1740,13 @@ class ActivityStarter {
                 if (intentActivity.frontOfTask) {
                     intentActivity.task.setIntent(mStartActivity);
                 }
+
+                /// M: AMS log enhancement @{
+                if (DEBUG_TASKS) {
+                    Slog.d(TAG, "ACT-AM_NEW_INTENT " + mStartActivity + " " + intentActivity.task);
+                }
+                /// @}
+
                 intentActivity.deliverNewIntentLocked(mCallingUid, mStartActivity.intent,
                         mStartActivity.launchedFromPackage);
             } else if (!intentActivity.task.isSameIntentFilter(mStartActivity)) {
@@ -1662,6 +1754,12 @@ class ActivityStarter {
                 // different intent. We should start a new instance on top.
                 mAddingToTask = true;
                 mSourceRecord = intentActivity;
+
+                /// M: AMS log enhancement @{
+                if (!ActivityManagerService.IS_USER_BUILD || DEBUG_TASKS) {
+                    Slog.d(TAG, "since different intents, start new activity...");
+                }
+                /// @}
             }
         } else if ((mLaunchFlags & FLAG_ACTIVITY_RESET_TASK_IF_NEEDED) == 0) {
             // In this case an activity is being launched in to an existing task, without
@@ -1670,6 +1768,12 @@ class ActivityStarter {
             // current task.
             mAddingToTask = true;
             mSourceRecord = intentActivity;
+
+            /// M: AMS log enhancement @{
+            if (!ActivityManagerService.IS_USER_BUILD || DEBUG_TASKS) {
+                Slog.d(TAG, "place the new activity on top of the current task...");
+            }
+            /// @}
         } else if (!intentActivity.task.rootWasReset) {
             // In this case we are launching into an existing task that has not yet been started
             // from its front door. The current task has been brought to the front. Ideally,
@@ -1754,6 +1858,13 @@ class ActivityStarter {
             mKeepCurTransition = true;
             if (top != null) {
                 ActivityStack.logStartActivity(AM_NEW_INTENT, mStartActivity, top.task);
+
+                /// M: AMS log enhancement @{
+                if (DEBUG_TASKS) {
+                    Slog.d(TAG, "ACT-AM_NEW_INTENT " + mStartActivity + " " + top.task);
+                }
+                /// @}
+
                 top.deliverNewIntentLocked(mCallingUid, mStartActivity.intent, mStartActivity.launchedFromPackage);
                 // For paranoia, make sure we have correctly resumed the top activity.
                 mTargetStack.mLastPausedActivity = null;
@@ -1773,6 +1884,13 @@ class ActivityStarter {
                 task.moveActivityToFrontLocked(top);
                 top.updateOptionsLocked(mOptions);
                 ActivityStack.logStartActivity(AM_NEW_INTENT, mStartActivity, task);
+
+                /// M: AMS log enhancement @{
+                if (DEBUG_TASKS) {
+                    Slog.d(TAG, "ACT-AM_NEW_INTENT " + mStartActivity + " " + top.task);
+                }
+                /// @}
+
                 top.deliverNewIntentLocked(mCallingUid, mStartActivity.intent, mStartActivity.launchedFromPackage);
                 mTargetStack.mLastPausedActivity = null;
                 if (mDoResume) {
@@ -1819,6 +1937,13 @@ class ActivityStarter {
                     // anything if that is the case, so this is it!
                     return START_RETURN_INTENT_TO_CALLER;
                 }
+
+                /// M: AMS log enhancement @{
+                if (DEBUG_TASKS) {
+                    Slog.d(TAG, "ACT-AM_NEW_INTENT " + mStartActivity + " " + top.task);
+                }
+                /// @}
+
                 top.deliverNewIntentLocked(mCallingUid, mStartActivity.intent, mStartActivity.launchedFromPackage);
                 return START_DELIVERED_TO_TOP;
             }

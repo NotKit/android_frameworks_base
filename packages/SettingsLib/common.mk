@@ -20,6 +20,8 @@ LOCAL_STATIC_ANDROID_LIBRARIES += \
     SettingsLib
 else
 LOCAL_RESOURCE_DIR += $(call my-dir)/res
+# M: Add for MTK resource
+LOCAL_RESOURCE_DIR += $(call my-dir)/res_ext
 LOCAL_AAPT_FLAGS += --auto-add-overlay --extra-packages com.android.settingslib
 LOCAL_STATIC_JAVA_LIBRARIES += \
     android-support-annotations \

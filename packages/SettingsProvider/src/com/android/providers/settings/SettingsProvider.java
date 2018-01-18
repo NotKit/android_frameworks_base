@@ -79,6 +79,9 @@ import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
 
+import com.android.providers.settings.SettingsState.Setting;
+import com.mediatek.providers.utils.ProvidersUtils;
+
 /**
  * <p>
  * This class is a content provider that publishes the system settings.
@@ -113,6 +116,7 @@ import java.util.regex.Pattern;
 @SuppressWarnings("deprecation")
 public class SettingsProvider extends ContentProvider {
     private static final boolean DEBUG = false;
+    private static final boolean DEBUG_LOG = true;
 
     private static final boolean DROP_DATABASE_ON_MIGRATION = true;
 
@@ -1251,6 +1255,11 @@ public class SettingsProvider extends ContentProvider {
             String name, int userId) {
         // System/root/shell can mutate whatever secure settings they want.
         final int callingUid = Binder.getCallingUid();
+
+        if (DEBUG_LOG) {
+            Slog.v(LOG_TAG, "name : " + name + " callingUid : " + callingUid);
+        }
+
         if (callingUid == android.os.Process.SYSTEM_UID
                 || callingUid == Process.SHELL_UID
                 || callingUid == Process.ROOT_UID) {
@@ -1267,6 +1276,11 @@ public class SettingsProvider extends ContentProvider {
 
                 // The calling package is already verified.
                 PackageInfo packageInfo = getCallingPackageInfoOrThrow(userId);
+
+                if (DEBUG_LOG) {
+                    Slog.v(LOG_TAG, "Package name : " + packageInfo.packageName
+                      +" privateFlags : " + packageInfo.applicationInfo.privateFlags);
+                }
 
                 // Privileged apps can do whatever they want.
                 if ((packageInfo.applicationInfo.privateFlags
@@ -1465,6 +1479,10 @@ public class SettingsProvider extends ContentProvider {
         result.putString(Settings.NameValueTable.VALUE,
                 !setting.isNull() ? setting.getValue() : null);
         mSettingsRegistry.mGenerationRegistry.addGenerationData(result, setting.getkey());
+        if (DEBUG_LOG) {
+            Slog.v(LOG_TAG, "packageValueForCallResult, name = " + setting.getName()
+                    + ", value : " + result);
+        }
         return result;
     }
 
@@ -1701,6 +1719,9 @@ public class SettingsProvider extends ContentProvider {
         }
 
         private void ensureSettingsStateLocked(int key) {
+            if (DEBUG) {
+                Slog.v(LOG_TAG, "ensureSettingsStateLocked, key = " + key);
+            }
             if (mSettingsStates.get(key) == null) {
                 final int maxBytesPerPackage = getMaxBytesPerPackageForType(getTypeFromKey(key));
                 SettingsState settingsState = new SettingsState(mLock, getSettingsFile(key), key,
@@ -1934,6 +1955,10 @@ public class SettingsProvider extends ContentProvider {
                     settingsState.insertSettingLocked(name, value,
                             SettingsState.SYSTEM_PACKAGE_NAME);
                     cursor.moveToNext();
+                    if (DEBUG) {
+                        Slog.v(LOG_TAG, "migrateLegacySettingsLocked, name = " + name
+                                + ", value = " + value);
+                    }
                 }
             } finally {
                 cursor.close();
@@ -1961,7 +1986,24 @@ public class SettingsProvider extends ContentProvider {
                 return;
             }
 
-            String androidId = Long.toHexString(new SecureRandom().nextLong());
+            /// M: ALPS00441755, assure random string cannot be converted to float {@
+            final SecureRandom random = new SecureRandom();
+            String androidId = Long.toHexString(random.nextLong());
+            boolean jumpWhileFlag = false;
+            int index = 10;
+            while ((index > 0) && (!jumpWhileFlag)) {
+                --index;
+                try {
+                     Float.parseFloat(androidId);
+                     androidId = Long.toHexString(random.nextLong());
+                     Slog.d(LOG_TAG, "create random again: " + androidId);
+                 } catch (NumberFormatException e) {
+                     Slog.d(LOG_TAG, "FormatException, android_id " + androidId);
+                     jumpWhileFlag = true;
+                 }
+            }
+            /// @}
+
             secureSettings.insertSettingLocked(Settings.Secure.ANDROID_ID, androidId,
                     SettingsState.SYSTEM_PACKAGE_NAME);
 
@@ -2204,7 +2246,7 @@ public class SettingsProvider extends ContentProvider {
              * }
              */
             private int onUpgradeLocked(int userId, int oldVersion, int newVersion) {
-                if (DEBUG) {
+                if (DEBUG_LOG) {
                     Slog.w(LOG_TAG, "Upgrading settings for user: " + userId + " from version: "
                             + oldVersion + " to version: " + newVersion);
                 }
@@ -2221,6 +2263,23 @@ public class SettingsProvider extends ContentProvider {
                         globalSettings.updateSettingLocked(Settings.Global.MODE_RINGER,
                                 Integer.toString(AudioManager.RINGER_MODE_NORMAL),
                                 SettingsState.SYSTEM_PACKAGE_NAME);
+
+                        /// M: Add only for svlte @{
+                        List<String> names = globalSettings.getSettingNamesLocked();
+                        ProvidersUtils mUtils = new ProvidersUtils(getContext());
+                        for (String name : names) {
+                            String newName = mUtils.upgradeNameForSvlteIfNeeded(name);
+                            if(newName != null) {
+                                String oldValue = globalSettings.getSettingLocked(name).getValue();
+                                String newValue = mUtils.getSvlteUpgradeValue(oldValue);
+                                globalSettings.insertSettingLocked(newName, newValue,
+                                        SettingsState.SYSTEM_PACKAGE_NAME);
+                                Slog.v(LOG_TAG, "upgrade for svlte, oldName = " + name +
+                                        ", oldValue = " + oldValue + ", newName = " + newName +
+                                        ", newValue = " + newValue);
+                            }
+                        }
+                        /// @}
                     }
                     currentVersion = 119;
                 }

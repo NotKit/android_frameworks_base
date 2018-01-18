@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2009 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -49,6 +54,11 @@ import java.util.Objects;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
+
+/** M: MTK_2SDCARD_SWAP @{ */
+import android.os.SystemProperties;
+import com.mediatek.storage.StorageManagerEx;
+/** @} */
 
 /**
  * Constants used internally between the PackageManager
@@ -190,7 +200,12 @@ public class PackageHelper {
         } catch (RemoteException e) {
             Log.e(TAG, "Failed to get container path for " + cid +
                 " with exception " + e);
+        /** M: [ALPS01264858] Fix system server crash due to sim sd card performance @{ */
+        } catch (IllegalStateException e) {
+            Log.e(TAG, "Failed to get container path for " + cid +
+                " with exception " + e);
         }
+        /** @} */
         return null;
    }
 
@@ -559,4 +574,11 @@ public class PackageHelper {
         }
         return str.substring(0, str.length() - before.length()) + after;
     }
+
+    /** M: MTK_2SDCARD_SWAP @{ */
+    private static boolean isSDExistWhenSwap() {
+        StorageManagerEx sm = new StorageManagerEx();
+        return sm.getSdSwapState();
+    }
+    /** @} */
 }

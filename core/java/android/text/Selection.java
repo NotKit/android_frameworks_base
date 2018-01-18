@@ -18,12 +18,14 @@ package android.text;
 
 import java.text.BreakIterator;
 
+import android.util.Log;
 
 /**
  * Utility class for manipulating cursors and selections in CharSequences.
  * A cursor is a selection where the start and end are at the same offset.
  */
 public class Selection {
+    static final String LOG_TAG = "Selection";
     private Selection() { /* cannot be instantiated */ }
 
     /*
@@ -68,6 +70,10 @@ public class Selection {
         // int len = text.length();
         // start = pin(start, 0, len);  XXX remove unless we really need it
         // stop = pin(stop, 0, len);
+        if (TextUtils.DEBUG_LOG) {
+            Log.d(LOG_TAG, "[setSelection] " + " text: " + text +
+            " start:" + start + " end: " + stop, new Throwable("setSelection"));
+        }
 
         int ostart = getSelectionStart(text);
         int oend = getSelectionEnd(text);

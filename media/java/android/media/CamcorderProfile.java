@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -94,7 +99,6 @@ public class CamcorderProfile
      * Quality level corresponding to the 2160p (3840x2160) resolution.
      */
     public static final int QUALITY_2160P = 8;
-
     // Start and end of quality list
     private static final int QUALITY_LIST_START = QUALITY_LOW;
     private static final int QUALITY_LIST_END = QUALITY_2160P;

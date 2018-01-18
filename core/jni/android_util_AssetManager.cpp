@@ -1,3 +1,8 @@
+/*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
 /* //device/libs/android_runtime/android_util_AssetManager.cpp
 **
 ** Copyright 2006, The Android Open Source Project
@@ -41,6 +46,10 @@
 #include "ScopedUtfChars.h"
 #include "utils/Log.h"
 #include "utils/misc.h"
+
+#include <dirent.h>
+#include <limits.h>
+#include <cutils/properties.h>
 
 extern "C" int capget(cap_user_header_t hdrp, cap_user_data_t datap);
 extern "C" int capset(cap_user_header_t hdrp, const cap_user_data_t datap);
@@ -173,15 +182,19 @@ static void verifySystemIdmaps()
                 }
 
                 // Generic idmap parameters
-                const char* argv[7];
+                const char* argv[10];
                 int argc = 0;
                 struct stat st;
 
                 memset(argv, NULL, sizeof(argv));
                 argv[argc++] = AssetManager::IDMAP_BIN;
-                argv[argc++] = "--scan";
+                /// M: ALPS02521810, support mediatek-res runtime overlay @{
+                argv[argc++] = "--mediatek-scan";
                 argv[argc++] = AssetManager::TARGET_PACKAGE_NAME;
                 argv[argc++] = AssetManager::TARGET_APK_PATH;
+                argv[argc++] = AssetManager::MEDIATEK_TARGET_PACKAGE_NAME;
+                argv[argc++] = AssetManager::MEDIATEK_TARGET_APK_PATH;
+                /// @}
                 argv[argc++] = AssetManager::IDMAP_DIR;
 
                 // Directories to scan for overlays
@@ -189,6 +202,32 @@ static void verifySystemIdmaps()
                 if (stat(AssetManager::OVERLAY_DIR, &st) == 0) {
                     argv[argc++] = AssetManager::OVERLAY_DIR;
                  }
+
+                /// M: ALPS02707941, support operator runtime resource overlay @{
+                char value[PROP_VALUE_MAX];
+                property_get("ro.mtk_carrierexpress_pack", value, "");
+                if (strcmp("", value) != 0) {
+                    // Remove outdated idmap
+                    DIR *idmapDir = opendir(AssetManager::IDMAP_DIR);
+                    struct dirent *nextFile;
+                    char filePath[PATH_MAX];
+                    while ((nextFile = readdir(idmapDir)) != NULL) {
+                        sprintf(filePath, "%s/%s", AssetManager::IDMAP_DIR, nextFile->d_name);
+                        remove(filePath);
+                    }
+                    closedir(idmapDir);
+
+                    char optr[PROP_VALUE_MAX];
+                    property_get("persist.operator.optr", optr, "");
+                    if (strlen(optr) > 0) {
+                        char overlayDir[PATH_MAX];
+                        sprintf(overlayDir, "%s/%s", "/custom/overlay", optr);
+                        if (stat(overlayDir, &st) == 0) {
+                            argv[argc++] = overlayDir;
+                        }
+                    }
+                }
+                /// @}
 
                 // Finally, invoke idmap (if any overlay directory exists)
                 if (argc > 5) {
@@ -1875,6 +1914,7 @@ static jlong android_content_AssetManager_openXmlAssetNative(JNIEnv* env, jobjec
     delete a;
 
     if (err != NO_ERROR) {
+        ALOGW("XML load failed: cookie is %d , file is %s\n", cookie, fileName8.c_str());
         jniThrowException(env, "java/io/FileNotFoundException", "Corrupt XML binary file");
         return 0;
     }
@@ -2160,7 +2200,6 @@ static const JNINativeMethod gAssetManagerMethods[] = {
         (void*) android_content_AssetManager_addOverlayPath },
     { "isUpToDate",     "()Z",
         (void*) android_content_AssetManager_isUpToDate },
-
     // Resources.
     { "getLocales",      "()[Ljava/lang/String;",
         (void*) android_content_AssetManager_getLocales },

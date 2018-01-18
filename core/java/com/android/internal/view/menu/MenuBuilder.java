@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -1112,6 +1117,12 @@ public class MenuBuilder implements Menu {
         return mActionItems;
     }
     
+    /**
+     * M: Get the count of Non Action items. set this function as public,
+     * for it will be used by PhoneWindow to check if there is visible
+     * non-action items to show in OptionMenu
+     * @hide
+     */
     public ArrayList<MenuItemImpl> getNonActionItems() {
         flagActionItems();
         return mNonActionItems;

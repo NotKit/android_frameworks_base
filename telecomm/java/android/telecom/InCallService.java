@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,6 +37,8 @@ import android.view.Surface;
 import com.android.internal.os.SomeArgs;
 import com.android.internal.telecom.IInCallAdapter;
 import com.android.internal.telecom.IInCallService;
+import com.mediatek.telecom.InCallServiceMessageAnalyzer;
+import com.mediatek.telecom.TelecomTrace;
 
 import java.lang.String;
 import java.util.Collections;
@@ -76,15 +83,35 @@ public abstract class InCallService extends Service {
     private static final int MSG_ON_CAN_ADD_CALL_CHANGED = 7;
     private static final int MSG_SILENCE_RINGER = 8;
     private static final int MSG_ON_CONNECTION_EVENT = 9;
+    /// M: voice recording
+    private static final int MSG_UPDATE_RECORD_STATE = 10;
+    private static final int MSG_STORAGE_FULL = 11;
 
     /** Default Handler used to consolidate binder method calls onto a single thread. */
     private final Handler mHandler = new Handler(Looper.getMainLooper()) {
+
+        /**
+         * {@inheritDoc}
+         * M: [log optimize]added for message queue debugging. @{
+         */
+        @Override
+        public boolean sendMessageAtTime(Message msg, long uptimeMillis) {
+            mMessageAnalyzer.onMessageSent(msg);
+            return super.sendMessageAtTime(msg, uptimeMillis);
+        }
+        /** @} */
+
         @Override
         public void handleMessage(Message msg) {
+            /// M: [log optimize]for performance debugging.
+            mMessageAnalyzer.onStartHandleMessage(msg);
             if (mPhone == null && msg.what != MSG_SET_IN_CALL_ADAPTER) {
+                /// M: [log optimize]for performance debugging.
+                mMessageAnalyzer.onMessageHandled(msg);
                 return;
             }
 
+            SomeArgs args;
             switch (msg.what) {
                 case MSG_SET_IN_CALL_ADAPTER:
                     mPhone = new Phone(new InCallAdapter((IInCallAdapter) msg.obj));
@@ -95,10 +122,12 @@ public abstract class InCallService extends Service {
                     mPhone.internalAddCall((ParcelableCall) msg.obj);
                     break;
                 case MSG_UPDATE_CALL:
+                    TelecomTrace.begin("InCallService_update");
                     mPhone.internalUpdateCall((ParcelableCall) msg.obj);
+                    TelecomTrace.end("InCallService_update");
                     break;
                 case MSG_SET_POST_DIAL_WAIT: {
-                    SomeArgs args = (SomeArgs) msg.obj;
+                    args = (SomeArgs) msg.obj;
                     try {
                         String callId = (String) args.arg1;
                         String remaining = (String) args.arg2;
@@ -121,7 +150,7 @@ public abstract class InCallService extends Service {
                     mPhone.internalSilenceRinger();
                     break;
                 case MSG_ON_CONNECTION_EVENT: {
-                    SomeArgs args = (SomeArgs) msg.obj;
+                    args = (SomeArgs) msg.obj;
                     try {
                         String callId = (String) args.arg1;
                         String event = (String) args.arg2;
@@ -132,9 +161,25 @@ public abstract class InCallService extends Service {
                     }
                     break;
                 }
+                case MSG_UPDATE_RECORD_STATE:
+                    args = (SomeArgs) msg.obj;
+                    try {
+                        if (mPhone != null) {
+                            mPhone.internalUpdateRecordState(
+                                    (Integer) args.arg1, (Integer) args.arg2);
+                        }
+                    } finally {
+                        args.recycle();
+                    }
+                    break;
+                case MSG_STORAGE_FULL:
+                    mPhone.internalOnStorageFull();
+                    break;
                 default:
                     break;
             }
+            /// M: [log optimize]for performance debugging.
+            mMessageAnalyzer.onMessageHandled(msg);
         }
     };
 
@@ -197,6 +242,19 @@ public abstract class InCallService extends Service {
             args.arg3 = extras;
             mHandler.obtainMessage(MSG_ON_CONNECTION_EVENT, args).sendToTarget();
         }
+
+        @Override
+        public void updateRecordState(final int state, final int customValue) {
+            SomeArgs args = SomeArgs.obtain();
+            args.arg1 = state;
+            args.arg2 = customValue;
+            mHandler.obtainMessage(MSG_UPDATE_RECORD_STATE, args).sendToTarget();
+        }
+
+        @Override
+        public void onStorageFull() {
+            mHandler.obtainMessage(MSG_STORAGE_FULL).sendToTarget();
+        }
     }
 
     private Phone.Listener mPhoneListener = new Phone.Listener() {
@@ -240,6 +298,19 @@ public abstract class InCallService extends Service {
             InCallService.this.onSilenceRinger();
         }
 
+        /// M: Add phone record interface @{
+        /** ${inheritDoc} */
+        @Override
+        public void onUpdateRecordState(final int state, final int customValue) {
+            InCallService.this.onUpdateRecordState(state,customValue);
+        }
+
+        /** ${inheritDoc} */
+        @Override
+        public void onStorageFull() {
+            InCallService.this.onStorageFull();
+        }
+        /// @}
     };
 
     private Phone mPhone;
@@ -462,6 +533,18 @@ public abstract class InCallService extends Service {
     }
 
     /**
+     * @hide
+     */
+    public void onUpdateRecordState(final int state, final int customValue) {
+    }
+
+    /**
+     * @hide
+     */
+    public void onStorageFull() {
+    }
+
+    /**
      * Used to issue commands to the {@link Connection.VideoProvider} associated with a
      * {@link Call}.
      */
@@ -598,6 +681,19 @@ public abstract class InCallService extends Service {
          */
         public abstract void setPauseImage(Uri uri);
 
+        /* M: ViLTE part start */
+        /**
+         * Provides the video telephony framework with the mode of inCall screen
+         * and framework need to update the surface related status depend on the screen mode.
+         *
+         * @param mode UI mode of current inCall screen.
+         *             mode = 0 : inCall screen is foreground
+         *             mode = 1 : inCall screen is background
+         * @hide
+         */
+        public abstract void setUIMode(int mode);
+        /* M: ViLTE part end */
+
         /**
          * The {@link InCallService} extends this class to provide a means of receiving callbacks
          * from the {@link Connection.VideoProvider}.
@@ -680,6 +776,24 @@ public abstract class InCallService extends Service {
              */
             public abstract void onPeerDimensionsChanged(int width, int height);
 
+            /* M: ViLTE part start */
+            /**
+             * Handles a change to the video dimensions from the peer device. This could happen if,
+             * for example, the peer changes orientation of their device, or switches cameras.
+             * <p>
+             * Callback originates from
+             * {@link Connection.VideoProvider#changePeerDimensionsWithAngle(int, int, int)}.
+             *
+             * Different from AOSP, additional parameter "rotation" is added.
+             *
+             * @param width  The updated peer video width.
+             * @param height The updated peer video height.
+             * @param rotation The updated peer video rotation.
+             * @hide
+             */
+            public abstract void onPeerDimensionsWithAngleChanged(
+                    int width, int height, int rotation);
+
             /**
              * Handles a change to the video quality.
              * <p>
@@ -724,4 +838,84 @@ public abstract class InCallService extends Service {
                     VideoProfile.CameraCapabilities cameraCapabilities);
         }
     }
+    // ---------------------------------MTK--------------------------------------
+
+    /**
+     * @hide
+     */
+    public void startVoiceRecording() {
+        if (mPhone != null) {
+            mPhone.startVoiceRecording();
+        }
+    }
+
+    /**
+     * @hide
+     */
+    public void stopVoiceRecording() {
+        if (mPhone != null) {
+            mPhone.stopVoiceRecording();
+        }
+    }
+
+    /**
+     * M: Add for OP09 2W request.
+     * @hide
+     */
+    public void setSortedIncomingCallList(List<String> incomingCallList) {
+        if (mPhone != null) {
+            mPhone.setSortedIncomingCallList(incomingCallList);
+        }
+    }
+
+    /**
+     * @hide
+     */
+    public void explicitCallTransfer(String callId) {
+        if (mPhone != null) {
+            mPhone.explicitCallTransfer(callId);
+        }
+    }
+
+    /**
+     * M: Add for blind/assured ECT
+     * @hide
+     */
+    public void explicitCallTransfer(String callId, String number, int type) {
+        if (mPhone != null) {
+            mPhone.explicitCallTransfer(callId, number, type);
+        }
+    }
+
+    /**
+     * @hide
+     */
+    public void hangupAll() {
+        if (mPhone != null) {
+            mPhone.hangupAll();
+        }
+    }
+
+    /**
+     * @hide
+     */
+    public void hangupAllHoldCalls() {
+        if (mPhone != null) {
+            mPhone.hangupAllHoldCalls();
+        }
+    }
+
+    /**
+     * @hide
+     */
+    public void hangupActiveAndAnswerWaiting() {
+        if (mPhone != null) {
+            mPhone.hangupActiveAndAnswerWaiting();
+        }
+    }
+
+    /**
+     * M: [log optimize]for performance debugging.
+     */
+    private InCallServiceMessageAnalyzer mMessageAnalyzer = new InCallServiceMessageAnalyzer();
 }

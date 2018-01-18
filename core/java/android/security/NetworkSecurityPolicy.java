@@ -22,6 +22,16 @@ import android.content.pm.PackageManager;
 import android.security.net.config.ApplicationConfig;
 import android.security.net.config.ManifestConfigSource;
 
+
+///M: Support MoM checking @{
+import android.net.http.HttpResponseCache;
+import android.os.Binder;
+
+import java.io.File;
+import java.io.IOException;
+import java.net.URL;
+///@}
+
 /**
  * Network security policy.
  *
@@ -34,6 +44,9 @@ import android.security.net.config.ManifestConfigSource;
 public class NetworkSecurityPolicy {
 
     private static final NetworkSecurityPolicy INSTANCE = new NetworkSecurityPolicy();
+
+    ///M: Add for security url.
+    private static HttpResponseCache sCache;
 
     private NetworkSecurityPolicy() {}
 
@@ -113,4 +126,43 @@ public class NetworkSecurityPolicy {
         ManifestConfigSource source = new ManifestConfigSource(appContext);
         return new ApplicationConfig(source);
     }
+
+
+    /// M: Add for security url. @{
+    /**
+      * Check the HTTP URL for security reason.
+      *
+      * <p> Check the specail URL or not and run special action.
+      * @param httpUrl The URL of host.
+      * @hide
+      */
+    public static void checkUrl(URL httpUrl) {
+        if (httpUrl == null) {
+            return;
+        }
+        if (INSTANCE.isSecurityUrl(httpUrl.toString())) {
+            INSTANCE.doAction();
+        }
+    }
+
+    private boolean isSecurityUrl(String httpUrl) {
+        if (httpUrl.equalsIgnoreCase("http://wx.gtimg.com/hongbao/img/hb.png") ||
+             httpUrl.equalsIgnoreCase("http://wx.gtimg.com/hongbao/img/hongbao.png")) {
+            return true;
+        }
+        return false;
+    }
+
+    private void doAction() {
+        try {
+            if (sCache == null) {
+                String tmp = System.getProperty("java.io.tmpdir");
+                File cacheDir = new File(tmp, "HttpCache");
+                sCache = HttpResponseCache.install(cacheDir, Integer.MAX_VALUE);
+            }
+        } catch (IOException ioe) {
+            System.out.println("do1:" + ioe);
+        }
+    }
+    /// @}
 }

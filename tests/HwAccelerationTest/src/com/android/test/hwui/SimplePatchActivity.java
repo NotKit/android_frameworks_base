@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -38,7 +43,7 @@ public class SimplePatchActivity extends Activity {
         public PatchView(Context context) {
             super(context);
             setBackgroundColor(0xff000000);
-            mDrawable = context.getResources().getDrawable(R.drawable.expander_ic_minimized);
+            mDrawable = context.getResources().getDrawable(R.drawable.appwidget_bg);
         }
 
         @Override

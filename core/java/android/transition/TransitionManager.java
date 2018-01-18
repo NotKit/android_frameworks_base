@@ -207,14 +207,18 @@ public class TransitionManager {
     private static ArrayMap<ViewGroup, ArrayList<Transition>> getRunningTransitions() {
         WeakReference<ArrayMap<ViewGroup, ArrayList<Transition>>> runningTransitions =
                 sRunningTransitions.get();
-        if (runningTransitions == null || runningTransitions.get() == null) {
-            ArrayMap<ViewGroup, ArrayList<Transition>> transitions =
-                    new ArrayMap<ViewGroup, ArrayList<Transition>>();
+        /// M : The object refered weak reference may become null any time,
+        /// so we cannot guarantee the result of two runningTransition.get() are the same.
+        /// Refactor the code as below:
+        ArrayMap<ViewGroup, ArrayList<Transition>> transitions =
+                runningTransitions != null ? runningTransitions.get() : null;
+        if (transitions == null) {
+            transitions = new ArrayMap<ViewGroup, ArrayList<Transition>>();
             runningTransitions = new WeakReference<ArrayMap<ViewGroup, ArrayList<Transition>>>(
                     transitions);
             sRunningTransitions.set(runningTransitions);
         }
-        return runningTransitions.get();
+        return transitions;
     }
 
     private static void sceneChangeRunTransition(final ViewGroup sceneRoot,
@@ -295,6 +299,8 @@ public class TransitionManager {
                     ArrayList<Transition> currentTransitions =
                             runningTransitions.get(mSceneRoot);
                     currentTransitions.remove(transition);
+                    /// M: need to remove listener for avoid leak
+                    mTransition.removeListener(this);
                 }
             });
             mTransition.captureValues(mSceneRoot, false);

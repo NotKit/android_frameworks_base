@@ -109,8 +109,8 @@ public class AccessPointControllerImpl
 
     public boolean connect(AccessPoint ap) {
         if (ap == null) return false;
-        if (DEBUG) Log.d(TAG, "connect networkId=" + ap.getConfig().networkId);
         if (ap.isSaved()) {
+            if (DEBUG) Log.d(TAG, "connect networkId=" + ap.getConfig().networkId);
             mWifiTracker.getManager().connect(ap.getConfig().networkId, mConnectListener);
         } else {
             // Unknown network, need to add it.

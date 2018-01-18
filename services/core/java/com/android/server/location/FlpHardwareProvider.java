@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2015 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -130,6 +135,7 @@ public class FlpHardwareProvider {
 
     private void onBatchingCapabilities(int capabilities) {
         synchronized (mLocationSinkLock) {
+            Log.d(TAG, "onBatchingCapabilities capabilities= " + capabilities);
             mHaveBatchingCapabilities = true;
             mBatchingCapabilities = capabilities;
         }
@@ -161,6 +167,8 @@ public class FlpHardwareProvider {
     // the new initialization callback.
     private int getVersion() {
         synchronized (mLocationSinkLock) {
+            Log.d(TAG, "getVersion mHaveBatchingCapabilities = " + mHaveBatchingCapabilities);
+            Log.d(TAG, "getVersion mVersion = " + mVersion);
             if (mHaveBatchingCapabilities) {
                 return mVersion;
             }
@@ -169,7 +177,9 @@ public class FlpHardwareProvider {
     }
 
     private void setVersion(int version) {
-        mVersion = version;
+        synchronized (mLocationSinkLock) {
+            mVersion = version;
+        }
         if (mGeofenceHardwareSink != null) {
             mGeofenceHardwareSink.setVersion(getVersion());
         }
@@ -375,11 +385,13 @@ public class FlpHardwareProvider {
 
         @Override
         public void startBatching(int requestId, FusedBatchOptions options) {
+            Log.d(TAG, "startBatching requestId="+ requestId);
             nativeStartBatching(requestId, options);
         }
 
         @Override
         public void stopBatching(int requestId) {
+            Log.d(TAG, "stopBatching requestId="+ requestId);
             nativeStopBatching(requestId);
         }
 
@@ -438,11 +450,13 @@ public class FlpHardwareProvider {
 
         @Override
         public void addGeofences(GeofenceHardwareRequestParcelable[] geofenceRequestsArray) {
+            Log.d(TAG, "addGeofences geofenceRequestsArray="+ geofenceRequestsArray);
             nativeAddGeofences(geofenceRequestsArray);
         }
 
         @Override
         public void removeGeofences(int[] geofenceIds) {
+            Log.d(TAG, "removeGeofences geofenceIds="+ geofenceIds);
             nativeRemoveGeofences(geofenceIds);
         }
 

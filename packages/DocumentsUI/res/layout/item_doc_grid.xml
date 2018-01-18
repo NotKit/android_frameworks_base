@@ -71,6 +71,14 @@
             android:scaleType="center"
             android:contentDescription="@null"/>
 
+            <ImageView
+                android:id="@+id/icon_drm"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:contentDescription="@null"
+                android:layout_gravity="right|bottom"
+                android:visibility="gone" />
+
         <ImageView
             android:id="@+id/icon_check"
             android:src="@drawable/ic_check_circle"

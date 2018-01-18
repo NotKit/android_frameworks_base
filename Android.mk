@@ -1,4 +1,9 @@
 #
+# Copyright (C) 2014 MediaTek Inc.
+# Modification based on code covered by the mentioned copyright
+# and/or permission notice(s).
+#
+#
 # Copyright (C) 2008 The Android Open Source Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,6 +30,8 @@ LOCAL_PATH := $(call my-dir)
 # R.java file as a prerequisite.
 # TODO: find a more appropriate way to do this.
 framework_res_source_path := APPS/framework-res_intermediates/src
+# M:add mediatek resource path
+mediatek-res-source-path := APPS/mediatek-res_intermediates/src
 
 # Build the master framework library.
 # The framework contains too many method references (>64K) for poor old DEX.
@@ -119,6 +126,7 @@ LOCAL_SRC_FILES += \
 	core/java/android/bluetooth/IBluetoothManagerCallback.aidl \
 	core/java/android/bluetooth/IBluetoothPbap.aidl \
 	core/java/android/bluetooth/IBluetoothPbapClient.aidl \
+	core/java/android/bluetooth/IBluetoothDun.aidl \
 	core/java/android/bluetooth/IBluetoothMap.aidl \
 	core/java/android/bluetooth/IBluetoothSap.aidl \
 	core/java/android/bluetooth/IBluetoothStateChangeCallback.aidl \
@@ -163,6 +171,7 @@ LOCAL_SRC_FILES += \
 	../av/camera/aidl/android/hardware/camera2/ICameraDeviceCallbacks.aidl \
 	core/java/android/hardware/IConsumerIrService.aidl \
 	core/java/android/hardware/ISerialManager.aidl \
+	core/java/android/hardware/ILedManager.aidl \
 	core/java/android/hardware/display/IDisplayManager.aidl \
 	core/java/android/hardware/display/IDisplayManagerCallback.aidl \
 	core/java/android/hardware/display/IVirtualDisplayCallback.aidl \
@@ -464,6 +473,8 @@ LOCAL_SRC_FILES += \
 	packages/services/Proxy/com/android/net/IProxyPortListener.aidl \
 	core/java/android/service/quicksettings/IQSService.aidl \
 	core/java/android/service/quicksettings/IQSTileService.aidl \
+	telephony/java/com/mediatek/internal/telephony/ITelephonyEx.aidl \
+	telephony/java/com/mediatek/internal/telephony/ISetDefaultSubResultCallback.aidl \
 
 # The following are native binders that need to go with the native component
 # at system/update_engine/binder_bindings/. Use relative path to refer to them.
@@ -476,6 +487,43 @@ LOCAL_SRC_FILES +=  \
 
 LOCAL_AIDL_INCLUDES += system/update_engine/binder_bindings
 
+# AIDL files for Turnkey only
+ifeq ($(strip $(MTK_BSP_PACKAGE)),no)
+LOCAL_STATIC_JAVA_LIBRARIES := sef_latest
+LOCAL_SRC_FILES += \
+    core/java/com/mediatek/datashaping/IDataShapingManager.aidl \
+    core/java/com/mediatek/gba/IGbaService.aidl \
+    core/java/com/mediatek/hotknot/IHotKnotCallback.aidl \
+    core/java/com/mediatek/hotknot/IHotKnotAdapter.aidl \
+    core/java/com/mediatek/msgmonitorservice/IMessageLogger.aidl \
+    core/java/com/mediatek/msgmonitorservice/IMessageLoggerWrapper.aidl \
+    core/java/com/mediatek/search/ISearchEngineManagerService.aidl \
+    core/java/com/mediatek/sensorhub/ISensorHubService.aidl \
+    core/java/com/mediatek/usp/IUspService.aidl \
+    core/java/com/mediatek/nfcgsma_extras/INfcAdapterGsmaExtras.aidl
+
+endif
+
+#For PQ-AppdetctionService
+LOCAL_SRC_FILES += \
+    core/java/com/mediatek/pq/IAppDetectionService.aidl
+
+# Add for multi-window
+LOCAL_SRC_FILES += \
+    core/java/com/mediatek/multiwindow/IFreeformStackListener.aidl \
+    core/java/com/mediatek/multiwindow/MultiWindowManager.java \
+
+# AIDL files for 3G VT only (Turkey)
+LOCAL_SRC_FILES += \
+    telephony/java/com/mediatek/internal/telephony/gsm/IGsmVideoCallCallback.aidl \
+    telephony/java/com/mediatek/internal/telephony/gsm/IGsmVideoCallProvider.aidl \
+
+# AIDL files for Turnkey and BSP Package
+LOCAL_SRC_FILES += \
+    core/java/com/mediatek/hdmi/IMtkHdmiManager.aidl \
+    core/java/com/mediatek/perfservice/IPerfService.aidl \
+    core/java/com/mediatek/runningbooster/IRunningBoosterManager.aidl
+
 # FRAMEWORKS_BASE_JAVA_SRC_DIRS comes from build/core/pathmap.mk
 LOCAL_AIDL_INCLUDES += \
       $(FRAMEWORKS_BASE_JAVA_SRC_DIRS) \
@@ -486,14 +534,31 @@ LOCAL_AIDL_INCLUDES += \
 	frameworks/native/aidl/gui \
 	system/netd/server/binder
 
+# Include AIDL files from mediatek-common.
+LOCAL_AIDL_INCLUDES += $(MTK_PATH_SOURCE)/frameworks/common/src
+
+#For ANR Debug Mechanism
+LOCAL_STATIC_JAVA_LIBRARIES += anrappmanager
+
 LOCAL_INTERMEDIATE_SOURCES := \
 			$(framework_res_source_path)/android/R.java \
 			$(framework_res_source_path)/android/Manifest.java \
 			$(framework_res_source_path)/com/android/internal/R.java
+# M:add mediatek resource R.java into framework,@{
+LOCAL_INTERMEDIATE_SOURCES += \
+			$(mediatek-res-source-path)/com/mediatek/internal/R.java \
+			$(mediatek-res-source-path)/com/mediatek/R.java \
+			$(mediatek-res-source-path)/com/mediatek/Manifest.java
+# @}
 
 LOCAL_NO_STANDARD_LIBRARIES := true
 LOCAL_JAVA_LIBRARIES := core-oj core-libart core-lambda-stubs conscrypt okhttp core-junit bouncycastle ext
+LOCAL_JAVA_LIBRARIES += mediatek-common
 LOCAL_STATIC_JAVA_LIBRARIES := framework-protos
+#For ANR Debug Mechanism
+ifeq ($(strip $(MTK_BSP_PACKAGE)),no)
+LOCAL_STATIC_JAVA_LIBRARIES += anrappmanager
+endif
 
 LOCAL_MODULE := framework
 
@@ -501,6 +566,23 @@ LOCAL_DX_FLAGS := --core-library --multi-dex
 LOCAL_JACK_FLAGS := --multi-dex native
 
 LOCAL_RMTYPEDEFS := true
+
+ifeq ($(MTK_3GDONGLE_SUPPORT),yes)
+ #LOCAL_SRC_FILES := $(filter-out  ../opt/telephony/src/java/com/android/internal/telephony/cdma/%,$(LOCAL_SRC_FILES))
+ #LOCAL_SRC_FILES += $(call all-java-files-under, ../opt/telephony/src/java_tb)
+  LOCAL_SRC_FILES := $(filter-out  telephony/java/android/telephony/cdma/%,$(LOCAL_SRC_FILES))
+  LOCAL_SRC_FILES := $(filter-out  telephony/java/com/android/internal/telephony/cdma/%,$(LOCAL_SRC_FILES))
+  LOCAL_SRC_FILES += $(call all-java-files-under, telephony/java_tb)
+endif
+
+# Use viatelecomjar
+ifeq ($(MTK_3GDONGLE_SUPPORT),yes)
+else
+# LOCAL_STATIC_JAVA_LIBRARIES += viatelecomjar
+endif
+
+# M: need to explicitly declare these required shared libraries
+LOCAL_REQUIRED_MODULES := libRS librs_jni
 
 ifeq ($(EMMA_INSTRUMENT_FRAMEWORK),true)
 LOCAL_EMMA_INSTRUMENT := true
@@ -515,10 +597,32 @@ framework_res_R_stamp := \
 	$(call intermediates-dir-for,APPS,framework-res,,COMMON)/src/R.stamp
 $(full_classes_compiled_jar): $(framework_res_R_stamp)
 $(built_dex_intermediate): $(framework_res_R_stamp)
+# M:add mediatek resource dependes framework->mediatek_res->framework_res,@{
+mediatek_res_R_stamp := \
+	$(call intermediates-dir-for,APPS,mediatek-res,,COMMON)/src/R.stamp
+$(full_classes_compiled_jar): $(mediatek_res_R_stamp)
+$(built_dex_intermediate): $(mediatek_res_R_stamp)
+# @}
 
 $(framework_module): | $(dir $(framework_module))framework-res.apk
 
 framework_built := $(call java-lib-deps,framework)
+
+ifeq ($(strip $(BUILD_MTK_API_DEP)), yes)
+# framework API table.
+# ============================================================
+LOCAL_MODULE := framework-api
+
+LOCAL_JAVA_LIBRARIES += $(LOCAL_STATIC_JAVA_LIBRARIES)
+LOCAL_MODULE_CLASS := JAVA_LIBRARIES
+
+LOCAL_DROIDDOC_OPTIONS := \
+		-api $(TARGET_OUT_COMMON_INTERMEDIATES)/PACKAGING/framework-api.txt \
+		-nodocs \
+		-hidden
+
+include $(BUILD_DROIDDOC)
+endif
 
 # Copy AIDL files to be preprocessed and included in the SDK,
 # specified relative to the root of the build tree.
@@ -705,6 +809,9 @@ aidl_files := \
 	frameworks/base/core/java/android/database/CursorWindow.aidl \
 	frameworks/base/core/java/android/service/quicksettings/Tile.aidl \
 	frameworks/native/aidl/binder/android/os/PersistableBundle.aidl \
+	frameworks/base/telephony/java/com/mediatek/internal/telephony/ITelephonyEx.aidl \
+	frameworks/base/telephony/java/com/mediatek/internal/telephony/SmsCbConfigInfo.aidl \
+	frameworks/base/telephony/java/com/mediatek/internal/telephony/IccSmsStorageStatus.aidl \
 	system/netd/server/binder/android/net/UidRange.aidl \
 	frameworks/base/telephony/java/android/telephony/PcoData.aidl \
 
@@ -825,6 +932,8 @@ framework_docs_LOCAL_JAVA_LIBRARIES := \
 	$(framework_docs_LOCAL_API_CHECK_JAVA_LIBRARIES) \
 	$(FRAMEWORKS_SUPPORT_JAVA_LIBRARIES)
 
+framework_docs_LOCAL_JAVA_LIBRARIES += mediatek-common
+
 framework_docs_LOCAL_MODULE_CLASS := JAVA_LIBRARIES
 framework_docs_LOCAL_DROIDDOC_HTML_DIR := docs/html
 # The since flag (-since N.xml API_LEVEL) is used to add API Level information
@@ -909,6 +1018,13 @@ framework_docs_LOCAL_DROIDDOC_OPTIONS += \
 		-hdf sdk.version $(framework_docs_SDK_VERSION) \
 		-hdf sdk.rel.id $(framework_docs_SDK_REL_ID) \
 		-hdf sdk.preview 0
+
+ifeq ($(MTK_3GDONGLE_SUPPORT),yes)
+else
+include $(CLEAR_VARS)
+# LOCAL_PREBUILT_STATIC_JAVA_LIBRARIES := viatelecomjar:telephony/java/com/android/internal/telephony/cdma/viatelecom/viatelecom.jar
+# include $(BUILD_MULTI_PREBUILT)
+endif
 
 # ====  the api stubs and current.xml ===========================
 include $(CLEAR_VARS)
@@ -1310,7 +1426,7 @@ include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES:=$(framework_docs_LOCAL_SRC_FILES)
 LOCAL_INTERMEDIATE_SOURCES:=$(framework_docs_LOCAL_INTERMEDIATE_SOURCES)
-LOCAL_JAVA_LIBRARIES:=$(framework_docs_LOCAL_JAVA_LIBRARIES)
+LOCAL_JAVA_LIBRARIES:=$(framework_docs_LOCAL_JAVA_LIBRARIES) framework
 LOCAL_MODULE_CLASS:=$(framework_docs_LOCAL_MODULE_CLASS)
 LOCAL_DROIDDOC_SOURCE_PATH:=$(framework_docs_LOCAL_DROIDDOC_SOURCE_PATH)
 LOCAL_DROIDDOC_HTML_DIR:=$(framework_docs_LOCAL_DROIDDOC_HTML_DIR)
@@ -1348,6 +1464,9 @@ LOCAL_STATIC_JAVA_LIBRARIES := libphonenumber-platform
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := ext
 
+LOCAL_NO_EMMA_INSTRUMENT := true
+LOCAL_NO_EMMA_COMPILE := true
+
 LOCAL_DX_FLAGS := --core-library
 
 ifneq ($(INCREMENTAL_BUILDS),)
@@ -1357,6 +1476,54 @@ endif
 
 include $(BUILD_JAVA_LIBRARY)
 
+ifeq ($(strip $(BUILD_MTK_API_DEP)), yes)
+# ext API table.
+# ============================================================
+LOCAL_MODULE := ext-api
+
+LOCAL_STATIC_JAVA_LIBRARIES := 
+LOCAL_MODULE_CLASS := JAVA_LIBRARIES
+
+LOCAL_DROIDDOC_OPTIONS:= \
+		-stubs $(TARGET_OUT_COMMON_INTERMEDIATES)/JAVA_LIBRARIES/ext-api_intermediates/src \
+		-api $(TARGET_OUT_COMMON_INTERMEDIATES)/PACKAGING/ext-api.txt \
+		-nodocs \
+        -hidden
+
+include $(BUILD_DROIDDOC)
+endif
+
+ifeq ($(strip $(BUILD_MTK_ANDROID_LIB)), yes)
+# ====  MediaTek version of android stubs library ===========================
+# The target builds the same sources as in api-stubs (android.jar) but
+# this library will include all class APIs and definitions.
+include $(CLEAR_VARS)
+
+GEN_OVERLAY_INFO = $(TARGET_PRODUCT_OUT_ROOT)/resource_overlay_info.txt
+$(GEN_OVERLAY_INFO): 
+	@echo $(PRODUCTS.$(INTERNAL_PRODUCT).PRODUCT_PACKAGE_OVERLAYS) > $@
+GEN_FRAMEWORK_DIR = $(TARGET_PRODUCT_OUT_ROOT)/framework_dir_info.txt
+$(GEN_FRAMEWORK_DIR): 
+	@echo $(FRAMEWORKS_BASE_SUBDIRS) > $@
+GEN_AIDL_REF_DIR = $(TARGET_PRODUCT_OUT_ROOT)/aidl_ref_dir_info.txt
+$(GEN_AIDL_REF_DIR): 
+	@echo $(FRAMEWORKS_BASE_JAVA_SRC_DIRS) $(MTK_PATH_SOURCE)frameworks/common/src > $@
+
+GEN_MTK_FRAMEWORK_DIR = $(TARGET_PRODUCT_OUT_ROOT)/mtk_framework_dir_info.txt
+$(GEN_MTK_FRAMEWORK_DIR):
+	@echo $(MTK_FRAMEWORKS_BASE_JAVA_SRC_DIRS) > $@
+
+LOCAL_SRC_FILES:=$(framework_docs_LOCAL_API_CHECK_SRC_FILES)
+LOCAL_INTERMEDIATE_SOURCES:=$(framework_docs_LOCAL_INTERMEDIATE_SOURCES)
+LOCAL_JAVA_LIBRARIES:=$(framework_docs_LOCAL_JAVA_LIBRARIES)
+
+LOCAL_MODULE := mtk-android-lib
+LOCAL_JAVA_LIBRARIES := bouncycastle core core-junit ext telephony-common voip-common
+include $(BUILD_STATIC_JAVA_LIBRARY)
+# Define the same framework dependency as in api-stubs.
+$(LOCAL_BUILT_MODULE): $(GEN_OVERLAY_INFO) $(GEN_FRAMEWORK_DIR) $(GEN_AIDL_REF_DIR) $(GEN_MTK_FRAMEWORK_DIR)
+
+endif
 
 # Include subdirectory makefiles
 # ============================================================

@@ -43,6 +43,9 @@ import android.view.animation.Animation;
 import java.io.PrintWriter;
 import java.util.ArrayList;
 
+/// M: BMW
+import com.mediatek.multiwindow.MultiWindowManager;
+
 class DisplayContentList extends ArrayList<DisplayContent> {
 }
 
@@ -385,6 +388,9 @@ class DisplayContent {
     }
 
     void setTouchExcludeRegion(Task focusedTask) {
+        /// M: BMW @{
+        Task stickyTask = null;
+        /// @}
         mTouchExcludeRegion.set(mBaseDisplayRect);
         final int delta = mService.dipToPixel(RESIZE_HANDLE_WIDTH_IN_DP, mDisplayMetrics);
         boolean addBackFocusedTask = false;
@@ -394,6 +400,11 @@ class DisplayContent {
             final ArrayList<Task> tasks = stack.getTasks();
             for (int taskNdx = tasks.size() - 1; taskNdx >= 0; --taskNdx) {
                 final Task task = tasks.get(taskNdx);
+                /// M: BMW @{
+                if (MultiWindowManager.isSupported() && task.mSticky) {
+                    stickyTask = task;
+                }
+                /// @}
                 AppWindowToken token = task.getTopVisibleAppToken();
                 if (token == null || !token.isVisible()) {
                     continue;
@@ -461,6 +472,15 @@ class DisplayContent {
             mTmpRegion.set(mTmpRect);
             mTouchExcludeRegion.op(mTmpRegion, Op.UNION);
         }
+
+        /// M: BMW @{
+        if (MultiWindowManager.isSupported() && stickyTask != null && stickyTask != focusedTask) {
+            Rect rect = new Rect();
+            stickyTask.getBounds(rect);
+            Region tmpStickyRegion = new Region(rect);
+            mTouchExcludeRegion.op(tmpStickyRegion, Region.Op.DIFFERENCE);
+        }
+        /// @}
         if (mTapDetector != null) {
             mTapDetector.setTouchExcludeRegion(mTouchExcludeRegion, mNonResizeableRegion);
         }
@@ -538,6 +558,10 @@ class DisplayContent {
                     for (int tokenNdx = tokens.size() - 1; tokenNdx >= 0; --tokenNdx) {
                         AppWindowToken wtoken = tokens.get(tokenNdx);
                         if (wtoken.mIsExiting) {
+                            /// M: [ALPS03073810] remove deferred dim layer
+                            if (wtoken.mTask != null) {
+                                mDimLayerController.removeDimLayerUser(wtoken.mTask);
+                            }
                             wtoken.removeAppFromTaskLocked();
                         }
                     }

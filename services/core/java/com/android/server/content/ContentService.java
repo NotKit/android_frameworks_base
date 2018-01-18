@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -236,8 +241,9 @@ public final class ContentService extends IContentService.Stub {
         } catch (RuntimeException e) {
             // The content service only throws security exceptions, so let's
             // log all others.
+            /// M: Slog.wtf will trigger exception, change it to JB usage
             if (!(e instanceof SecurityException)) {
-                Slog.wtf(TAG, "Content Service Crash", e);
+                Log.e(TAG, "Content Service Crash", e);
             }
             throw e;
         }

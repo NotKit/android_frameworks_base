@@ -25,6 +25,7 @@ import android.support.v4.app.ActionBarDrawerToggle;
 import android.support.v4.widget.DrawerLayout;
 import android.support.v4.widget.DrawerLayout.DrawerListener;
 import android.util.Log;
+import android.view.inputmethod.InputMethodManager;
 import android.view.View;
 import android.widget.Toolbar;
 
@@ -45,6 +46,8 @@ abstract class DrawerController implements DrawerListener {
     public static final int OPENED_SWIPE = 1;
     // Mostly programmatically forced drawer opening
     public static final int OPENED_OTHER = 2;
+
+    public static Activity mActivity;
 
     @IntDef(flag = true, value = {
             OPENED_HAMBURGER,
@@ -78,6 +81,7 @@ abstract class DrawerController implements DrawerListener {
 
         DrawerLayout layout = (DrawerLayout) activity.findViewById(R.id.drawer_layout);
 
+        mActivity = activity;
         if (layout == null) {
             return new DummyDrawerController();
         }
@@ -150,6 +154,14 @@ abstract class DrawerController implements DrawerListener {
             if (open) {
                 mLayout.openDrawer(mDrawer);
                 mTrigger = trigger;
+                
+                /// M: Always close the soft input when roots open
+                View view = mActivity.getCurrentFocus();
+                if (view != null) {
+                    InputMethodManager imm =
+                      (InputMethodManager) mActivity.getSystemService(Context.INPUT_METHOD_SERVICE);
+                    imm.hideSoftInputFromWindow(view.getWindowToken(), 0);
+                }
             } else {
                 mLayout.closeDrawer(mDrawer);
             }

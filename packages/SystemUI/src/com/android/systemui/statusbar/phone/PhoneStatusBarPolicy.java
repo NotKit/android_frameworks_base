@@ -26,7 +26,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.UserInfo;
+import android.hardware.display.WifiDisplayStatus;
 import android.media.AudioManager;
+import android.net.wifi.p2p.WifiP2pDevice;
 import android.os.Handler;
 import android.os.RemoteException;
 import android.os.UserHandle;
@@ -35,6 +37,7 @@ import android.provider.Settings.Global;
 import android.telecom.TelecomManager;
 import android.util.Log;
 
+import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.IccCardConstants;
 import com.android.internal.telephony.TelephonyIntents;
 import com.android.systemui.R;
@@ -69,7 +72,6 @@ public class PhoneStatusBarPolicy implements Callback, RotationLockController.Ro
     private final String mSlotRotate;
     private final String mSlotHeadset;
     private final String mSlotDataSaver;
-
     private final Context mContext;
     private final Handler mHandler = new Handler();
     private final CastController mCast;
@@ -98,6 +100,7 @@ public class PhoneStatusBarPolicy implements Callback, RotationLockController.Ro
 
     private BluetoothController mBluetooth;
 
+    @VisibleForTesting
     public PhoneStatusBarPolicy(Context context, StatusBarIconController iconController,
             CastController cast, HotspotController hotspot, UserInfoController userInfoController,
             BluetoothController bluetooth, RotationLockController rotationLockController,
@@ -131,7 +134,8 @@ public class PhoneStatusBarPolicy implements Callback, RotationLockController.Ro
 
         // listen for broadcasts
         IntentFilter filter = new IntentFilter();
-        filter.addAction(AlarmManager.ACTION_NEXT_ALARM_CLOCK_CHANGED);
+        /// M: [Multi-User] Will register this action using special receiver.
+        //filter.addAction(AlarmManager.ACTION_NEXT_ALARM_CLOCK_CHANGED);
         filter.addAction(AudioManager.RINGER_MODE_CHANGED_ACTION);
         filter.addAction(AudioManager.INTERNAL_RINGER_MODE_CHANGED_ACTION);
         filter.addAction(AudioManager.ACTION_HEADSET_PLUG);
@@ -139,8 +143,12 @@ public class PhoneStatusBarPolicy implements Callback, RotationLockController.Ro
         filter.addAction(TelecomManager.ACTION_CURRENT_TTY_MODE_CHANGED);
         filter.addAction(Intent.ACTION_MANAGED_PROFILE_AVAILABLE);
         filter.addAction(Intent.ACTION_MANAGED_PROFILE_UNAVAILABLE);
+        /// M: [Multi-User] Add user switched action for updating possible alarm icon.
+        filter.addAction(Intent.ACTION_USER_SWITCHED);
         filter.addAction(Intent.ACTION_MANAGED_PROFILE_REMOVED);
         mContext.registerReceiver(mIntentReceiver, filter, null, mHandler);
+        /// M: [Multi-User] Register Alarm intent by user
+        registerAlarmClockChanged(UserHandle.USER_OWNER, false);
 
         // listen for user / profile change.
         try {
@@ -170,9 +178,12 @@ public class PhoneStatusBarPolicy implements Callback, RotationLockController.Ro
         updateVolumeZen();
 
         // cast
-        mIconController.setIcon(mSlotCast, R.drawable.stat_sys_cast, null);
-        mIconController.setIconVisibility(mSlotCast, false);
-        mCast.addCallback(mCastCallback);
+        // M: Remove CastTile when WFD is not support in quicksetting
+        if (mCast != null) {
+            mIconController.setIcon(mSlotCast, R.drawable.stat_sys_cast, null);
+            mIconController.setIconVisibility(mSlotCast, false);
+            mCast.addCallback(mCastCallback);
+        }
 
         // hotspot
         mIconController.setIcon(mSlotHotspot, R.drawable.stat_sys_hotspot,
@@ -319,7 +330,7 @@ public class PhoneStatusBarPolicy implements Callback, RotationLockController.Ro
         mIconController.setIconVisibility(mSlotBluetooth, bluetoothEnabled);
     }
 
-    private final void updateTTY(Intent intent) {
+    /*private final */protected void updateTTY(Intent intent) {
         int currentTtyMode = intent.getIntExtra(TelecomManager.EXTRA_CURRENT_TTY_MODE,
                 TelecomManager.TTY_MODE_OFF);
         boolean enabled = currentTtyMode != TelecomManager.TTY_MODE_OFF;
@@ -461,6 +472,19 @@ public class PhoneStatusBarPolicy implements Callback, RotationLockController.Ro
         public void onCastDevicesChanged() {
             updateCast();
         }
+
+        /// M: WFD sink support {@
+        @Override
+        public void onWfdStatusChanged(WifiDisplayStatus status,
+                boolean sinkMode) {
+
+        }
+
+        @Override
+        public void onWifiP2pDeviceChanged(WifiP2pDevice device) {
+
+        }
+        /// @}
     };
 
     public void appTransitionStarting(long startTime, long duration) {
@@ -499,6 +523,7 @@ public class PhoneStatusBarPolicy implements Callback, RotationLockController.Ro
     private void updateHeadsetPlug(Intent intent) {
         boolean connected = intent.getIntExtra("state", 0) != 0;
         boolean hasMic = intent.getIntExtra("microphone", 0) != 0;
+        Log.d(TAG, "updateHeadsetPlug connected:" + connected + ",hasMic:" + hasMic);
         if (connected) {
             String contentDescription = mContext.getString(hasMic
                     ? R.string.accessibility_status_bar_headset
@@ -516,7 +541,8 @@ public class PhoneStatusBarPolicy implements Callback, RotationLockController.Ro
         mIconController.setIconVisibility(mSlotDataSaver, isDataSaving);
     }
 
-    private BroadcastReceiver mIntentReceiver = new BroadcastReceiver() {
+    @VisibleForTesting
+    /*private*/ BroadcastReceiver mIntentReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
@@ -537,6 +563,13 @@ public class PhoneStatusBarPolicy implements Callback, RotationLockController.Ro
             } else if (action.equals(AudioManager.ACTION_HEADSET_PLUG)) {
                 updateHeadsetPlug(intent);
             }
+            /// M: [Multi-User] Register Alarm intent by user @{
+            else if (action.equals(Intent.ACTION_USER_SWITCHED)) {
+                updateAlarm();
+                int newUserId = intent.getIntExtra(Intent.EXTRA_USER_HANDLE, -1);
+                registerAlarmClockChanged(newUserId, true);
+            }
+            /// M: @}
         }
     };
 
@@ -547,4 +580,31 @@ public class PhoneStatusBarPolicy implements Callback, RotationLockController.Ro
             mIconController.setIconVisibility(mSlotCast, false);
         }
     };
+
+    /// M: [Multi-User] Register Alarm intent by user @{
+    private BroadcastReceiver mAlarmIntentReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            Log.d(TAG, "onReceive:" + action);
+            if (action.equals(AlarmManager.ACTION_NEXT_ALARM_CLOCK_CHANGED)) {
+                updateAlarm();
+            }
+        }
+    };
+
+    private void registerAlarmClockChanged(int newUserId, boolean userSwitch) {
+        if (userSwitch) {
+            mContext.unregisterReceiver(mAlarmIntentReceiver);
+        }
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(AlarmManager.ACTION_NEXT_ALARM_CLOCK_CHANGED);
+
+        Log.d(TAG, "registerAlarmClockChanged:" + newUserId);
+        UserHandle newUserHandle = new UserHandle(newUserId);
+        mContext.registerReceiverAsUser(mAlarmIntentReceiver, newUserHandle, filter,
+            null /* permission */, mHandler /* scheduler */);
+    }
+    /// M: @}
+
 }

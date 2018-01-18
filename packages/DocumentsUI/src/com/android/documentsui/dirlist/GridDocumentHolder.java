@@ -49,6 +49,7 @@ final class GridDocumentHolder extends DocumentHolder {
     final ImageView mIconThumb;
     final ImageView mIconCheck;
     final IconHelper mIconHelper;
+    final ImageView mIconDrm;
 
     private final @ColorInt int mDisabledBgColor;
 
@@ -64,6 +65,7 @@ final class GridDocumentHolder extends DocumentHolder {
         mIconMimeSm = (ImageView) itemView.findViewById(R.id.icon_mime_sm);
         mIconThumb = (ImageView) itemView.findViewById(R.id.icon_thumb);
         mIconCheck = (ImageView) itemView.findViewById(R.id.icon_check);
+        mIconDrm = (ImageView) itemView.findViewById(R.id.icon_drm);
 
         mIconHelper = iconHelper;
     }
@@ -136,7 +138,7 @@ final class GridDocumentHolder extends DocumentHolder {
 
         final Uri uri = DocumentsContract.buildDocumentUri(docAuthority, docId);
         mIconHelper.loadThumbnail(uri, docMimeType, docFlags, docIcon, mIconThumb, mIconMimeLg,
-                mIconMimeSm);
+                mIconMimeSm, cursor, mIconDrm);
 
         if (mHideTitles) {
             mTitle.setVisibility(View.GONE);

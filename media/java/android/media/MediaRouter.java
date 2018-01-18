@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2012 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -63,7 +68,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 public class MediaRouter {
     private static final String TAG = "MediaRouter";
-    private static final boolean DEBUG = Log.isLoggable(TAG, Log.DEBUG);
+    private static final boolean DEBUG = /*Log.isLoggable(TAG, Log.DEBUG)*/true;
 
     static class Static implements DisplayManager.DisplayListener {
         final Context mAppContext;
@@ -906,53 +911,104 @@ public class MediaRouter {
 
     static void selectRouteStatic(int types, @NonNull RouteInfo route, boolean explicit) {
         Log.v(TAG, "Selecting route: " + route);
+
         assert(route != null);
+        if (DEBUG) {
+            Log.d(TAG, "selectRouteStatic types: " + types + " route: " + route + " explicit: "
+                    + explicit);
+        }
         final RouteInfo oldRoute = sStatic.mSelectedRoute;
-        if (oldRoute == route) return;
+
+        /// M: work around for ALPS01273607 @{
         if (!route.matchesTypes(types)) {
-            Log.w(TAG, "selectRoute ignored; cannot select route with supported types " +
-                    typesToString(route.getSupportedTypes()) + " into route types " +
-                    typesToString(types));
+            Log.w(TAG, "selectRoute ignored; cannot select route with supported types "
+                    + typesToString(route.getSupportedTypes()) + " into route types "
+                    + typesToString(types));
             return;
+        }
+        final WifiDisplay activeDisplay = sStatic.mDisplayService.getWifiDisplayStatus()
+                .getActiveDisplay();
+        final boolean oldRouteHasAddress = oldRoute != null && oldRoute.mDeviceAddress != null;
+        final boolean newRouteHasAddress = route.mDeviceAddress != null;
+        boolean shouldConnectWfd = false;
+        boolean shouldDisconnectWfd = false;
+        if (activeDisplay != null || oldRouteHasAddress || newRouteHasAddress) {
+            if (newRouteHasAddress && !matchesDeviceAddress(activeDisplay, route)) {
+                if (sStatic.mCanConfigureWifiDisplays) {
+                    shouldConnectWfd = true;
+                } else {
+                    Log.e(TAG, "Cannot connect to wifi displays because this process "
+                            + "is not allowed to do so.");
+                }
+            } else if (activeDisplay != null && !newRouteHasAddress) {
+                shouldDisconnectWfd = true;
+            }
+        }
+        if (DEBUG) {
+            Log.d(TAG, "selectRouteStatic shouldConnectWfd: " + shouldConnectWfd
+                    + " shouldDisconnectWfd: " + shouldDisconnectWfd);
+        }
+        if (oldRoute == route) {
+            // for wfd
+            if (shouldConnectWfd || shouldDisconnectWfd) {
+                if (oldRoute.getStatusCode() == RouteInfo.STATUS_CONNECTING
+                        || oldRoute.getStatusCode() == RouteInfo.STATUS_CONNECTED) {
+                    // if not connecting or connected, skip
+                    if (DEBUG) {
+                        Log.d(TAG, "selectRouteStatic route1 is already selected, skip it");
+                    }
+                    return;
+                }
+            } else {
+                // for other routes
+                if (DEBUG) {
+                    Log.d(TAG, "selectRouteStatic route2 is already selected, skip it");
+                }
+                return;
+            }
         }
 
         final RouteInfo btRoute = sStatic.mBluetoothA2dpRoute;
         if (btRoute != null && (types & ROUTE_TYPE_LIVE_AUDIO) != 0 &&
                 (route == btRoute || route == sStatic.mDefaultAudioVideo)) {
             try {
-                sStatic.mAudioService.setBluetoothA2dpOn(route == btRoute);
+                /// M: If A2DP is on, we need not setBluetoothA2dpOn status to
+                /// avoid switch to default route when WFD disconnecting
+                if (!sStatic.mAudioService.isBluetoothA2dpOn()) {
+                    Log.d(TAG, "selectRouteStatic: a2dp off with btRoute = " + btRoute);
+                    sStatic.mAudioService.setBluetoothA2dpOn(route == btRoute);
+                }
             } catch (RemoteException e) {
                 Log.e(TAG, "Error changing Bluetooth A2DP state", e);
             }
         }
 
-        final WifiDisplay activeDisplay =
-                sStatic.mDisplayService.getWifiDisplayStatus().getActiveDisplay();
-        final boolean oldRouteHasAddress = oldRoute != null && oldRoute.mDeviceAddress != null;
-        final boolean newRouteHasAddress = route.mDeviceAddress != null;
-        if (activeDisplay != null || oldRouteHasAddress || newRouteHasAddress) {
-            if (newRouteHasAddress && !matchesDeviceAddress(activeDisplay, route)) {
-                if (sStatic.mCanConfigureWifiDisplays) {
-                    sStatic.mDisplayService.connectWifiDisplay(route.mDeviceAddress);
-                } else {
-                    Log.e(TAG, "Cannot connect to wifi displays because this process "
-                            + "is not allowed to do so.");
-                }
-            } else if (activeDisplay != null && !newRouteHasAddress) {
-                sStatic.mDisplayService.disconnectWifiDisplay();
-            }
+        if (shouldConnectWfd) {
+            sStatic.mDisplayService.connectWifiDisplay(route.mDeviceAddress);
+        } else if (shouldDisconnectWfd) {
+            sStatic.mDisplayService.disconnectWifiDisplay();
         }
 
         sStatic.setSelectedRoute(route, explicit);
 
         if (oldRoute != null) {
+            if (DEBUG) {
+                Log.d(TAG, "selectRouteStatic oldRoute: " + oldRoute);
+            }
             dispatchRouteUnselected(types & oldRoute.getSupportedTypes(), oldRoute);
             if (oldRoute.resolveStatusCode()) {
                 dispatchRouteChanged(oldRoute);
             }
         }
         if (route != null) {
-            if (route.resolveStatusCode()) {
+            if (DEBUG) {
+                Log.d(TAG, "selectRouteStatic newRoute: " + route);
+            }
+            if (shouldConnectWfd || shouldDisconnectWfd) {
+                if (route.resolveStatusCodeForWfd()) {
+                    dispatchRouteChanged(route);
+                }
+            } else if (route.resolveStatusCode()) {
                 dispatchRouteChanged(route);
             }
             dispatchRouteSelected(types & route.getSupportedTypes(), route);
@@ -1193,6 +1249,9 @@ public class MediaRouter {
     }
 
     static void dispatchRouteSelected(int type, RouteInfo info) {
+        if (DEBUG) {
+            Log.d(TAG, "dispatchRouteSelected info: " + info + " type: " + type);
+        }
         for (CallbackInfo cbi : sStatic.mCallbacks) {
             if (cbi.filterRouteEvent(info)) {
                 cbi.cb.onRouteSelected(cbi.router, type, info);
@@ -1201,6 +1260,9 @@ public class MediaRouter {
     }
 
     static void dispatchRouteUnselected(int type, RouteInfo info) {
+        if (DEBUG) {
+            Log.d(TAG, "dispatchRouteUnselected info: " + info + " type: " + type);
+        }
         for (CallbackInfo cbi : sStatic.mCallbacks) {
             if (cbi.filterRouteEvent(info)) {
                 cbi.cb.onRouteUnselected(cbi.router, type, info);
@@ -1223,6 +1285,10 @@ public class MediaRouter {
             // applications.
             final boolean oldVisibility = cbi.filterRouteEvent(oldSupportedTypes);
             final boolean newVisibility = cbi.filterRouteEvent(newSupportedTypes);
+            if (DEBUG) {
+                Log.d(TAG, "dispatchRouteChanged oldVisibility: " + oldVisibility
+                        + "newVisibility: " + newVisibility);
+            }
             if (!oldVisibility && newVisibility) {
                 cbi.cb.onRouteAdded(cbi.router, info);
                 if (info.isSelected()) {
@@ -1309,6 +1375,10 @@ public class MediaRouter {
     }
 
     static void updateWifiDisplayStatus(WifiDisplayStatus status) {
+        if (DEBUG) {
+            Log.d(TAG, "updateWifiDisplayStatus status: " + status);
+        }
+
         WifiDisplay[] displays;
         WifiDisplay activeDisplay;
         if (status.getFeatureState() == WifiDisplayStatus.FEATURE_STATE_ON) {
@@ -1330,12 +1400,28 @@ public class MediaRouter {
             displays = WifiDisplay.EMPTY_ARRAY;
             activeDisplay = null;
         }
+
+        Log.v(TAG, "activeDisplay = " + activeDisplay);
         String activeDisplayAddress = activeDisplay != null ?
                 activeDisplay.getDeviceAddress() : null;
+
+        Log.v(TAG, "activeDisplay = " + activeDisplay
+                    + ", activeDisplayAddress = " + activeDisplayAddress
+                    + ", displays.length = " + displays.length);
+
+        /// M: ALPS03078543
+        ///    Setting display device address to mDefaultAudioVideo route
+        ///    to avoid disconnect event occured, when current display is alive.
+        if (displays.length == 0) {
+            sStatic.mDefaultAudioVideo.mDeviceAddress = activeDisplayAddress;
+        }
 
         // Add or update routes.
         for (int i = 0; i < displays.length; i++) {
             final WifiDisplay d = displays[i];
+            if (DEBUG) {
+                Log.d(TAG, "updateWifiDisplayStatus display: " + d);
+            }
             if (shouldShowWifiDisplay(d, activeDisplay)) {
                 RouteInfo route = findWifiDisplayRoute(d);
                 if (route == null) {
@@ -1438,7 +1524,15 @@ public class MediaRouter {
         changed |= route.mEnabled != enabled;
         route.mEnabled = enabled;
 
-        changed |= route.setRealStatusCode(getWifiDisplayStatusCode(display, wfdStatus));
+        /// M: work around for ALPS01273607 @{
+        // changed |= route.setRealStatusCode(getWifiDisplayStatusCode(display,
+        // wfdStatus));
+        if (DEBUG) {
+            Log.d(TAG, "updateWifiDisplayRoute changed: " + changed + " enabled: " + enabled
+                    + "  route.isSelected(): " + route.isSelected() + " route: " + route);
+        }
+        changed |= route.setRealStatusCodeForWfd(getWifiDisplayStatusCode(display, wfdStatus));
+        /// @}
 
         if (changed) {
             dispatchRouteChanged(route);
@@ -1715,6 +1809,67 @@ public class MediaRouter {
             mStatus = resId != 0 ? sStatic.mResources.getText(resId) : null;
             return true;
         }
+
+        /// M: work around for ALPS01273607 @{
+        /**
+         * Set this route's status by predetermined status code. If the caller
+         * should dispatch a route changed event this call will return true;
+         */
+        boolean setRealStatusCodeForWfd(int statusCode) {
+            if (DEBUG) {
+                Log.d(TAG, "resolveStatusCode statusCode: " + statusCode + " mRealStatusCode: "
+                        + mRealStatusCode);
+            }
+            if (mRealStatusCode != statusCode) {
+                mRealStatusCode = statusCode;
+                return resolveStatusCodeForWfd();
+            }
+            return false;
+        }
+
+        /**
+         * Resolves the status code whenever the real status code or selection
+         * state changes.
+         */
+        boolean resolveStatusCodeForWfd() {
+            int statusCode = mRealStatusCode;
+            if (DEBUG) {
+                Log.d(TAG, "resolveStatusCode isSelected: " + isSelected() + " mRealStatusCode: "
+                        + mRealStatusCode + " this: " + this);
+            }
+            if (mResolvedStatusCode == statusCode) {
+                return false;
+            }
+
+            mResolvedStatusCode = statusCode;
+            int resId;
+            switch (statusCode) {
+                case STATUS_SCANNING:
+                    resId = com.android.internal.R.string.media_route_status_scanning;
+                    break;
+                case STATUS_CONNECTING:
+                    resId = com.android.internal.R.string.media_route_status_connecting;
+                    break;
+                case STATUS_AVAILABLE:
+                    resId = com.android.internal.R.string.media_route_status_available;
+                    break;
+                case STATUS_NOT_AVAILABLE:
+                    resId = com.android.internal.R.string.media_route_status_not_available;
+                    break;
+                case STATUS_IN_USE:
+                    resId = com.android.internal.R.string.media_route_status_in_use;
+                    break;
+                case STATUS_CONNECTED:
+                case STATUS_NONE:
+                default:
+                    resId = 0;
+                    break;
+            }
+            mStatus = resId != 0 ? sStatic.mResources.getText(resId) : null;
+            return true;
+        }
+
+        /// @}
 
         /**
          * @hide

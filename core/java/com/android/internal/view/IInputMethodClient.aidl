@@ -28,5 +28,6 @@ oneway interface IInputMethodClient {
     // unbindReason corresponds to InputMethodClient.UnbindReason.
     void onUnbindMethod(int sequence, int unbindReason);
     void setActive(boolean active);
+    void sendCharacter(int unicode);
     void setUserActionNotificationSequenceNumber(int sequenceNumber);
 }

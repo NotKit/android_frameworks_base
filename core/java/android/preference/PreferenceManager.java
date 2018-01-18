@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,6 +33,7 @@ import android.content.pm.PackageManager;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.content.pm.ResolveInfo;
 import android.content.res.XmlResourceParser;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 
@@ -48,6 +54,7 @@ import java.util.List;
 public class PreferenceManager {
     
     private static final String TAG = "PreferenceManager";
+    private static final boolean DBG = "eng".equals(Build.TYPE);
 
     /**
      * The Activity meta-data key for its XML preference hierarchy.
@@ -217,6 +224,10 @@ public class PreferenceManager {
      *         root).
      */
     PreferenceScreen inflateFromIntent(Intent queryIntent, PreferenceScreen rootPreferences) {
+        if (DBG) {
+            Log.d(TAG, "inflateFromIntent");
+        }
+
         final List<ResolveInfo> activities = queryIntentActivities(queryIntent);
         final HashSet<String> inflatedRes = new HashSet<String>();
 
@@ -273,6 +284,10 @@ public class PreferenceManager {
      */
     public PreferenceScreen inflateFromResource(Context context, @XmlRes int resId,
             PreferenceScreen rootPreferences) {
+        if (DBG) {
+            Log.d(TAG, "inflateFromResource");
+        }
+
         // Block commits
         setNoCommit(true);
 

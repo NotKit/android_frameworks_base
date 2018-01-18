@@ -638,7 +638,11 @@ namespace PaintGlue {
             paint->setLooper(NULL);
         }
         else {
+#ifdef USE_OPENGL_RENDERER
             SkScalar sigma = android::uirenderer::Blur::convertRadiusToSigma(radius);
+#else
+            SkScalar sigma = 0.57735f * radius + 0.5f;//BLUR_SIGMA_SCALE = 0.57735f = 1/sqrt(3)
+#endif
             paint->setLooper(SkBlurDrawLooper::Create((SkColor)color, sigma, dx, dy))->unref();
         }
     }
@@ -727,6 +731,11 @@ namespace PaintGlue {
             const Paint& paint, Typeface* typeface, jint bidiFlags) {
         SkRect  r;
         SkIRect ir;
+        r.set(0,0,0,0);
+        if (count > 1024)
+        {
+            ALOGW("doTextBounds:text too long! count=%d",count);
+        }
 
         Layout layout;
         MinikinUtils::doLayout(&layout, &paint, bidiFlags, typeface, text, 0, count, count);
@@ -923,6 +932,15 @@ namespace PaintGlue {
         return result;
     }
 
+    static jint getStringFontMetricsInt(JNIEnv* env, jobject paint, jlong paintHandle,
+            jlong typefaceHandle,jobject metricsObj, jstring text) {
+    return getFontMetricsInt(env, paint, paintHandle, typefaceHandle, metricsObj);
+    }
+
+    static jfloat getStringFontMetrics(JNIEnv* env, jobject paint, jlong paintHandle,
+            jlong typefaceHandle,jobject metricsObj, jstring text) {
+    return getFontMetrics(env, paint, paintHandle, typefaceHandle, metricsObj);
+    }
 }; // namespace PaintGlue
 
 static const JNINativeMethod methods[] = {
@@ -1015,7 +1033,9 @@ static const JNINativeMethod methods[] = {
             (void*) PaintGlue::getOffsetForAdvance___CIIIIZF_I},
 
     {"nSetShadowLayer", "!(JFFFI)V", (void*)PaintGlue::setShadowLayer},
-    {"nHasShadowLayer", "!(J)Z", (void*)PaintGlue::hasShadowLayer}
+    {"nHasShadowLayer", "!(J)Z", (void*)PaintGlue::hasShadowLayer},
+    {"getStringFontMetrics", "(JJLandroid/graphics/Paint$FontMetrics;Ljava/lang/String;)F", (void*)PaintGlue::getStringFontMetrics},
+    {"getStringFontMetricsInt", "(JJLandroid/graphics/Paint$FontMetricsInt;Ljava/lang/String;)I", (void*)PaintGlue::getStringFontMetricsInt}
 };
 
 int register_android_graphics_Paint(JNIEnv* env) {

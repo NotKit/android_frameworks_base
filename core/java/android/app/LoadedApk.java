@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -1051,6 +1056,15 @@ public final class LoadedApk {
                         if (extras != null) {
                             extras.setAllowFds(false);
                         }
+
+                        /// M: broadcast log enhancement @{
+                        if (!ActivityThread.IS_USER_BUILD && ordered) {
+                            Slog.d(ActivityThread.TAG, "BDC-Calling finishReceiver"
+                                + ": IIntentReceiver="
+                                + Integer.toHexString(System.identityHashCode(this.asBinder())));
+                        }
+                        /// @}
+
                         mgr.finishReceiver(this, resultCode, data, extras, false, intent.getFlags());
                     } catch (RemoteException e) {
                         throw e.rethrowFromSystemServer();
@@ -1098,7 +1112,9 @@ public final class LoadedApk {
                 final IActivityManager mgr = ActivityManagerNative.getDefault();
                 final Intent intent = mCurIntent;
                 if (intent == null) {
-                    Log.wtf(TAG, "Null intent being dispatched, mDispatched=" + mDispatched);
+                    /// M: ALPS02877235, Suppress WTF message to error log @{
+                    Slog.e(TAG, "Null intent being dispatched, mDispatched=" + mDispatched);
+                    /// M: ALPS02877235, Suppress WTF message to error log @}
                 }
 
                 mCurIntent = null;
@@ -1107,6 +1123,19 @@ public final class LoadedApk {
                     if (mRegistered && ordered) {
                         if (ActivityThread.DEBUG_BROADCAST) Slog.i(ActivityThread.TAG,
                                 "Finishing null broadcast to " + mReceiver);
+
+                        /// M: broadcast log enhancement @{
+                        if (!ActivityThread.IS_USER_BUILD) {
+                            Slog.d(ActivityThread.TAG, "BDC-Finishing null broadcast"
+                                + ": intent=" + intent
+                                + ", ordered=true"
+                                + ", receiver=" + receiver
+                                + ", IIntentReceiver="
+                                + Integer.toHexString(System.identityHashCode(
+                                    mIIntentReceiver.asBinder())));
+                        }
+                        /// @}
+
                         sendFinished(mgr);
                     }
                     return;
@@ -1119,6 +1148,19 @@ public final class LoadedApk {
                     intent.prepareToEnterProcess();
                     setExtrasClassLoader(cl);
                     receiver.setPendingResult(this);
+
+                    /// M: broadcast log enhancement @{
+                    if (!ActivityThread.IS_USER_BUILD) {
+                        Slog.d(ActivityThread.TAG, "BDC-Calling onReceive"
+                            + ": intent=" + intent
+                            + ", ordered=" + ordered
+                            + ", receiver=" + receiver
+                            + ", IIntentReceiver="
+                            + Integer.toHexString(System.identityHashCode(
+                                mIIntentReceiver.asBinder())));
+                    }
+                    /// @}
+
                     receiver.onReceive(mContext, intent);
                 } catch (Exception e) {
                     if (mRegistered && ordered) {

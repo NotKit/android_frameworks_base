@@ -173,6 +173,20 @@
         <font weight="400" style="normal">NotoSansBengaliUI-Regular.ttf</font>
         <font weight="700" style="normal">NotoSansBengaliUI-Bold.ttf</font>
     </family>
+    <family lang="und-Mymr" variant="elegant">
+        <font weight="400" style="normal">NotoSansMyanmar-Regular.ttf</font>
+        <font weight="700" style="normal">NotoSansMyanmar-Bold.ttf</font>
+    </family>
+    <family  lang="und-Mymr" variant="compact">
+        <font weight="400" style="normal">NotoSansMyanmarUI-Regular.ttf</font>
+        <font weight="700" style="normal">NotoSansMyanmarUI-Bold.ttf</font>
+    </family>
+    <family>
+        <font weight="400" style="normal">Padauk.ttf</font>
+    </family>
+    <family variant="compact">
+        <font weight="400" style="normal">ZawgyiOne.ttf</font>
+    </family>
     <family lang="und-Telu" variant="elegant">
         <font weight="400" style="normal">NotoSansTelugu-Regular.ttf</font>
         <font weight="700" style="normal">NotoSansTelugu-Bold.ttf</font>

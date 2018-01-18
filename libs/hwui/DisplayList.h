@@ -126,6 +126,7 @@ struct FunctorContainer {
 class DisplayList {
     friend class DisplayListCanvas;
     friend class RecordingCanvas;
+    friend class CanvasStateRecording;
 public:
     struct Chunk {
         // range of included ops in DisplayList::ops()
@@ -151,6 +152,7 @@ public:
 
     const LsaVector<Chunk>& getChunks() const { return chunks; }
     const LsaVector<BaseOpType*>& getOps() const { return ops; }
+    const LsaVector<BaseOpType*>& getAllOps() const { return allOps; } // M: get all ops including state ops
 
     const LsaVector<NodeOpType*>& getChildren() const { return children; }
 
@@ -183,6 +185,7 @@ private:
 
     LsaVector<Chunk> chunks;
     LsaVector<BaseOpType*> ops;
+    LsaVector<BaseOpType*> allOps; // M: record all ops including state ops
 
     // list of Ops referring to RenderNode children for quick, non-drawing traversal
     LsaVector<NodeOpType*> children;

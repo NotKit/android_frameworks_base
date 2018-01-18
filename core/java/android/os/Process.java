@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -394,6 +399,17 @@ public class Process {
     private static long sStartElapsedRealtime;
     private static long sStartUptimeMillis;
 
+    /// M: GMO Zygote64 on demand @{
+    private static final String PROP_ZYGOTE_ON_DEMAND_ENABLE = "ro.mtk_gmo_zygote_on_demand";
+    private static final String PROP_ZYGOTE_ON_DEMAND_DEBUG = "persist.sys.mtk_zygote_debug";
+    private static final String PROP_ZYGOTE_ON_DEMAND_CONTROL = "sys.mtk_zygote_secondary";
+
+    private static final boolean sZygoteOnDemandEnabled =
+        SystemProperties.get(PROP_ZYGOTE_ON_DEMAND_ENABLE).equals("1");
+    private static boolean DEBUG_ZYGOTE_ON_DEMAND = false ||
+        SystemProperties.get(PROP_ZYGOTE_ON_DEMAND_DEBUG).equals("1");
+    /// M: GMO Zygote64 on demand @}
+
     /**
      * State for communicating with the zygote process.
      *
@@ -737,6 +753,200 @@ public class Process {
             return zygoteSendArgsAndGetResult(openZygoteSocketIfNeeded(abi), argsForZygote);
         }
     }
+
+    /// M: GMO Zygote64 on demand @{
+    /**
+     * Enable/disable log for Process and Zygote.
+     *
+     * @param on enable/disable log.
+     *
+     * {@hide}
+     */
+    public static void debugZygoteOnDemand(boolean on) {
+        DEBUG_ZYGOTE_ON_DEMAND = on;
+        if (on) {
+            SystemProperties.set(PROP_ZYGOTE_ON_DEMAND_DEBUG, "1");
+        } else {
+            SystemProperties.set(PROP_ZYGOTE_ON_DEMAND_DEBUG, "0");
+        }
+    }
+
+    /**
+     * Start secondary Zygote.
+     *
+     * @param abi non-null the ABI this app should be started with.
+     *
+     * {@hide}
+     */
+    public static void startSecondaryZygote(String abi) {
+        if (!sZygoteOnDemandEnabled) {
+            return;
+        }
+
+        if (DEBUG_ZYGOTE_ON_DEMAND) {
+            Log.d(LOG_TAG, "ZygoteOnDemand: startSecondaryZygote for " + abi);
+        }
+
+        synchronized (Process.class) {
+            if (!waitSecondaryZygoteChangedLocked("stopped")) {
+                Log.d(LOG_TAG, "ZygoteOnDemand: service is not stopped");
+                return;
+            }
+            if (primaryZygoteState == null || primaryZygoteState.isClosed()) {
+                try {
+                    primaryZygoteState = ZygoteState.connect(ZYGOTE_SOCKET);
+                } catch (IOException ioe) {
+                    Log.d(LOG_TAG, "ZygoteOnDemand: Error connecting to primary zygote: " + ioe);
+                }
+            }
+
+            if (primaryZygoteState.matches(abi)) {
+                Log.d(LOG_TAG, "ZygoteOnDemand: startSecondaryZygote match primary Zygote");
+            } else {
+                // The primary zygote didn't match. Start the secondary.
+                SystemProperties.set(PROP_ZYGOTE_ON_DEMAND_CONTROL, "1");
+                if (!waitSecondaryZygoteChangedLocked("running")) {
+                    Log.d(LOG_TAG, "ZygoteOnDemand: service is not running");
+                    return;
+                }
+                if (DEBUG_ZYGOTE_ON_DEMAND) {
+                    Log.d(LOG_TAG, "ZygoteOnDemand: startSecondaryZygote done");
+                }
+            }
+        }
+    }
+
+    /**
+     * Stop secondary Zygote.
+     *
+     * {@hide}
+     */
+    public static void stopSecondaryZygote() {
+        if (!sZygoteOnDemandEnabled) {
+            return;
+        }
+
+        if (DEBUG_ZYGOTE_ON_DEMAND) {
+            Log.d(LOG_TAG, "ZygoteOnDemand: stopSecondaryZygote");
+        }
+
+        synchronized (Process.class) {
+            if (!waitSecondaryZygoteChangedLocked("running")) {
+                Log.d(LOG_TAG, "ZygoteOnDemand: service is not running");
+                return;
+            }
+
+            // The primary zygote didn't match. Stop the secondary.
+            SystemProperties.set(PROP_ZYGOTE_ON_DEMAND_CONTROL, "0");
+            if (!waitSecondaryZygoteChangedLocked("stopped")) {
+                Log.d(LOG_TAG, "ZygoteOnDemand: service is not stopped");
+                return;
+            }
+            if (DEBUG_ZYGOTE_ON_DEMAND) {
+                Log.d(LOG_TAG, "ZygoteOnDemand: stopSecondaryZygote done");
+            }
+        }
+    }
+
+    /**
+     * Check secondary Zygote running status.
+     *
+     * @return Secondary Zygote running status
+     * {@hide}
+     */
+    public static boolean isSecondaryZygoteRunning() {
+        final boolean isRunning =
+            SystemProperties.get(PROP_ZYGOTE_ON_DEMAND_CONTROL, "1").equals("1");
+        if (DEBUG_ZYGOTE_ON_DEMAND) {
+            Log.d(LOG_TAG, "ZygoteOnDemand: isSecondaryZygoteRunning: " + isRunning);
+        }
+        return isRunning;
+    }
+
+    /**
+     * Wait for secondary Zygote.
+     *
+     * @param abi non-null the ABI this app should be started with.
+     *
+     * @return An object that describes the result of the attempt to wait for secondary Zygote.
+     *
+     * {@hide}
+     */
+    public static ProcessStartResult waitForSecondaryZygote(String abi) {
+        if (!sZygoteOnDemandEnabled) {
+            return null;
+        }
+
+        if (DEBUG_ZYGOTE_ON_DEMAND) {
+            Log.d(LOG_TAG, "ZygoteOnDemand: waitForSecondaryZygote for " + abi);
+        }
+
+        synchronized (Process.class) {
+            ProcessStartResult result = null;
+
+            if (!waitSecondaryZygoteChangedLocked("running")) {
+                Log.d(LOG_TAG, "ZygoteOnDemand: service is not running");
+                return result;
+            }
+
+            ArrayList<String> argsForZygote = new ArrayList<String>();
+            argsForZygote.add("--try-secondary-zygote");
+            for (int i = 0; i < 25; ++i) {
+                if (i != 0) {
+                    try {
+                        Thread.sleep(100);
+                    } catch (InterruptedException ie) {
+                        Log.d(LOG_TAG, "ZygoteOnDemand: waitForSecondaryZygote: " + ie);
+                        break;
+                    }
+                    if (DEBUG_ZYGOTE_ON_DEMAND) {
+                        Log.d(LOG_TAG, "ZygoteOnDemand: waitForSecondaryZygote retry: " + i);
+                    }
+                }
+
+                try {
+                    result = zygoteSendArgsAndGetResult(openZygoteSocketIfNeeded(abi),
+                        argsForZygote);
+                    if (result.usingWrapper == true) {
+                        break;
+                    }
+                } catch (ZygoteStartFailedEx ex) {
+                    Log.d(LOG_TAG, "ZygoteOnDemand: waitForSecondaryZygote exception " + ex);
+                }
+            }
+            return result;
+        }
+    }
+
+    private static boolean waitSecondaryZygoteChangedLocked(String to) {
+        if (DEBUG_ZYGOTE_ON_DEMAND) {
+            Log.d(LOG_TAG, "ZygoteOnDemand: waitSecondaryZygoteChangedLocked to " + to +
+                ", start time: " + SystemClock.elapsedRealtime());
+        }
+        boolean result = false;
+        for (int i = 0; i < 25; ++i) {
+            if (i != 0) {
+                try {
+                    Thread.sleep(50);
+                } catch (InterruptedException ie) {
+                    Log.d(LOG_TAG, "ZygoteOnDemand: waitSecondaryZygoteChangedLocked exception: " +
+                        ie);
+                    break;
+                }
+            }
+
+            if (SystemProperties.get("init.svc.zygote_secondary", "stopped").equals(to)) {
+                result = true;
+                break;
+            }
+        }
+        if (DEBUG_ZYGOTE_ON_DEMAND) {
+            Log.d(LOG_TAG, "ZygoteOnDemand: waitSecondaryZygoteChangedLocked result = " + result +
+                ", end time: " + SystemClock.elapsedRealtime());
+        }
+        return result;
+    }
+    /// M: GMO Zygote64 on demand @}
 
     /**
      * Tries to establish a connection to the zygote that handles a given {@code abi}. Might block and retry if the
@@ -1202,6 +1412,74 @@ public class Process {
     
     /** @hide */
     public static final native long getTotalMemory();
+
+    /// M: To get total anon memory @{
+    /** @hide */
+    public static final native long getLruAnonMemory();
+    /// @}
+
+    /// M: Helper functions to get available zram space @{
+    /** @hide */
+    public static final float getZramCompressRatio() {
+        long compZram = Debug.getCompZram();
+        long origZram = Debug.getOrigZram();
+        int threshold = 3072 * 1024; //Experiment threshold(bytes)
+
+        if (0 == compZram) {
+            return 1.0f; //ZRAM is not enabled
+        } else if (compZram < threshold) { // Return TypicalRatio (LZO1X, LZ4K) <=> (2.63, 3.2)
+            if (1 == Debug.getZramCompressMethod())
+                return 3.2f; //LZ4K
+            else
+                return 2.63f; //LZO
+        } else {
+            return (((float) origZram) / compZram); //Runtime value
+        }
+    }
+    /// @}
+
+    /**
+     * return the maximal possible extra memory capacity provide by zram
+     * in bytes
+     * @hide
+     */
+    public static final long getZramExtraTotalSize() {
+        long totalZram = Debug.getTotalZram();
+        if (totalZram == 0) {
+            return 0;
+        }
+
+        // compress zram size could be up to total memory / 4
+        long compTotalSize = getTotalMemory() / 4;
+        long origTotalSize = (long) (compTotalSize * getZramCompressRatio());
+        // uncompressed size - compressed size = memory saved
+        return origTotalSize - compTotalSize;
+    }
+
+    /**
+     * return the estimated memory zram could still save
+     * in bytes
+     * @hide
+     */
+    public static final long getZramExtraAvailableSize() {
+        long totalZram = Debug.getTotalZram();
+        if (totalZram == 0) {
+            return 0;
+        }
+        if (!SystemProperties.getBoolean("ro.default_cache_free", false)) {
+            // physical zram extra memory
+            final long anonReserve = 15 * 1024 * 1024; // 15MB
+            long anonToCompress = getLruAnonMemory() - anonReserve;
+            if (anonToCompress < 0) {
+                anonToCompress = 0;
+            }
+            long savableMemory = (long) (anonToCompress * (1.0f - 1.0f / getZramCompressRatio()));
+            return savableMemory;
+        }
+        else return 0;
+    }
+    /// @}
+
     
     /** @hide */
     public static final native void readProcLines(String path,
@@ -1253,6 +1531,9 @@ public class Process {
      * @hide
      */
     public static final native long getPss(int pid);
+
+
+
 
     /**
      * Specifies the outcome of having started a process.

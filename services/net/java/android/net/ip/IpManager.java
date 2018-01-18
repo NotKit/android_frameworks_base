@@ -30,15 +30,18 @@ import android.net.LinkProperties.ProvisioningChange;
 import android.net.ProxyInfo;
 import android.net.RouteInfo;
 import android.net.StaticIpConfiguration;
+import android.net.dhcp.Dhcp6Client;
 import android.net.dhcp.DhcpClient;
 import android.net.metrics.IpConnectivityLog;
 import android.net.metrics.IpManagerEvent;
 import android.net.util.AvoidBadWifiTracker;
+import android.net.wifi.WifiConfiguration;
 import android.os.INetworkManagementService;
 import android.os.Message;
 import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.os.SystemClock;
+import android.os.SystemProperties;
 import android.text.TextUtils;
 import android.util.LocalLog;
 import android.util.Log;
@@ -56,6 +59,7 @@ import java.io.PrintWriter;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
+import java.util.ArrayList;
 import java.util.Objects;
 import java.util.StringJoiner;
 
@@ -75,13 +79,17 @@ import java.util.StringJoiner;
  * @hide
  */
 public class IpManager extends StateMachine {
-    private static final boolean DBG = false;
-    private static final boolean VDBG = false;
+    private static final boolean DBG = true;
+    private static final boolean VDBG = true;
 
     // For message logging.
     private static final Class[] sMessageClasses = { IpManager.class, DhcpClient.class };
     private static final SparseArray<String> sWhatToString =
             MessageUtils.findMessageNames(sMessageClasses);
+
+    ///M : Add by MTK
+    private static final boolean sMtkDhcpv6cWifi =
+                        SystemProperties.get("ro.mtk_dhcpv6c_wifi").equals("1");;
 
     /**
      * Callbacks for handling IpManager events.
@@ -410,6 +418,8 @@ public class IpManager extends StateMachine {
     private LinkProperties mLinkProperties;
     private ProvisioningConfiguration mConfiguration;
     private IpReachabilityMonitor mIpReachabilityMonitor;
+    private Dhcp6Client mDhcp6Client;
+    private ArrayList<InetAddress> mDnsV6Servers;
     private DhcpClient mDhcpClient;
     private DhcpResults mDhcpResults;
     private String mTcpBufferSizes;
@@ -417,6 +427,13 @@ public class IpManager extends StateMachine {
     private ApfFilter mApfFilter;
     private boolean mMulticastFiltering;
     private long mStartTimeMillis;
+    /** M: timing issue, avoid callback before WifiStateMachine.start() */
+    private boolean mIsWifiSMStarted = false;
+    /** M: hit timing issue in bt tehtering test with eng load*/
+    private boolean mIsStartCalled = false;
+    ///M: add for IP recover @{
+    private DhcpResults mPastSuccessedDhcpResult;
+    /// @}
 
     public IpManager(Context context, String ifName, Callback callback)
                 throws IllegalArgumentException {
@@ -443,7 +460,9 @@ public class IpManager extends StateMachine {
                 new NetlinkTracker.Callback() {
                     @Override
                     public void update() {
-                        sendMessage(EVENT_NETLINK_LINKPROPERTIES_CHANGED);
+                        if (mIsStartCalled) {
+                            sendMessage(EVENT_NETLINK_LINKPROPERTIES_CHANGED);
+                        }
                     }
                 }) {
             @Override
@@ -491,6 +510,7 @@ public class IpManager extends StateMachine {
         mLocalLog = new LocalLog(MAX_LOG_RECORDS);
         mMsgStateLogger = new MessageHandlingLogger();
         super.start();
+        mIsStartCalled = true;
     }
 
     @Override
@@ -510,6 +530,14 @@ public class IpManager extends StateMachine {
 
     public void startProvisioning(ProvisioningConfiguration req) {
         getNetworkInterface();
+
+        /// M: return if the interface was invalid @{
+        if (mNetworkInterface == null) {
+            Log.e(mTag, "Invalid interface " + mInterfaceName);
+            mCallback.onProvisioningFailure(new LinkProperties(mLinkProperties));
+            return;
+        }
+        /// @}
 
         mCallback.setNeighborDiscoveryOffload(true);
         sendMessage(CMD_START, new ProvisioningConfiguration(req));
@@ -537,6 +565,12 @@ public class IpManager extends StateMachine {
     public void completedPreDhcpAction() {
         sendMessage(EVENT_PRE_DHCP_ACTION_COMPLETE);
     }
+
+    /// M: ALPS03051043: pass wifi ap authentication information  @{
+    public void completedPreDhcpAction(WifiConfiguration wifiConfig) {
+        sendMessage(EVENT_PRE_DHCP_ACTION_COMPLETE, wifiConfig);
+    }
+    ///@}
 
     /**
      * Set the TCP buffer sizes to use.
@@ -650,13 +684,14 @@ public class IpManager extends StateMachine {
         mDhcpResults = null;
         mTcpBufferSizes = "";
         mHttpProxy = null;
+        mDnsV6Servers = null;
 
         mLinkProperties = new LinkProperties();
         mLinkProperties.setInterfaceName(mInterfaceName);
     }
 
     private void recordMetric(final int type) {
-        if (mStartTimeMillis <= 0) { Log.wtf(mTag, "Start time undefined!"); }
+        if (mStartTimeMillis <= 0) { Log.d(mTag, "Start time undefined!"); }
         final long duration = SystemClock.elapsedRealtime() - mStartTimeMillis;
         mMetricsLog.log(new IpManagerEvent(mInterfaceName, type, duration));
     }
@@ -700,6 +735,7 @@ public class IpManager extends StateMachine {
             // See the comment below.
             delta = ProvisioningChange.LOST_PROVISIONING;
         }
+        Log.d("IpManager", "compareProvisioning: " + delta);
 
         final boolean lostIPv6 = oldLp.isIPv6Provisioned() && !newLp.isIPv6Provisioned();
         final boolean lostIPv4Address = oldLp.hasIPv4Address() && !newLp.hasIPv4Address();
@@ -734,6 +770,8 @@ public class IpManager extends StateMachine {
         // provisioning here too.
         if (lostIPv4Address || (lostIPv6 && !ignoreIPv6ProvisioningLoss)) {
             delta = ProvisioningChange.LOST_PROVISIONING;
+            Log.d("IpManager", "compareProvisioning: "  + delta +
+                " due to hasIPv4Address/isIPv6Provisioned lost");
         }
 
         // Additionally:
@@ -743,6 +781,8 @@ public class IpManager extends StateMachine {
         // to be a loss of provisioning. See b/27962810.
         if (oldLp.hasGlobalIPv6Address() && (lostIPv6Router && !ignoreIPv6ProvisioningLoss)) {
             delta = ProvisioningChange.LOST_PROVISIONING;
+            Log.d("IpManager", "compareProvisioning: "  + delta +
+                " due to IPv6DefaultRoute lost");
         }
 
         return delta;
@@ -773,6 +813,7 @@ public class IpManager extends StateMachine {
     // Returns a ProvisioningChange for possibly notifying other interested
     // parties that are not fronted by IpManager.
     private ProvisioningChange setLinkProperties(LinkProperties newLp) {
+        Log.d(mTag, "setLinkProperties newLp = " + newLp);
         if (mApfFilter != null) {
             mApfFilter.setLinkProperties(newLp);
         }
@@ -835,9 +876,11 @@ public class IpManager extends StateMachine {
             for (InetAddress dns : mDhcpResults.dnsServers) {
                 // Only add likely reachable DNS servers.
                 // TODO: investigate deleting this.
-                if (newLp.isReachable(dns)) {
+                //M: comment due to static ip & gateway will be set to
+                //any value by user
+                //if (newLp.isReachable(dns)) {
                     newLp.addDnsServer(dns);
-                }
+                //}
             }
             newLp.setDomains(mDhcpResults.domains);
 
@@ -854,6 +897,17 @@ public class IpManager extends StateMachine {
             newLp.setHttpProxy(mHttpProxy);
         }
 
+        // [5] Handle DNS v6 information
+        if (mDnsV6Servers != null) {
+            for (InetAddress dnsV6 : mDnsV6Servers) {
+                // Only add likely reachable DNS servers.
+                // TODO: investigate deleting this.
+                if (newLp.isReachable(dnsV6)) {
+                    newLp.addDnsServer(dnsV6);
+                }
+            }
+        }
+
         if (VDBG) {
             Log.d(mTag, "newLp{" + newLp + "}");
         }
@@ -864,9 +918,11 @@ public class IpManager extends StateMachine {
     private boolean handleLinkPropertiesUpdate(boolean sendCallbacks) {
         final LinkProperties newLp = assembleLinkProperties();
         if (linkPropertiesUnchanged(newLp)) {
+            Log.d(mTag, "linkPropertiesUnchanged");
             return true;
         }
         final ProvisioningChange delta = setLinkProperties(newLp);
+        Log.d(mTag, "handleLinkPropertiesUpdate delta = " + delta);
         if (sendCallbacks) {
             dispatchCallback(delta, newLp);
         }
@@ -900,7 +956,7 @@ public class IpManager extends StateMachine {
         mDhcpResults = new DhcpResults(dhcpResults);
         final LinkProperties newLp = assembleLinkProperties();
         final ProvisioningChange delta = setLinkProperties(newLp);
-
+        Log.d(mTag, "handleIPv4Success delta = " + delta);
         if (VDBG) {
             Log.d(mTag, "onNewDhcpResults(" + Objects.toString(dhcpResults) + ")");
         }
@@ -960,10 +1016,28 @@ public class IpManager extends StateMachine {
             // Start DHCPv4.
             mDhcpClient = DhcpClient.makeDhcpClient(mContext, IpManager.this, mInterfaceName);
             mDhcpClient.registerForPreDhcpNotification();
-            mDhcpClient.sendMessage(DhcpClient.CMD_START_DHCP);
+            ///M: modify for IP recover @{
+            mDhcpClient.sendMessage(DhcpClient.CMD_START_DHCP, mPastSuccessedDhcpResult);
+            /// @}
+
+            // M: Start DHCPv6. @{
+            if (sMtkDhcpv6cWifi) {
+                mDhcp6Client = Dhcp6Client.makeDhcp6Client(
+                                mContext, IpManager.this, mInterfaceName);
+                mDhcp6Client.registerForPreDhcpNotification();
+                mDhcp6Client.sendMessage(Dhcp6Client.CMD_START_DHCP);
+            }
+            /// @}
         }
 
         return true;
+    }
+
+    private boolean isDhcp6Support(Dhcp6Client client) {
+        if (sMtkDhcpv6cWifi) {
+            return client != null;
+        }
+        return false;
     }
 
     private boolean startIPv6() {
@@ -1004,9 +1078,21 @@ public class IpManager extends StateMachine {
     class StoppedState extends State {
         @Override
         public void enter() {
+            Log.d(mTag, "[StoppedState] Enter");
             stopAllIP();
 
             resetLinkProperties();
+            /** M: default route disappear issue @{
+             * 1. associate with an AP with DHCP
+             * 2. modify network to static IP(the same with DHCP provided IP)
+             * 3. can't browse web on DUT
+             * update the empty LP to CS, so the default route can be added later
+             */
+            Log.d(mTag, "resetLinkProperties");
+            if (mIsWifiSMStarted) {
+                mCallback.onLinkPropertiesChange(mLinkProperties);
+            }
+            /** @} */
             if (mStartTimeMillis > 0) {
                 recordMetric(IpManagerEvent.COMPLETE_LIFECYCLE);
                 mStartTimeMillis = 0;
@@ -1020,6 +1106,7 @@ public class IpManager extends StateMachine {
                     break;
 
                 case CMD_START:
+                    mIsWifiSMStarted = true;
                     mConfiguration = (ProvisioningConfiguration) msg.obj;
                     transitionTo(mStartedState);
                     break;
@@ -1048,6 +1135,7 @@ public class IpManager extends StateMachine {
                     break;
 
                 default:
+                    Log.d(mTag, "StoppedState NOT_HANDLED what = " + msg.what);
                     return NOT_HANDLED;
             }
 
@@ -1059,6 +1147,7 @@ public class IpManager extends StateMachine {
     class StoppingState extends State {
         @Override
         public void enter() {
+            Log.d(mTag, "[StoppingState] Enter");
             if (mDhcpClient == null) {
                 // There's no DHCPv4 for which to wait; proceed to stopped.
                 transitionTo(mStoppedState);
@@ -1081,6 +1170,7 @@ public class IpManager extends StateMachine {
                     break;
 
                 default:
+                    Log.d(mTag, "deferMessage what = " + msg.what);
                     deferMessage(msg);
             }
 
@@ -1092,6 +1182,7 @@ public class IpManager extends StateMachine {
     class StartedState extends State {
         @Override
         public void enter() {
+            Log.d(mTag, "[StartedState] Enter");
             mStartTimeMillis = SystemClock.elapsedRealtime();
 
             if (mConfiguration.mProvisioningTimeoutMs > 0) {
@@ -1205,6 +1296,12 @@ public class IpManager extends StateMachine {
                 mDhcpClient.doQuit();
             }
 
+            if (isDhcp6Support(mDhcp6Client)) {
+                mDhcp6Client.sendMessage(Dhcp6Client.CMD_STOP_DHCP);
+                mDhcp6Client.doQuit();
+            }
+
+
             if (mApfFilter != null) {
                 mApfFilter.shutdown();
                 mApfFilter = null;
@@ -1257,7 +1354,17 @@ public class IpManager extends StateMachine {
                     // calls completedPreDhcpAction() after provisioning with
                     // a static IP configuration.
                     if (mDhcpClient != null) {
+                        /// M: ALPS03051043: pass wifi ap authentication information  @{
+                        if (msg.obj != null) {
+                            WifiConfiguration wifiConfig = (WifiConfiguration) msg.obj;
+                            mDhcpClient.sendMessage(DhcpClient.CMD_PRE_DHCP_ACTION_COMPLETE,
+                                wifiConfig);
+                        } else
+                        ///@}
                         mDhcpClient.sendMessage(DhcpClient.CMD_PRE_DHCP_ACTION_COMPLETE);
+                    }
+                    if (isDhcp6Support(mDhcp6Client)) {
+                        mDhcp6Client.sendMessage(Dhcp6Client.CMD_PRE_DHCP_ACTION_COMPLETE);
                     }
                     break;
 
@@ -1302,6 +1409,16 @@ public class IpManager extends StateMachine {
                     break;
 
                 case DhcpClient.CMD_CLEAR_LINKADDRESS:
+                    /** M: If static is configured, ignore DhcpClient event @{
+                     * To avoid the race condition issue
+                     * Once modify network from DHCP to static during wifi connected
+                     * static ipv4 address would be set, but it would be cleared
+                     * by DhcpClient DhcpHaveLeaseState.exit()
+                     */
+                    if (mConfiguration.mStaticIpConfig != null) {
+                        Log.e(mTag, "static Ip is configured, ignore clearIPv4Address");
+                        return HANDLED;
+                    }/** @}*/
                     clearIPv4Address();
                     break;
 
@@ -1347,6 +1464,17 @@ public class IpManager extends StateMachine {
                     Log.e(mTag, "Unexpected CMD_ON_QUIT.");
                     mDhcpClient = null;
                     break;
+                case Dhcp6Client.CMD_CONFIGURE_DNSV6:
+                    mDnsV6Servers = (ArrayList<InetAddress>) msg.obj;
+                    // This cannot possibly change provisioning state.
+                    handleLinkPropertiesUpdate(SEND_CALLBACKS);
+                    break;
+                case Dhcp6Client.CMD_ON_QUIT:
+                    // DHCPv6 quit early for some reason.
+                    Log.e(mTag, "Unexpected v6 CMD_ON_QUIT.");
+                    mDhcp6Client = null;
+                    mDnsV6Servers = null;
+                    break;
 
                 default:
                     return NOT_HANDLED;
@@ -1356,6 +1484,12 @@ public class IpManager extends StateMachine {
             return HANDLED;
         }
     }
+
+    /// M: add for IP recover @{
+    public void updatePastSuccessedDhcpResult(DhcpResults result) {
+        mPastSuccessedDhcpResult = result;
+    }
+    /// @}
 
     private static class MessageHandlingLogger {
         public String processedInState;

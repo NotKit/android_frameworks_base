@@ -107,6 +107,11 @@ public class State implements android.os.Parcelable {
     public boolean directoryCopy;
     public boolean openableOnly;
 
+	/// M: is activity in background,		
+	/// use it to decide whether need refresh UI when resume from background.		  
+	public boolean background = false;
+
+
     /**
      * This is basically a sub-type for the copy operation. It can be either COPY or MOVE.
      * The only legal values, if set, are: OPERATION_COPY, OPERATION_MOVE. Other pick
@@ -140,6 +145,11 @@ public class State implements android.os.Parcelable {
 
     public void onRootChanged(RootInfo root) {
         if (DEBUG) Log.d(TAG, "Root changed to: " + root);
+        /// M: null means Recents here and not null means root changed
+        if ((stack.root == null) && (root != null) &&
+            (copyOperationSubType != FileOperationService.OPERATION_COPY)
+            && (copyOperationSubType != FileOperationService.OPERATION_MOVE))
+            mInitialRootChanged = true;
         if (!mInitialRootChanged && stack.root != null && !root.equals(stack.root)) {
             mInitialRootChanged = true;
         }

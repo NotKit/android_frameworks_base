@@ -182,10 +182,8 @@ final class ProcessList {
     // These are the various interesting memory levels that we will give to
     // the OOM killer.  Note that the OOM killer only supports 6 slots, so we
     // can't give it a different value for every possible kind of process.
-    private final int[] mOomAdj = new int[] {
-            FOREGROUND_APP_ADJ, VISIBLE_APP_ADJ, PERCEPTIBLE_APP_ADJ,
-            BACKUP_APP_ADJ, CACHED_APP_MIN_ADJ, CACHED_APP_MAX_ADJ
-    };
+    private int[] mOomAdj;
+
     // These are the low-end OOM level limits.  This is appropriate for an
     // HVGA or smaller phone with less than 512MB.  Values are in KB.
     private final int[] mOomMinFreeLow = new int[] {
@@ -199,9 +197,14 @@ final class ProcessList {
             129024, 147456, 184320
     };
     // The actual OOM killer memory levels we are using.
-    private final int[] mOomMinFree = new int[mOomAdj.length];
+    private int[] mOomMinFree;
 
     private final long mTotalMemMb;
+
+    /// M: Define mOomMinFree[] and mOomAdj[] by project @{
+    final long LOW_LEVEL_SIZE = 512;
+    final long HIGH_LEVEL_SIZE = 1024;
+    /// @}
 
     private long mCachedRestoreLevel;
 
@@ -214,6 +217,61 @@ final class ProcessList {
         MemInfoReader minfo = new MemInfoReader();
         minfo.readMemInfo();
         mTotalMemMb = minfo.getTotalSize()/(1024*1024);
+
+        /// M: Define mOomMinFree[] and mOomAdj[] by project @{
+        mOomAdj = Resources.getSystem().getIntArray(
+            com.mediatek.internal.R.array.config_lowMemoryKillerOomAdj);
+        mOomMinFree = Resources.getSystem().getIntArray(
+            com.mediatek.internal.R.array.config_lowMemoryKillerMinFreeKbytes);
+
+        if ((mOomAdj == null) || (mOomMinFree == null) || (mOomMinFree[0] == 0)) {
+            if (mTotalMemMb <= LOW_LEVEL_SIZE) {
+                mOomAdj = new int[] {
+                    FOREGROUND_APP_ADJ,
+                    VISIBLE_APP_ADJ,
+                    PERCEPTIBLE_APP_ADJ,
+                    BACKUP_APP_ADJ,
+                    CACHED_APP_MIN_ADJ,
+                    CACHED_APP_MAX_ADJ
+                };
+                mOomMinFree = new int[] {
+                    24576, // 24 * 1024 (ADJ 0 -> 24MB)
+                    31744, // 31 * 1024 (ADJ 1 -> 31MB)
+                    38912, // 38 * 1024 (ADJ 2 -> 38MB)
+                    49152, // 48 * 1024 (ADJ 3 -> 48MB)
+                    122880, // 120 * 1024 (ADJ 9 -> 120MB) (based on AMR performance test)
+                    122880  // 120 * 1024 (ADJ 15 -> 120MB) (based on AMR performance test)
+                };
+            } else if (mTotalMemMb <= HIGH_LEVEL_SIZE) {
+                mOomAdj = new int[] {
+                    FOREGROUND_APP_ADJ,
+                    VISIBLE_APP_ADJ,
+                    PERCEPTIBLE_APP_ADJ,
+                    BACKUP_APP_ADJ,
+                    CACHED_APP_MIN_ADJ,
+                    CACHED_APP_MAX_ADJ
+                };
+                mOomMinFree = new int[] {
+                    36864, // 36 * 1024 (ADJ 0 -> 36MB)
+                    49152, // 48 * 1024 (ADJ 1 -> 48MB)
+                    61440, // 60 * 1024 (ADJ 2 -> 60MB)
+                    73728, // 72 * 1024 (ADJ 3 -> 72MB)
+                    204800, // 200 * 1024 (ADJ 9 -> 200MB) (based on performance test)
+                    296960  // 290 * 1024 (ADJ 15 -> 290MB (= 200MB x 1.25 x 1.75 / 1.5)
+                };
+            } else {
+                // These are the various interesting memory levels that we will give to
+                // the OOM killer.  Note that the OOM killer only supports 6 slots, so we
+                // can't give it a different value for every possible kind of process.
+                mOomAdj = new int[] {
+                    FOREGROUND_APP_ADJ, VISIBLE_APP_ADJ, PERCEPTIBLE_APP_ADJ,
+                    BACKUP_APP_ADJ, CACHED_APP_MIN_ADJ, CACHED_APP_MAX_ADJ
+                };
+                // The actual OOM killer memory levels we are using.
+                mOomMinFree = new int[mOomAdj.length];
+            }
+        }
+        /// @}
         updateOomLevels(0, 0, false);
     }
 
@@ -229,6 +287,34 @@ final class ProcessList {
     }
 
     private void updateOomLevels(int displayWidth, int displayHeight, boolean write) {
+        /// M: Define mOomMinFree[] and mOomAdj[] by project @{
+        if (mTotalMemMb <= HIGH_LEVEL_SIZE) {
+            // Set mCachedRestoreLevel
+            mCachedRestoreLevel = (getMemLevel(ProcessList.CACHED_APP_MAX_ADJ) / 1024) / 3;
+            Slog.i(TAG, "mCachedRestoreLevel = " + Long.toString(mCachedRestoreLevel));
+
+            if (write) {
+                ByteBuffer buf = ByteBuffer.allocate(4 * (2 * mOomAdj.length + 1));
+                buf.putInt(LMK_TARGET);
+                for (int i = 0; i < mOomAdj.length; i++) {
+                    buf.putInt((mOomMinFree[i] * 1024) / PAGE_SIZE);
+                    buf.putInt(mOomAdj[i]);
+                }
+                writeLmkd(buf);
+                // Reserve extra free kbytes
+                if (mTotalMemMb > LOW_LEVEL_SIZE) {
+                    int reserve = Resources.getSystem().getInteger
+                            (com.mediatek.internal.R.integer.config_extraFreeKbytes);
+                    if (reserve < 0) {
+                        reserve = displayWidth * displayHeight * 4 * 3 / 1024;
+                    }
+                    SystemProperties.set("sys.sysctl.extra_free_kbytes", Integer.toString(reserve));
+                }
+            }
+            return;
+        }
+        /// @}
+
         // Scale buckets from avail memory: at 300MB we use the lowest values to
         // 700MB or more for the top values.
         float scaleMem = ((float)(mTotalMemMb-350))/(700-350);
@@ -288,6 +374,7 @@ final class ProcessList {
         // memory duress, is 1/3 the size we have reserved for kernel caches and other overhead
         // before killing background processes.
         mCachedRestoreLevel = (getMemLevel(ProcessList.CACHED_APP_MAX_ADJ)/1024) / 3;
+        Slog.i(TAG, "mCachedRestoreLevel = " + Long.toString(mCachedRestoreLevel));
 
         // Ask the kernel to try to keep enough memory free to allocate 3 full
         // screen 32bpp buffers without entering direct reclaim.
@@ -712,4 +799,38 @@ final class ProcessList {
             }
         }
     }
+
+    /// M: Mediatek added functions start
+
+    /// M: ALPS01995207, Customized process adj configuration @{
+    static {
+        // Export ADJ values
+        com.mediatek.am.ProcessADJ.INVALID_ADJ = INVALID_ADJ;
+        com.mediatek.am.ProcessADJ.UNKNOWN_ADJ = UNKNOWN_ADJ;
+        com.mediatek.am.ProcessADJ.CACHED_APP_MAX_ADJ = CACHED_APP_MAX_ADJ;
+        com.mediatek.am.ProcessADJ.CACHED_APP_MIN_ADJ = CACHED_APP_MIN_ADJ;
+        com.mediatek.am.ProcessADJ.SERVICE_B_ADJ = SERVICE_B_ADJ;
+        com.mediatek.am.ProcessADJ.PREVIOUS_APP_ADJ = PREVIOUS_APP_ADJ;
+        com.mediatek.am.ProcessADJ.HOME_APP_ADJ = HOME_APP_ADJ;
+        com.mediatek.am.ProcessADJ.SERVICE_ADJ = SERVICE_ADJ;
+        com.mediatek.am.ProcessADJ.HEAVY_WEIGHT_APP_ADJ = HEAVY_WEIGHT_APP_ADJ;
+        com.mediatek.am.ProcessADJ.BACKUP_APP_ADJ = BACKUP_APP_ADJ;
+        com.mediatek.am.ProcessADJ.PERCEPTIBLE_APP_ADJ = PERCEPTIBLE_APP_ADJ;
+        com.mediatek.am.ProcessADJ.VISIBLE_APP_ADJ = VISIBLE_APP_ADJ;
+        com.mediatek.am.ProcessADJ.FOREGROUND_APP_ADJ = FOREGROUND_APP_ADJ;
+        com.mediatek.am.ProcessADJ.PERSISTENT_SERVICE_ADJ = PERSISTENT_SERVICE_ADJ;
+        com.mediatek.am.ProcessADJ.PERSISTENT_PROC_ADJ = PERSISTENT_PROC_ADJ;
+        com.mediatek.am.ProcessADJ.SYSTEM_ADJ = SYSTEM_ADJ;
+        com.mediatek.am.ProcessADJ.NATIVE_ADJ = NATIVE_ADJ;
+    }
+
+    /// M: ALPS02960761, Use exported ADJ values in AWS @{
+    static void exportProcessADJ() {
+        // Export in static block
+    }
+    /// M: ALPS02960761, Use exported ADJ values in AWS @}
+
+    /// M: ALPS01995207, Customized process adj configuration @}
+
+    /// M: Mediatek added functions end
 }

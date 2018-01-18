@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -67,7 +72,6 @@ import libcore.io.Streams;
 public class ExifInterface {
     private static final String TAG = "ExifInterface";
     private static final boolean DEBUG = false;
-
     // The Exif tag names
     /** Type is String. */
     public static final String TAG_ARTIST = "Artist";
@@ -352,6 +356,36 @@ public class ExifInterface {
     private static final String TAG_THUMBNAIL_OFFSET = "ThumbnailOffset";
     private static final String TAG_THUMBNAIL_LENGTH = "ThumbnailLength";
     private static final String TAG_THUMBNAIL_DATA = "ThumbnailData";
+
+    /**
+     * M: TAG_MTK_CONSHOT_GROUP_ID
+     * @hide
+     */
+    public static final String TAG_MTK_CONSHOT_GROUP_ID = "MTKConshotGroupID";
+
+    /**
+     * M: TAG_MTK_CONSHOT_PIC_INDEX
+     * @hide
+     */
+    public static final String TAG_MTK_CONSHOT_PIC_INDEX = "MTKConshotPicIndex";
+
+    /**
+     * M: TAG_MTK_CONSHOT_FOCUS_HIGH
+     * @hide
+     */
+    public static final String TAG_MTK_CONSHOT_FOCUS_HIGH = "MTKConshotFocusHigh";
+
+    /**
+     * M: TAG_MTK_CONSHOT_FOCUS_LOW
+     * @hide
+     */
+    public static final String TAG_MTK_CONSHOT_FOCUS_LOW  = "MTKConshotFocusLow";
+
+    /**
+     * M: TAG_MTK_CAMERA_REFOCUS
+     * @hide
+     */
+    public static final String TAG_MTK_CAMERA_REFOCUS  = "MTKCameraRefocus";
 
     // Constants used for the Orientation Exif tag.
     public static final int ORIENTATION_UNDEFINED = 0;
@@ -1091,6 +1125,15 @@ public class ExifInterface {
     private static final Pattern sGpsTimestampPattern =
             Pattern.compile("^([0-9][0-9]):([0-9][0-9]):([0-9][0-9])$");
 
+    /// M: get Exif from a given input stream
+    private InputStream mInputStream;
+
+    // Because the underlying implementation (jhead) uses static variables,
+    // there can only be one user at a time for the native functions (and
+    // they cannot keep state in the native code across function calls). We
+    // use sLock to serialize the accesses.
+    private static final Object sLock = new Object();
+
     /**
      * Reads Exif tags from the specified image file.
      */
@@ -1709,6 +1752,7 @@ public class ExifInterface {
                 return true;
             } catch (IllegalArgumentException e) {
                 // if values are not parseable
+                Log.e(TAG, "getLatLong: IllegalArgumentException!", e);
             }
         }
 
@@ -1763,7 +1807,8 @@ public class ExifInterface {
                 }
             }
             return msecs;
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException ex) {
+            Log.e(TAG, "getDateTime: IllegalArgumentException!", ex);
             return -1;
         }
     }
@@ -1789,7 +1834,8 @@ public class ExifInterface {
             Date datetime = sFormatter.parse(dateTimeString, pos);
             if (datetime == null) return -1;
             return datetime.getTime();
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException ex) {
+            Log.e(TAG, "getGpsDateTime: IllegalArgumentException!", ex);
             return -1;
         }
     }
@@ -2209,7 +2255,6 @@ public class ExifInterface {
                 dataInputStream.seek(nextEntryOffset);
                 continue;
             }
-
             // Read a value from data field or seek to the value offset which is stored in data
             // field if the size of the entry value is bigger than 4.
             int byteCount = numberOfComponents * IFD_FORMAT_BYTES_PER_FORMAT[dataFormat];

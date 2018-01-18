@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -42,7 +47,7 @@ import java.util.UUID;
 public final class BluetoothGattServer implements BluetoothProfile {
     private static final String TAG = "BluetoothGattServer";
     private static final boolean DBG = true;
-    private static final boolean VDBG = false;
+    private static final boolean VDBG = true;
 
     private BluetoothAdapter mAdapter;
     private IBluetoothGatt mService;
@@ -110,12 +115,15 @@ public final class BluetoothGattServer implements BluetoothProfile {
              */
             public void onServiceAdded(int status, int srvcType,
                                        int srvcInstId, ParcelUuid srvcId) {
-                UUID srvcUuid = srvcId.getUuid();
+                UUID srvcUuid = (null == srvcId) ? null : srvcId.getUuid();
                 if (DBG) Log.d(TAG, "onServiceAdded() - service=" + srvcUuid
-                    + "status=" + status);
+                    + " status=" + status + " srvcInstId=" + srvcInstId + " srvcType=" + srvcType);
 
                 BluetoothGattService service = getService(srvcUuid, srvcInstId, srvcType);
-                if (service == null) return;
+                if (service == null) {
+                    Log.w(TAG, "onServiceAdded() - service == null");
+                    return;
+                }
 
                 try {
                     mCallback.onServiceAdded((int)status, service);
@@ -134,14 +142,21 @@ public final class BluetoothGattServer implements BluetoothProfile {
                 UUID srvcUuid = srvcId.getUuid();
                 UUID charUuid = charId.getUuid();
                 if (VDBG) Log.d(TAG, "onCharacteristicReadRequest() - "
-                    + "service=" + srvcUuid + ", characteristic=" + charUuid);
+                    + "service=" + srvcUuid + ", characteristic=" + charUuid
+                    + ", transId=" + transId + ", offset=" + offset + ", charInstId=" +  charInstId);
 
                 BluetoothDevice device = mAdapter.getRemoteDevice(address);
                 BluetoothGattService service = getService(srvcUuid, srvcInstId, srvcType);
-                if (service == null) return;
+                if (service == null) {
+                    Log.w(TAG, "onCharacteristicReadRequest() - service == null");
+                    return;
+                }
 
                 BluetoothGattCharacteristic characteristic = service.getCharacteristic(charUuid);
-                if (characteristic == null) return;
+                if (characteristic == null) {
+                    Log.w(TAG, "onCharacteristicReadRequest() - characteristic == null");
+                    return;
+                }
 
                 try {
                     mCallback.onCharacteristicReadRequest(device, transId, offset, characteristic);
@@ -163,17 +178,29 @@ public final class BluetoothGattServer implements BluetoothProfile {
                 UUID descrUuid = descrId.getUuid();
                 if (VDBG) Log.d(TAG, "onCharacteristicReadRequest() - "
                     + "service=" + srvcUuid + ", characteristic=" + charUuid
-                    + "descriptor=" + descrUuid);
+                    + ", descriptor=" + descrUuid + ", transId=" + transId
+                    + ", offset=" + offset + ", isLong=" + isLong
+                    + ", srvcType=" + srvcType + ", srvcInstId=" + srvcInstId
+                    + ", charInstId=" + charInstId);
 
                 BluetoothDevice device = mAdapter.getRemoteDevice(address);
                 BluetoothGattService service = getService(srvcUuid, srvcInstId, srvcType);
-                if (service == null) return;
+                if (service == null) {
+                    Log.w(TAG, "onDescriptorReadRequest() - service == null");
+                    return;
+                }
 
                 BluetoothGattCharacteristic characteristic = service.getCharacteristic(charUuid);
-                if (characteristic == null) return;
+                if (characteristic == null) {
+                    Log.w(TAG, "onDescriptorReadRequest() - characteristic == null");
+                    return;
+                }
 
                 BluetoothGattDescriptor descriptor = characteristic.getDescriptor(descrUuid);
-                if (descriptor == null) return;
+                if (descriptor == null) {
+                    Log.w(TAG, "onDescriptorReadRequest() - descriptor == null");
+                    return;
+                }
 
                 try {
                     mCallback.onDescriptorReadRequest(device, transId, offset, descriptor);
@@ -193,14 +220,22 @@ public final class BluetoothGattServer implements BluetoothProfile {
                 UUID srvcUuid = srvcId.getUuid();
                 UUID charUuid = charId.getUuid();
                 if (VDBG) Log.d(TAG, "onCharacteristicWriteRequest() - "
-                    + "service=" + srvcUuid + ", characteristic=" + charUuid);
+                    + "service=" + srvcUuid + ", characteristic=" + charUuid
+                    + ", transId=" + transId + ", srvcType=" + srvcType
+                    + ", srvcInstId=" + srvcInstId + ", charInstId=" + charInstId);
 
                 BluetoothDevice device = mAdapter.getRemoteDevice(address);
                 BluetoothGattService service = getService(srvcUuid, srvcInstId, srvcType);
-                if (service == null) return;
+                if (service == null) {
+                    Log.w(TAG, "onCharacteristicWriteRequest() - service == null");
+                    return;
+                }
 
                 BluetoothGattCharacteristic characteristic = service.getCharacteristic(charUuid);
-                if (characteristic == null) return;
+                if (characteristic == null) {
+                    Log.w(TAG, "onCharacteristicWriteRequest() - characteristic == null");
+                    return;
+                }
 
                 try {
                     mCallback.onCharacteristicWriteRequest(device, transId, characteristic,
@@ -225,18 +260,31 @@ public final class BluetoothGattServer implements BluetoothProfile {
                 UUID descrUuid = descrId.getUuid();
                 if (VDBG) Log.d(TAG, "onDescriptorWriteRequest() - "
                     + "service=" + srvcUuid + ", characteristic=" + charUuid
-                    + "descriptor=" + descrUuid);
+                    + ", descriptor=" + descrUuid + ", transId=" + transId
+                    + ", offset=" + offset + ", length=" + length
+                    + ", isPrep=" + isPrep + ", needRsp=" + needRsp
+                    + ", srvcType=" + srvcType + ", srvcInstId=" + srvcInstId
+                    + ", charInstId=" + charInstId);
 
                 BluetoothDevice device = mAdapter.getRemoteDevice(address);
 
                 BluetoothGattService service = getService(srvcUuid, srvcInstId, srvcType);
-                if (service == null) return;
+                if (service == null) {
+                    Log.w(TAG, "onDescriptorWriteRequest() - service == null");
+                    return;
+                }
 
                 BluetoothGattCharacteristic characteristic = service.getCharacteristic(charUuid);
-                if (characteristic == null) return;
+                if (characteristic == null) {
+                    Log.w(TAG, "onDescriptorWriteRequest() - characteristic == null");
+                    return;
+                }
 
                 BluetoothGattDescriptor descriptor = characteristic.getDescriptor(descrUuid);
-                if (descriptor == null) return;
+                if (descriptor == null) {
+                    Log.w(TAG, "onDescriptorWriteRequest() - descriptor == null");
+                    return;
+                }
 
                 try {
                     mCallback.onDescriptorWriteRequest(device, transId, descriptor,
@@ -257,7 +305,10 @@ public final class BluetoothGattServer implements BluetoothProfile {
                     + "execWrite=" + execWrite);
 
                 BluetoothDevice device = mAdapter.getRemoteDevice(address);
-                if (device == null) return;
+                if (device == null) {
+                    Log.w(TAG, "onExecuteWrite() - device == null");
+                    return;
+                }
 
                 try {
                     mCallback.onExecuteWrite(device, transId, execWrite);
@@ -534,6 +585,7 @@ public final class BluetoothGattServer implements BluetoothProfile {
         }
 
         try {
+            if (DBG) Log.d(TAG, "notifyCharacteristicChanged() - emit request");
             mService.sendNotification(mServerIf, device.getAddress(),
                     service.getType(), service.getInstanceId(),
                     new ParcelUuid(service.getUuid()), characteristic.getInstanceId(),

@@ -76,6 +76,10 @@ public:
     static const char* TARGET_APK_PATH;
     static const char* IDMAP_DIR;
 
+    /// M: ALPS02521810, support mediatek-res runtime overlay
+    static const char* MEDIATEK_TARGET_PACKAGE_NAME;
+    static const char* MEDIATEK_TARGET_APK_PATH;
+
     typedef enum CacheMode {
         CACHE_UNKNOWN = 0,
         CACHE_OFF,          // don't try to cache file locations
@@ -290,6 +294,9 @@ private:
 
     void addSystemOverlays(const char* pathOverlaysList, const String8& targetPackagePath,
             ResTable* sharedRes, size_t offset) const;
+
+    /// M: ALPS02521810, support mediatek-res runtime overlay
+    void addMediatekOverlays(const char* pathOverlaysList);
 
     class SharedZip : public RefBase {
     public:

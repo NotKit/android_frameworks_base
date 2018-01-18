@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -51,13 +56,13 @@ import android.widget.Spinner;
 import android.widget.SpinnerAdapter;
 import android.widget.TextView;
 import com.android.internal.R;
+import com.android.internal.view.ActionBarPolicy;
 import com.android.internal.view.menu.ActionMenuItem;
 import com.android.internal.view.menu.MenuBuilder;
 import com.android.internal.view.menu.MenuItemImpl;
 import com.android.internal.view.menu.MenuPresenter;
 import com.android.internal.view.menu.MenuView;
 import com.android.internal.view.menu.SubMenuBuilder;
-
 /**
  * @hide
  */
@@ -321,6 +326,11 @@ public class ActionBarView extends AbsActionBarView implements DecorToolbar {
 
             if (mActionMenuPresenter != null) {
                 if (!splitActionBar) {
+                    /// M: width limit may change when orientation changed
+                    final ActionBarPolicy abp = ActionBarPolicy.get(mContext);
+                    if (abp != null) {
+                        mActionMenuPresenter.setWidthLimit(abp.getEmbeddedMenuWidthLimit(), false);
+                    }
                     mActionMenuPresenter.setExpandedActionViewsExclusive(
                             getResources().getBoolean(
                                     com.android.internal.R.bool.action_bar_expanded_action_views_exclusive));
@@ -1587,6 +1597,15 @@ public class ActionBarView extends AbsActionBarView implements DecorToolbar {
                 iconRight = iconLeft + iconWidth;
             }
             mIconView.layout(iconLeft, iconTop, iconRight, iconBottom);
+        }
+
+        /**
+         * Set new LayoutParams for icon view.
+         * @param lp new LayoutParams for icon view
+         * @hide
+         */
+        public void setIconViewLayoutParams(ViewGroup.LayoutParams lp) {
+            mIconView.setLayoutParams(lp);
         }
     }
 

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,6 +29,7 @@ import android.util.Log;
 
 import java.util.HashMap;
 import java.util.Map;
+
 
 /**
  * A Cursor implementation that exposes results from a query on a
@@ -105,6 +111,11 @@ public class SQLiteCursor extends AbstractWindowedCursor {
         mQuery = query;
 
         mColumns = query.getColumnNames();
+
+        /** M: when new a cursor, log information */
+        if (Log.isLoggable("Debug_Cursor", Log.VERBOSE)) {
+            Log.v(TAG, "Cursor open object=" + this.hashCode(), new Throwable("stacktrace"));
+        }
     }
 
     /**
@@ -151,6 +162,9 @@ public class SQLiteCursor extends AbstractWindowedCursor {
                 mQuery.fillWindow(mWindow, startPos, requiredPos, false);
             }
         } catch (RuntimeException ex) {
+            //// M: Debug
+            Log.v(TAG, "fillWindow() exception " + ex.getMessage(), ex);
+
             // Close the cursor window if the query failed and therefore will
             // not produce any results.  This helps to avoid accidentally leaking
             // the cursor window if the client does not correctly handle exceptions
@@ -202,6 +216,10 @@ public class SQLiteCursor extends AbstractWindowedCursor {
 
     @Override
     public void close() {
+        /** M: when cursor is closed, log inforamtion. It is the same as when new */
+        if (Log.isLoggable("Debug_Cursor", Log.VERBOSE)) {
+            Log.v(TAG, "Cursor close object=" + this.hashCode());
+        }
         super.close();
         synchronized (this) {
             mQuery.close();

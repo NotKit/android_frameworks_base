@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2009 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +25,7 @@ import android.app.ActivityThread;
 import android.app.Application;
 import android.app.KeyguardManager;
 import android.content.Context;
+import android.content.Intent;
 import android.hardware.fingerprint.FingerprintManager;
 import android.os.Binder;
 import android.os.IBinder;
@@ -72,6 +78,10 @@ public class KeyStore {
      * {@link #finish}.
      */
     public static final int OP_AUTH_NEEDED = 15;
+
+    /// M: Event for reset credentials
+    public static final String ACTION_KEYSTORE_RESET =
+            "com.mediatek.android.keystore.action.KEYSTORE_RESET";
 
     // Used for UID field to indicate the calling UID.
     public static final int UID_SELF = -1;
@@ -225,12 +235,21 @@ public class KeyStore {
     }
 
     public boolean reset() {
+        boolean result = false;
         try {
-            return mBinder.reset() == NO_ERROR;
+            result = (mBinder.reset() == NO_ERROR);
+            /// M: Event for reset credentials
+            if (result) {
+                if (mContext != null) {
+                    Intent intent = new Intent(ACTION_KEYSTORE_RESET);
+                    mContext.sendBroadcast(intent);
+                }
+            }
         } catch (RemoteException e) {
             Log.w(TAG, "Cannot connect to keystore", e);
             return false;
         }
+        return result;
     }
 
     /**

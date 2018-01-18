@@ -136,8 +136,20 @@ public class KeyguardDisplayManager {
             public void run() {
                 int x = mMarginLeft + (int) (Math.random() * (mUsableWidth - mClock.getWidth()));
                 int y = mMarginTop + (int) (Math.random() * (mUsableHeight - mClock.getHeight()));
-                mClock.setTranslationX(x);
-                mClock.setTranslationY(y);
+
+                if (DEBUG) {
+                    Slog.d(TAG, "mMarginLeft = " + mMarginLeft + ", mUsableWidth = " + mUsableWidth
+                        + " , mClock.getWidth() = " + mClock.getWidth() + " and final X = " + x);
+                    Slog.d(TAG, "mMarginTop = " + mMarginTop + ", mUsableHeight = " + mUsableHeight
+                        + " , mClock.getHeight() = " + mClock.getHeight() + " and final y = " + y);
+                }
+
+                /// M: Fix ALPS01762871
+                /// In RTL case, mClock.getLeft() sometimes becomes a large number.
+                /// mClock may be out of screen if use getLeft() + x(ie. relative cooridnate).
+                /// So we use "obsolute coordinates" to replace "relative coordinates".
+                mClock.setX((float)x) ;
+                mClock.setY((float)y) ;
                 mClock.postDelayed(mMoveTextRunnable, MOVE_CLOCK_TIMEOUT);
             }
         };

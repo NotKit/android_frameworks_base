@@ -33,6 +33,8 @@
 
 #include <vector>
 
+#include "mediatek/MTKDisplayListRecorder.h"
+
 namespace android {
 namespace uirenderer {
 
@@ -306,7 +308,7 @@ private:
     DefaultKeyedVector<const SkPath*, const SkPath*> mPathMap;
     DefaultKeyedVector<const SkRegion*, const SkRegion*> mRegionMap;
 
-    CanvasState mState;
+    CanvasStateRecording mState;
     std::unique_ptr<SkiaCanvasProxy> mSkiaCanvasProxy;
     ResourceCache& mResourceCache;
     DeferredBarrierType mDeferredBarrierType = DeferredBarrierType::None;

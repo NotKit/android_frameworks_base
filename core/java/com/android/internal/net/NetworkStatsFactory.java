@@ -26,6 +26,7 @@ import android.net.NetworkStats;
 import android.os.StrictMode;
 import android.os.SystemClock;
 import android.util.ArrayMap;
+import android.util.Slog;
 
 import com.android.internal.annotations.GuardedBy;
 import com.android.internal.annotations.VisibleForTesting;
@@ -211,6 +212,21 @@ public class NetworkStatsFactory {
                         adjust.txPackets -= entry.txPackets;
                     }
                 }
+                // M: Not know why, but if there is no baseIface entry,
+                // which will result in negative entry
+                if (adjust.txBytes < 0 &&
+                    stats.findIndex(adjust.iface, adjust.uid, adjust.set, adjust.tag,
+                    adjust.roaming) == -1) {
+                    Slog.e(TAG, "negative entry in adjust.txBytes:" + adjust.txBytes);
+                    adjust.txBytes = Math.max(adjust.txBytes, 0);
+                }
+
+                if (adjust.txPackets < 0 &&
+                    stats.findIndex(adjust.iface, adjust.uid, adjust.set, adjust.tag,
+                    adjust.roaming) == -1) {
+                    Slog.e(TAG, "negative entry in adjust.txPackets:" + adjust.txPackets);
+                    adjust.txPackets = Math.max(adjust.txPackets, 0);
+                }
                 stats.combineValues(adjust);
             }
         }
@@ -296,6 +312,12 @@ public class NetworkStatsFactory {
                 entry.rxPackets = reader.nextLong();
                 entry.txBytes = reader.nextLong();
                 entry.txPackets = reader.nextLong();
+
+                //M: ALPS02660741 add exception here to find out why negtive
+                if (entry.isNegative()) {
+                    Slog.e(TAG, "negative entry found in advance:" + entry);
+                    throw new IllegalArgumentException("tried recording negative data in advance");
+                }
 
                 if ((limitIfaces == null || ArrayUtils.contains(limitIfaces, entry.iface))
                         && (limitUid == UID_ALL || limitUid == entry.uid)

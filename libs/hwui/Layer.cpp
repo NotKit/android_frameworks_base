@@ -180,6 +180,7 @@ void Layer::setColorFilter(SkColorFilter* filter) {
 
 void Layer::bindTexture() const {
     if (texture.mId) {
+        LAYER_RENDERER_LOGD("Layer %p bindTexture (0x%x, %d)", this, renderTarget, texture.mId);
         caches.textureState().bindTexture(renderTarget, texture.mId);
     }
 }
@@ -193,10 +194,12 @@ void Layer::bindStencilRenderBuffer() const {
 void Layer::generateTexture() {
     if (!texture.mId) {
         glGenTextures(1, &texture.mId);
+        LAYER_RENDERER_LOGD("Layer %p generateTexture: %d", this, texture.mId);
     }
 }
 
 void Layer::clearTexture() {
+    LAYER_RENDERER_LOGD("Layer %p clearTexture (0x%x, %d)", this, renderTarget, texture.mId);
     // There's a rare possibility that Caches could have been destroyed already
     // since this method is queued up as a task.
     // Since this is a reset method, treat this as non-fatal.

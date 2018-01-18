@@ -82,7 +82,7 @@ import android.util.Log;
  */
 public class NetworkStatsManager {
     private static final String TAG = "NetworkStatsManager";
-    private static final boolean DBG = false;
+    private static final boolean DBG = true;
 
     /** @hide */
     public static final int CALLBACK_LIMIT_REACHED = 0;

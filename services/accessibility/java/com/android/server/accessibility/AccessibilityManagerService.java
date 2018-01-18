@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  ** Copyright 2009, The Android Open Source Project
  **
  ** Licensed under the Apache License, Version 2.0 (the "License");
@@ -62,6 +67,7 @@ import android.os.Process;
 import android.os.RemoteCallbackList;
 import android.os.RemoteException;
 import android.os.SystemClock;
+import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.os.UserManager;
 import android.provider.Settings;
@@ -120,6 +126,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public class AccessibilityManagerService extends IAccessibilityManager.Stub {
 
     private static final boolean DEBUG = false;
+
+    private static final boolean IS_ENG_BUILD = "eng".equals(Build.TYPE);
 
     private static final String LOG_TAG = "AccessibilityManagerService";
 
@@ -243,6 +251,12 @@ public class AccessibilityManagerService extends IAccessibilityManager.Stub {
         registerBroadcastReceivers();
         new AccessibilityContentObserver(mMainHandler).register(
                 context.getContentResolver());
+
+        /// M: IPO feature @{
+        if (SystemProperties.get("ro.mtk_ipo_support").equals("1")) {
+            registerIPOReceiver(context);
+        }
+        /// @}
     }
 
     private UserState getUserStateLocked(int userId) {
@@ -660,6 +674,9 @@ public class AccessibilityManagerService extends IAccessibilityManager.Stub {
             IAccessibilityServiceClient serviceClient,
             AccessibilityServiceInfo accessibilityServiceInfo,
             int flags) {
+        if (IS_ENG_BUILD) {
+            Slog.d(LOG_TAG, "registerUiTestAutomationService begins");
+        }
         mSecurityPolicy.enforceCallingPermission(Manifest.permission.RETRIEVE_WINDOW_CONTENT,
                 FUNCTION_REGISTER_UI_TEST_AUTOMATION_SERVICE);
 
@@ -698,6 +715,10 @@ public class AccessibilityManagerService extends IAccessibilityManager.Stub {
 
             // Use the new state instead of settings.
             onUserStateChangedLocked(userState);
+        }
+
+        if (IS_ENG_BUILD) {
+            Slog.d(LOG_TAG, "registerUiTestAutomationService ends");
         }
     }
 
@@ -2647,16 +2668,23 @@ public class AccessibilityManagerService extends IAccessibilityManager.Stub {
             Region partialInteractiveRegion = Region.obtain();
             synchronized (mLock) {
                 if (!isCalledForCurrentUserLocked()) {
+                    Slog.d(LOG_TAG, "not called for current user");
                     return false;
                 }
                 resolvedWindowId = resolveAccessibilityWindowIdLocked(accessibilityWindowId);
                 final boolean permissionGranted =
                     mSecurityPolicy.canGetAccessibilityNodeInfoLocked(this, resolvedWindowId);
                 if (!permissionGranted) {
+                    Slog.d(LOG_TAG, "permission is not granted");
                     return false;
                 } else {
                     connection = getConnectionLocked(resolvedWindowId);
                     if (connection == null) {
+                        Slog.d(LOG_TAG, "connection is null, resolved id = " + resolvedWindowId
+                               + ", active id = " + (mSecurityPolicy.mActiveWindowId));
+                        if (mSecurityPolicy.mActiveWindowId == resolvedWindowId) {
+                            mSecurityPolicy.updateActiveWindowLocked();
+                        }
                         return false;
                     }
                 }
@@ -3108,6 +3136,9 @@ public class AccessibilityManagerService extends IAccessibilityManager.Stub {
         }
 
         public void resetLocked() {
+            if (IS_ENG_BUILD) {
+                Slog.d(LOG_TAG, "resetLocked()", new Throwable("resetLocked()"));
+            }
             try {
                 // Clear the proxy in the other process so this
                 // IAccessibilityServiceConnection can be garbage collected.
@@ -4178,11 +4209,22 @@ public class AccessibilityManagerService extends IAccessibilityManager.Stub {
                 return findWindowIdLocked(token);
             }
         }
+
+        public void updateActiveWindowLocked() {
+            IBinder token = mWindowManagerService.getFocusedWindowToken();
+            int windowId = findWindowIdLocked(token);
+            Slog.i(LOG_TAG, "updateActiveWindow, windowId = " + windowId
+                   + ", mActiveWindowId = " + mActiveWindowId);
+            if (windowId != mActiveWindowId) {
+                mActiveWindowId = windowId;
+            } else {
+                mActiveWindowId = INVALID_WINDOW_ID;
+            }
+        }
     }
 
     private class UserState {
         public final int mUserId;
-
         // Non-transient state.
 
         public final RemoteCallbackList<IAccessibilityManagerClient> mClients =
@@ -4428,5 +4470,34 @@ public class AccessibilityManagerService extends IAccessibilityManager.Stub {
                 }
             }
         }
+    }
+
+    /// M: IPO feature
+    private void manageAccessibilityServices() {
+        UserState userState = getCurrentUserStateLocked();
+        synchronized (mLock) {
+            unbindAllServicesLocked(userState);
+            scheduleUpdateClientsIfNeededLocked(userState);
+        }
+    }
+
+    /// M: IPO feature
+    private void registerIPOReceiver(Context context) {
+        IntentFilter filter = new IntentFilter();
+        filter.addAction("android.intent.action.ACTION_BOOT_IPO");
+        filter.addAction("android.intent.action.ACTION_SHUTDOWN_IPO");
+        context.registerReceiver(new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                UserState userState = getCurrentUserStateLocked();
+                if ("android.intent.action.ACTION_BOOT_IPO".equals(intent.getAction())) {
+                    /// M: Update Accessibility settings to current user.
+                    readConfigurationForUserStateLocked(userState);
+                    onUserStateChangedLocked(userState);
+                } else if ("android.intent.action.ACTION_SHUTDOWN_IPO".equals(intent.getAction())) {
+                    manageAccessibilityServices();
+                }
+            }
+        }, filter);
     }
 }

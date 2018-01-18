@@ -8,7 +8,11 @@ trainingnavtop=true
 <div id="tb">
 
 <h2>This lesson teaches you to</h2>
-<ol>  <li><a href="#Test">Test Your App</a></li>  <li><a href="#Tab">Handle Tab Navigation</a></li>  <li><a href="#Direction">Handle Directional Navigation</a></li></ol>
+<ol>
+  <li><a href="#Test">Test Your App</a></li>
+  <li><a href="#Tab">Handle Tab Navigation</a></li>
+  <li><a href="#Direction">Handle Directional Navigation</a></li>
+</ol>
 
 <h2>You should also read</h2>
 <ul>

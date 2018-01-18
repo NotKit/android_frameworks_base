@@ -90,6 +90,9 @@ interface IUsbManager
     /* Sets the current USB function. */
     void setCurrentFunction(String function);
 
+	/* Returns the current USB state. */
+	int getCurrentState();
+
     /* Sets whether USB data (for example, MTP exposed pictures) should be made
      * available on the USB connection. Unlocking data should only be done with
      * user involvement, since exposing pictures or other data could leak sensitive

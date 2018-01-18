@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2009 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,6 +41,7 @@ import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.util.DisplayMetrics;
 import android.util.SparseArray;
+import android.util.Log;
 import android.util.TypedValue;
 import android.widget.RemoteViews;
 import android.widget.RemoteViews.OnClickHandler;
@@ -48,7 +54,7 @@ import com.android.internal.appwidget.IAppWidgetService;
  * like the home screen, that want to embed AppWidgets in their UI.
  */
 public class AppWidgetHost {
-
+    private static final String TAG = "AppWidgetHost";
     static final int HANDLE_UPDATE = 1;
     static final int HANDLE_PROVIDER_CHANGED = 2;
     static final int HANDLE_PROVIDERS_CHANGED = 3;
@@ -128,6 +134,7 @@ public class AppWidgetHost {
         public void handleMessage(Message msg) {
             switch (msg.what) {
                 case HANDLE_UPDATE: {
+                    Log.d(TAG, "updateAppWidgetView HANDLE_UPDATE ");
                     updateAppWidgetView(msg.arg1, (RemoteViews)msg.obj);
                     break;
                 }
@@ -140,6 +147,7 @@ public class AppWidgetHost {
                     break;
                 }
                 case HANDLE_VIEW_DATA_CHANGED: {
+                    Log.d(TAG, "viewDataChanged HANDLE_VIEW_DATA_CHANGED ");
                     viewDataChanged(msg.arg1, msg.arg2);
                     break;
                 }
@@ -155,7 +163,9 @@ public class AppWidgetHost {
      * @hide
      */
     public AppWidgetHost(Context context, int hostId, OnClickHandler handler, Looper looper) {
+        Log.d(TAG, "new  AppWidgetHost " + this);
         mContextOpPackageName = context.getOpPackageName();
+
         mHostId = hostId;
         mOnClickHandler = handler;
         mHandler = new UpdateHandler(looper);
@@ -178,6 +188,7 @@ public class AppWidgetHost {
      * becomes visible, i.e. from onStart() in your Activity.
      */
     public void startListening() {
+	Log.d(TAG, "startListening " + this);
         final int[] idsToUpdate;
         synchronized (mViews) {
             int N = mViews.size();
@@ -216,6 +227,7 @@ public class AppWidgetHost {
      * no longer visible, i.e. from onStop() in your Activity.
      */
     public void stopListening() {
+        Log.d(TAG, "stopListening ");
         try {
             sService.stopListening(mContextOpPackageName, mHostId);
         }
@@ -295,6 +307,7 @@ public class AppWidgetHost {
      * Stop listening to changes for this AppWidget.
      */
     public void deleteAppWidgetId(int appWidgetId) {
+        Log.d(TAG, "deleteAppWidgetId appWidgetId " + appWidgetId);
         synchronized (mViews) {
             mViews.remove(appWidgetId);
             try {
@@ -315,6 +328,7 @@ public class AppWidgetHost {
      * </ul>
      */
     public void deleteHost() {
+        Log.d(TAG, "deleteHost");
         try {
             sService.deleteHost(mContextOpPackageName, mHostId);
         }
@@ -346,10 +360,12 @@ public class AppWidgetHost {
      */
     public final AppWidgetHostView createView(Context context, int appWidgetId,
             AppWidgetProviderInfo appWidget) {
+        Log.d(TAG, "createView appWidgetId " + appWidgetId);
         AppWidgetHostView view = onCreateView(context, appWidgetId, appWidget);
         view.setOnClickHandler(mOnClickHandler);
         view.setAppWidget(appWidgetId, appWidget);
         synchronized (mViews) {
+            Log.d(TAG, "createView mViews put " + this);
             mViews.put(appWidgetId, view);
         }
         RemoteViews views;
@@ -376,6 +392,7 @@ public class AppWidgetHost {
      * Called when the AppWidget provider for a AppWidget has been upgraded to a new apk.
      */
     protected void onProviderChanged(int appWidgetId, AppWidgetProviderInfo appWidget) {
+        Log.d(TAG, "onProviderChanged appWidgetId " + appWidgetId);
         AppWidgetHostView v;
 
         // Convert complex to dp -- we are getting the AppWidgetProviderInfo from the
@@ -407,6 +424,7 @@ public class AppWidgetHost {
     }
 
     void updateAppWidgetView(int appWidgetId, RemoteViews views) {
+        Log.d(TAG, "updateAppWidgetView appWidgetId " + appWidgetId + " " + this);
         AppWidgetHostView v;
         synchronized (mViews) {
             v = mViews.get(appWidgetId);
@@ -417,12 +435,21 @@ public class AppWidgetHost {
     }
 
     void viewDataChanged(int appWidgetId, int viewId) {
+        Log.d(TAG, "viewDataChanged appWidgetId " + appWidgetId);
         AppWidgetHostView v;
         synchronized (mViews) {
+            Log.d(TAG, "viewDataChanged mViews get ");
             v = mViews.get(appWidgetId);
+            Log.d(TAG, "viewDataChanged mViews get 1111 " + v);
         }
         if (v != null) {
+            Log.d(TAG, "viewDataChanged v != null ");
             v.viewDataChanged(viewId);
+        } else {
+            Log.d(TAG, "viewDataChanged v == null ");
+            /// M: add for ALPS 001673502 .
+            //Intent intent = new Intent("android.appwidget.action.notify_data_change");
+            //mContext.sendBroadcast(intent);
         }
     }
 
@@ -430,6 +457,7 @@ public class AppWidgetHost {
      * Clear the list of Views that have been created by this AppWidgetHost.
      */
     protected void clearViews() {
+	Log.d(TAG, "clearViews " + this);
         synchronized (mViews) {
             mViews.clear();
         }

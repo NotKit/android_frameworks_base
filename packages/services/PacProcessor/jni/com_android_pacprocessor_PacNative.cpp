@@ -68,6 +68,8 @@ static jboolean com_android_pacprocessor_PacNative_createV8ParserNativeLocked(JN
         proxyResolver = new net::ProxyResolverV8(net::ProxyResolverJSBindings::CreateDefault(),
                 logger);
         pacSet = false;
+        ALOGE("createV8ParserNativeLocked pacSet = false");
+
         return JNI_FALSE;
     }
     return JNI_TRUE;
@@ -99,6 +101,7 @@ static jboolean com_android_pacprocessor_PacNative_setProxyScriptNativeLocked(JN
         return JNI_TRUE;
     }
     pacSet = true;
+    ALOGE("setProxyScriptNativeLocked pacSet = true");
 
     return JNI_FALSE;
 }

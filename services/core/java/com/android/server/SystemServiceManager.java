@@ -24,6 +24,11 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 
+/// M: Service operation time log @{
+import android.os.Build;
+import android.os.SystemClock;
+/// @}
+
 /**
  * Manages creating, starting, and other lifecycle events of
  * {@link com.android.server.SystemService system services}.
@@ -40,6 +45,9 @@ public class SystemServiceManager {
     private final ArrayList<SystemService> mServices = new ArrayList<SystemService>();
 
     private int mCurrentPhase = -1;
+
+    /// M: Service operation time log
+    private static final boolean IS_USER_BUILD = "user".equals(Build.TYPE);
 
     public SystemServiceManager(Context context) {
         mContext = context;
@@ -139,7 +147,19 @@ public class SystemServiceManager {
             for (int i = 0; i < serviceLen; i++) {
                 final SystemService service = mServices.get(i);
                 try {
+                    /// M: Service operation time log @{
+                    long startTime = 0;
+                    if (!IS_USER_BUILD) startTime = SystemClock.elapsedRealtime();
+                    /// @}
+
                     service.onBootPhase(mCurrentPhase);
+
+                    /// M: Service operation time log @{
+                    if (!IS_USER_BUILD) {
+                        checkTime(startTime, "Phase " + mCurrentPhase,
+                                service.getClass().getName());
+                    }
+                    /// @}
                 } catch (Exception ex) {
                     throw new RuntimeException("Failed to boot service "
                             + service.getClass().getName()
@@ -262,4 +282,14 @@ public class SystemServiceManager {
 
         Slog.e(TAG, builder.toString());
     }
+
+    /// M: Service operation time log @{
+    private void checkTime(long startTime, String op, String service) {
+        long now = SystemClock.elapsedRealtime();
+        if ((now-startTime) > 500) {
+            Slog.w(TAG, "[" + op + "]" + service + " took " + (now-startTime) + "ms");
+        }
+    }
+    /// @}
+
 }

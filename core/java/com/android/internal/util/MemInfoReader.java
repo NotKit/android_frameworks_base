@@ -34,6 +34,18 @@ public final class MemInfoReader {
         }
     }
 
+    public void readExtraMemInfo() {
+        // Permit disk reads here, as /proc/meminfo isn't really "on
+        // disk" and should be fast.  TODO: make BlockGuard ignore
+        // /proc/ and /sys/ files perhaps?
+        StrictMode.ThreadPolicy savedPolicy = StrictMode.allowThreadDiskReads();
+        try {
+            Debug.getExtraMemInfo(mInfos);
+        } finally {
+            StrictMode.setThreadPolicy(savedPolicy);
+        }
+    }
+
     /**
      * Total amount of RAM available to the kernel.
      */
@@ -47,6 +59,23 @@ public final class MemInfoReader {
     public long getFreeSize() {
         return mInfos[Debug.MEMINFO_FREE] * 1024;
     }
+
+    /// M: @{ Amount of RAM that cahces that are mapped in to processes.
+    /**
+     * Amount of RAM used to map devices, files, or libraries using the mmap command.
+     * @internal
+     */
+    public long getMappedSize() {
+        return mInfos[Debug.MEMINFO_MAPPED] * 1024;
+    }
+    /**
+     * Amount of RAM used for file buffers.
+     * @internal
+     */
+    public long getBuffersSize() {
+        return mInfos[Debug.MEMINFO_BUFFERS] * 1024;
+    }
+    /// @}
 
     /**
      * Amount of RAM that the kernel is being used for caches, not counting caches

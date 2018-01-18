@@ -29,6 +29,9 @@ namespace android {
 status_t CameraMetadata_getNativeMetadata(JNIEnv* env, jobject thiz,
                /*out*/CameraMetadata* metadata);
 
+status_t CameraMetadata_setNativeMetadata(JNIEnv* env, jobject thiz,
+               /*in*/CameraMetadata* metadata);
+
 } /*namespace android*/
 
 #endif /*ANDROID_HARDWARE_CAMERA2_CAMERAMETADATA_JNI_H*/

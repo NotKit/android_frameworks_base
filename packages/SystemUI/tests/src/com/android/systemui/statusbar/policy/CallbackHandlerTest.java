@@ -102,13 +102,21 @@ public class CallbackHandlerTest extends AndroidTestCase {
         int qsType = R.drawable.ic_qs_signal_1x;
         boolean wide = true;
         int subId = 5;
-        mHandler.setMobileDataIndicators(status, qs, type, qsType, in, out, typeDescription,
-                description, wide, subId);
+        ///M: Add for interface modify @{
+        int networkType = 13;
+        int volteType = 0;
+        /// @}
+        mHandler.setMobileDataIndicators(status, qs, type, networkType, volteType, qsType, in, out,
+            typeDescription, description, wide, subId);
         waitForCallbacks();
 
         ArgumentCaptor<IconState> statusArg = ArgumentCaptor.forClass(IconState.class);
         ArgumentCaptor<IconState> qsArg = ArgumentCaptor.forClass(IconState.class);
         ArgumentCaptor<Integer> typeIconArg = ArgumentCaptor.forClass(Integer.class);
+        ///M: Add for interface modify @{
+        ArgumentCaptor<Integer> netTypeIconArg = ArgumentCaptor.forClass(Integer.class);
+        ArgumentCaptor<Integer> volteTypeIconArg = ArgumentCaptor.forClass(Integer.class);
+       /// @}
         ArgumentCaptor<Integer> qsTypeIconArg = ArgumentCaptor.forClass(Integer.class);
         ArgumentCaptor<Boolean> inArg = ArgumentCaptor.forClass(Boolean.class);
         ArgumentCaptor<Boolean> outArg = ArgumentCaptor.forClass(Boolean.class);
@@ -116,13 +124,20 @@ public class CallbackHandlerTest extends AndroidTestCase {
         ArgumentCaptor<String> descArg = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<Boolean> wideArg = ArgumentCaptor.forClass(Boolean.class);
         ArgumentCaptor<Integer> subIdArg = ArgumentCaptor.forClass(Integer.class);
+        ///M: Add for interface modify
         Mockito.verify(mSignalCallback).setMobileDataIndicators(statusArg.capture(),
-                qsArg.capture(), typeIconArg.capture(), qsTypeIconArg.capture(), inArg.capture(),
-                outArg.capture(), typeContentArg.capture(), descArg.capture(), wideArg.capture(),
+                qsArg.capture(), typeIconArg.capture(), netTypeIconArg.capture(),
+                volteTypeIconArg.capture(),
+                qsTypeIconArg.capture(),inArg.capture(), outArg.capture(),
+                typeContentArg.capture(), descArg.capture(), wideArg.capture(),
                 subIdArg.capture());
         assertEquals(status, statusArg.getValue());
         assertEquals(qs, qsArg.getValue());
         assertEquals(type, (int) typeIconArg.getValue());
+        ///M: Add for interface modify @{
+        assertEquals(networkType, (int) netTypeIconArg.getValue());
+        assertEquals(volteType, (int) volteTypeIconArg.getValue());
+        /// @}
         assertEquals(qsType, (int) qsTypeIconArg.getValue());
         assertEquals(in, (boolean) inArg.getValue());
         assertEquals(out, (boolean) outArg.getValue());

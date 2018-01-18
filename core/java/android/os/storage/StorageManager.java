@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2008 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -45,6 +50,7 @@ import android.util.SparseArray;
 
 import com.android.internal.os.SomeArgs;
 import com.android.internal.util.Preconditions;
+import com.google.android.collect.Lists;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -144,7 +150,6 @@ public class StorageManager {
 
     private final Context mContext;
     private final ContentResolver mResolver;
-
     private final IMountService mMountService;
     private final Looper mLooper;
     private final AtomicInteger mNextNonce = new AtomicInteger(0);
@@ -409,6 +414,11 @@ public class StorageManager {
      */
     @Deprecated
     public void enableUsbMassStorage() {
+        try {
+            mMountService.setUsbMassStorageEnabled(true);
+        } catch (Exception ex) {
+            Log.e(TAG, "Failed to enable UMS", ex);
+        }
     }
 
     /**
@@ -418,6 +428,11 @@ public class StorageManager {
      */
     @Deprecated
     public void disableUsbMassStorage() {
+        try {
+            mMountService.setUsbMassStorageEnabled(false);
+        } catch (Exception ex) {
+            Log.e(TAG, "Failed to disable UMS", ex);
+        }
     }
 
     /**
@@ -428,6 +443,11 @@ public class StorageManager {
      */
     @Deprecated
     public boolean isUsbMassStorageConnected() {
+        try {
+            return mMountService.isUsbMassStorageConnected();
+        } catch (Exception ex) {
+            Log.e(TAG, "Failed to get UMS connection state", ex);
+        }
         return false;
     }
 
@@ -439,6 +459,11 @@ public class StorageManager {
      */
     @Deprecated
     public boolean isUsbMassStorageEnabled() {
+        try {
+            return mMountService.isUsbMassStorageEnabled();
+        } catch (RemoteException rex) {
+            Log.e(TAG, "Failed to get UMS enable state", rex);
+        }
         return false;
     }
 
@@ -676,6 +701,15 @@ public class StorageManager {
             if (rec != null && !TextUtils.isEmpty(rec.nickname)) {
                 return rec.nickname;
             }
+        }
+
+        // for internal sd card without shared_sd
+        // the volume name should be PhoneStorage
+        if (vol.isPhoneStorage()) {
+            String volumeName = mContext.getResources().getString(
+                    com.mediatek.internal.R.string.storage_phone);
+            Slog.i(TAG, "getBestVolumeDescription, return volumeName=" + volumeName);
+            return volumeName;
         }
 
         if (!TextUtils.isEmpty(vol.getDescription())) {

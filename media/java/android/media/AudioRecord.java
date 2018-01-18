@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2008 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -287,6 +292,7 @@ public class AudioRecord implements AudioRouting
                 bufferSizeInBytes,
                 AudioManager.AUDIO_SESSION_ID_GENERATE);
     }
+
 
     /**
      * @hide

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,6 +23,7 @@ package android.app;
 
 import android.content.Loader;
 import android.os.Bundle;
+import android.os.SystemProperties;
 import android.util.DebugUtils;
 import android.util.Log;
 import android.util.SparseArray;
@@ -606,6 +612,10 @@ class LoaderManagerImpl extends LoaderManager {
      */
     @SuppressWarnings("unchecked")
     public <D> Loader<D> initLoader(int id, Bundle args, LoaderManager.LoaderCallbacks<D> callback) {
+        /// M: Enable LoaderManager logs dynamically for this Activity @{
+        DynamicEnableDebugLogging();
+        /// @}
+
         if (mCreatingLoader) {
             throw new IllegalStateException("Called while creating a loader");
         }
@@ -898,4 +908,15 @@ class LoaderManagerImpl extends LoaderManager {
         }
         return loadersRunning;
     }
+
+    /// M: Enable LoaderManager logs dynamically for this Activity @{
+    private void DynamicEnableDebugLogging() {
+        String properties = SystemProperties.get("sys.loadermanager", null);
+        if (properties != null && mHost != null) {
+            if (properties.contains(mHost.getActivity().getLocalClassName())) {
+                DEBUG = true;
+            }
+        }
+    }
+    /// @}
 }

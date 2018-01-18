@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -93,6 +98,12 @@ import com.android.internal.widget.LockPatternUtils;
 import com.android.server.LocalServices;
 import com.android.server.am.ActivityStack.ActivityState;
 import com.android.server.wm.WindowManagerService;
+/// M: BMW
+import com.mediatek.multiwindow.MultiWindowManager;
+
+import com.mediatek.am.AMEventHookData;
+import com.mediatek.am.AMEventHookResult;
+import com.mediatek.server.am.AMEventHook;
 
 import java.io.FileDescriptor;
 import java.io.IOException;
@@ -131,6 +142,7 @@ import static com.android.server.am.ActivityManagerDebugConfig.DEBUG_CONTAINERS;
 import static com.android.server.am.ActivityManagerDebugConfig.DEBUG_IDLE;
 import static com.android.server.am.ActivityManagerDebugConfig.DEBUG_LOCKSCREEN;
 import static com.android.server.am.ActivityManagerDebugConfig.DEBUG_LOCKTASK;
+import static com.android.server.am.ActivityManagerDebugConfig.DEBUG_MULTIWINDOW;
 import static com.android.server.am.ActivityManagerDebugConfig.DEBUG_PAUSE;
 import static com.android.server.am.ActivityManagerDebugConfig.DEBUG_RECENTS;
 import static com.android.server.am.ActivityManagerDebugConfig.DEBUG_RELEASE;
@@ -1229,7 +1241,11 @@ public final class ActivityStackSupervisor implements DisplayListener {
         r.launchCount++;
         r.lastLaunchTime = SystemClock.uptimeMillis();
 
-        if (DEBUG_ALL) Slog.v(TAG, "Launching: " + r);
+        /// M: AMS log enhancement @{
+        if (DEBUG_ALL) {
+            Slog.v(TAG, "ACT-Launching: " + r);
+        }
+        /// @}
 
         int idx = app.activities.indexOf(r);
         if (idx < 0) {
@@ -1262,6 +1278,12 @@ public final class ActivityStackSupervisor implements DisplayListener {
                 EventLog.writeEvent(EventLogTags.AM_RESTART_ACTIVITY,
                         r.userId, System.identityHashCode(r),
                         task.taskId, r.shortComponentName);
+
+                /// M: AMS log enhancement @{
+                if (!ActivityManagerService.IS_USER_BUILD || DEBUG_STACK) {
+                    Slog.d(TAG, "ACT-AM_RESTART_ACTIVITY " + r + " Task:" + r.task.taskId);
+                }
+                /// @}
             }
             if (r.isHomeActivity()) {
                 // Home process is the root process of the task.
@@ -1367,6 +1389,17 @@ public final class ActivityStackSupervisor implements DisplayListener {
             if (DEBUG_STATES) Slog.v(TAG_STATES,
                     "Moving to PAUSED: " + r + " (starting in paused state)");
             r.state = PAUSED;
+
+            /// M: AMEventHook event @{
+            ProcessRecord appProc = r.app;
+            if (appProc != null) {
+                AMEventHookData.AfterActivityPaused eventData = null;
+                eventData = AMEventHookData.AfterActivityPaused.createInstance();
+                eventData.set(appProc.pid, r.info.name, r.info.packageName);
+                mService.getAMEventHook().hook(AMEventHook.Event.AM_AfterActivityPaused,
+                        eventData);
+            }
+            /// M: AMEventHook event @}
         }
 
         // Launch the new version setup screen if needed.  We do this -after-
@@ -2175,6 +2208,12 @@ public final class ActivityStackSupervisor implements DisplayListener {
                 resumeFocusedStackTopActivityLocked();
             } else {
                 for (int i = size - 1; i >= 0; i--) {
+                    /// M: BMW. Split and freeform cannot coexist @{
+                    if (MultiWindowManager.isSupported() && tasks.get(i) != null
+                            && tasks.get(i).mLastTaskInFreeformStack) {
+                        continue;
+                    }
+                    /// @}
                     positionTaskInStackLocked(tasks.get(i).taskId,
                             FULLSCREEN_WORKSPACE_STACK_ID, 0);
                 }
@@ -2309,11 +2348,23 @@ public final class ActivityStackSupervisor implements DisplayListener {
             Slog.w(TAG, "resizeTask: task " + task + " not resizeable.");
             return true;
         }
-
+        /// M: BMW. ALPS02835033. Need relaunch if moving task
+        /// from freeform stack to fullscreen stack with same bound @{
+        boolean needRelaunch = false;
+        needRelaunch = MultiWindowManager.isSupported()
+                           && task.stack != null
+                           && task.stack.mStackId== FULLSCREEN_WORKSPACE_STACK_ID
+                           && !preserveWindow
+                           && Objects.equals(task.mBounds, bounds);
+        if (MultiWindowManager.isSupported() && needRelaunch) {
+            Slog.d(TAG, "[BMW] move task from freeform stack to fullscreen stack, need to restart");
+        }
+        /// @}
         // If this is a forced resize, let it go through even if the bounds is not changing,
         // as we might need a relayout due to surface size change (to/from fullscreen).
         final boolean forced = (resizeMode & RESIZE_MODE_FORCED) != 0;
-        if (Objects.equals(task.mBounds, bounds) && !forced) {
+        /// M: BMW. ALPS02835033. Need relaunch if moving task from freeform to fullscreen
+        if (Objects.equals(task.mBounds, bounds) && !forced && !needRelaunch) {
             // Nothing to do here...
             return true;
         }
@@ -2342,9 +2393,16 @@ public final class ActivityStackSupervisor implements DisplayListener {
         // way and the activity was kept the way it was. If it's false, it means the activity had
         // to be relaunched due to configuration change.
         boolean kept = true;
-        if (overrideConfig != null) {
+        /// M: BMW. ALPS02835033. Need relaunch if moving task from freeform to fullscreen
+        if (overrideConfig != null || needRelaunch) {
             final ActivityRecord r = task.topRunningActivityLocked();
             if (r != null) {
+                /// M: BMW. ALPS02835033. Need relaunch if moving task
+                /// from freeform stack to fullscreen stack @{
+                if (needRelaunch) {
+                    r.forceNewConfig = true;
+                }
+                /// @}
                 final ActivityStack stack = task.stack;
                 kept = stack.ensureActivityConfigurationLocked(r, 0, preserveWindow);
 
@@ -2397,6 +2455,15 @@ public final class ActivityStackSupervisor implements DisplayListener {
     private boolean restoreRecentTaskLocked(TaskRecord task, int stackId) {
         if (stackId == INVALID_STACK_ID) {
             stackId = task.getLaunchStackId();
+            /// M: BMW. [ALPS02968802] Split and freeform cannot coexist @{
+            /// If existing docked stack, we set freeform task's launch stackId
+            /// to FULLSCREEN_WORKSPACE_STACK_ID
+            if (MultiWindowManager.isSupported()
+                    && stackId == FREEFORM_WORKSPACE_STACK_ID
+                    && findStack(DOCKED_STACK_ID) != null) {
+                stackId = FULLSCREEN_WORKSPACE_STACK_ID;
+            }
+            /// @}
         } else if (stackId == DOCKED_STACK_ID && !task.canGoInDockedStack()) {
             // Preferred stack is the docked stack, but the task can't go in the docked stack.
             // Put it in the fullscreen stack.
@@ -2458,6 +2525,16 @@ public final class ActivityStackSupervisor implements DisplayListener {
                     + "support multi-window task=" + task + " to stackId=" + stackId);
         }
 
+        /// M: multi-window log enhancement @{
+        if (DEBUG_MULTIWINDOW) {
+            Slog.d(TAG, "moveTaskToStackUncheckedLocked: " + task + ", t.uid=" +
+                task.mCallingUid + ", t.pkg=" + task.mCallingPackage + ", t.userid=" +
+                task.userId + ", t.intent=" + task.intent + ", stackid=" +
+                stackId + ", toTop=" + toTop + ", focus= " + forceFocus + ", reason=" +
+                reason, new Throwable());
+        }
+        /// M: multi-window log enhancement @}
+
         final ActivityRecord r = task.topRunningActivityLocked();
         final ActivityStack prevStack = task.stack;
         final boolean wasFocused = isFocusedStack(prevStack) && (topRunningActivityLocked() == r);
@@ -2496,7 +2573,7 @@ public final class ActivityStackSupervisor implements DisplayListener {
         // If the task had focus before (or we're requested to move focus),
         // move focus to the new stack by moving the stack to the front.
         stack.moveToFrontAndResumeStateIfNeeded(
-                r, forceFocus || wasFocused || wasFront, wasResumed, reason);
+                  r, forceFocus || wasFocused || wasFront, wasResumed, reason);
 
         return stack;
     }
@@ -2525,6 +2602,28 @@ public final class ActivityStackSupervisor implements DisplayListener {
             throw new IllegalArgumentException("moveTaskToStack:"
                     + "Attempt to move task " + taskId + " to unsupported freeform stack");
         }
+
+        /// M: BMW. Split and freeform cannot coexist @{
+        ///      Move freeform tasks to fullscreen stack
+        if (MultiWindowManager.isSupported() && stackId == DOCKED_STACK_ID) {
+            Slog.d(TAG, "moveTaskToStack: moveTasksToFullscreenStack");
+            if (task != null && task.stack.mStackId == FREEFORM_WORKSPACE_STACK_ID) {
+                task.mLastTaskInFreeformStack = true;
+            }
+            mService.moveTasksToFullscreenStack(FREEFORM_WORKSPACE_STACK_ID, false /* onTop */);
+            if (task.mLastTaskInFreeformStack) {
+                task.mLastTaskInFreeformStack = false;
+            }
+        }
+        /// @}
+
+        /// M: BMW. If moving freeform task to non-freeform stack,
+        ///    we should restore sticky status. @{
+        if (MultiWindowManager.isSupported() && stackId != FREEFORM_WORKSPACE_STACK_ID
+                && task.mSticky) {
+            mService.stickWindow(task, false);
+        }
+        /// @}
 
         final ActivityRecord topActivity = task.getTopActivity();
         final int sourceStackId = task.stack != null ? task.stack.mStackId : INVALID_STACK_ID;
@@ -2829,6 +2928,13 @@ public final class ActivityStackSupervisor implements DisplayListener {
                 if (DEBUG_PAUSE) Slog.v(TAG_PAUSE, "Sleep still need to stop "
                         + mStoppingActivities.size() + " activities");
                 scheduleIdleLocked();
+
+                /// M: AMS log enhancement @{
+                if (!ActivityManagerService.IS_USER_BUILD || DEBUG_STACK) {
+                    Slog.d(TAG, "ACT-IDLE_NOW_MSG from checkReadyForSleepLocked size > 0");
+                }
+                /// @}
+
                 dontSleep = true;
             }
 
@@ -3139,6 +3245,11 @@ public final class ActivityStackSupervisor implements DisplayListener {
         final boolean nowVisible = allResumedActivitiesVisible();
         for (int activityNdx = mStoppingActivities.size() - 1; activityNdx >= 0; --activityNdx) {
             ActivityRecord s = mStoppingActivities.get(activityNdx);
+
+            /// M: Prevent too many waiting visible activity @{
+            forceStopWaitingVisibleActivitiesLocked(activityNdx, s);
+            /// M: Prevent too many waiting visible activity @}
+
             // TODO: Remove mWaitingVisibleActivities list and just remove activity from
             // mStoppingActivities when something else comes up.
             boolean waitingVisible = mWaitingVisibleActivities.contains(s);
@@ -4482,6 +4593,14 @@ public final class ActivityStackSupervisor implements DisplayListener {
                 ? new ActivityOptions(bOptions) : null;
         final int launchStackId = (activityOptions != null)
                 ? activityOptions.getLaunchStackId() : INVALID_STACK_ID;
+
+        /// M: multi-window log enhancement @{
+        if (!ActivityManagerService.IS_USER_BUILD || DEBUG_MULTIWINDOW) {
+            Slog.d(TAG, "startActivityFromRecentsInner: launchStackId=" + launchStackId +
+                " taskId=" + taskId);
+        }
+        /// M: multi-window log enhancement @}
+
         if (launchStackId == HOME_STACK_ID) {
             throw new IllegalArgumentException("startActivityFromRecentsInner: Task "
                     + taskId + " can't be launch in the home stack.");
@@ -4541,6 +4660,15 @@ public final class ActivityStackSupervisor implements DisplayListener {
                     ActivityManager.START_TASK_TO_FRONT,
                     sourceRecord != null ? sourceRecord.task.stack.mStackId : INVALID_STACK_ID,
                     sourceRecord, task.stack);
+
+            /// M: multi-window log enhancement @{
+            if (DEBUG_MULTIWINDOW) {
+                Slog.d(TAG, "startActivityFromRecentsInner: START_TASK_TO_FRONT " +
+                     ", t.uid=" + task.mCallingUid + ", t.pkg=" + task.mCallingPackage +
+                     ", t.userid=" + task.userId + ", t.intent=" + task.intent, new Throwable());
+            }
+            /// M: multi-window log enhancement @}
+
             return ActivityManager.START_TASK_TO_FRONT;
         }
         callingUid = task.mCallingUid;
@@ -4553,6 +4681,15 @@ public final class ActivityStackSupervisor implements DisplayListener {
         if (launchStackId == DOCKED_STACK_ID) {
             setResizingDuringAnimation(task.taskId);
         }
+
+        /// M: multi-window log enhancement @{
+        if (DEBUG_MULTIWINDOW) {
+            Slog.d(TAG, "startActivityFromRecentsInner: result=" + result + ", t.uid=" +
+                task.mCallingUid + ", t.pkg=" + task.mCallingPackage + ", t.userid=" +
+                task.userId + ", t.intent=" + task.intent, new Throwable());
+        }
+        /// M: multi-window log enhancement @}
+
         return result;
     }
 
@@ -4582,4 +4719,74 @@ public final class ActivityStackSupervisor implements DisplayListener {
         }
         return topActivityTokens;
     }
+
+    /// M: Mediatek added functions start
+
+    /// M: PerfService for recording the last pause activity information. @{
+    SimpleActivityInfo mLastResumedActivity = new SimpleActivityInfo();
+    class SimpleActivityInfo {
+        String packageName = null;
+        String activityName = null;
+        int activityType = ActivityRecord.APPLICATION_ACTIVITY_TYPE;
+    }
+
+    public boolean isUpdatedLastActivityWhenStartHome(String packageName, String activityName) {
+        if (mLastResumedActivity.activityType != ActivityRecord.HOME_ACTIVITY_TYPE) {
+            return false;
+        }
+
+        if (packageName == null || activityName == null) {
+            return false;
+        }
+
+        if (!packageName.equals(mLastResumedActivity.packageName) ||
+                !activityName.equals(mLastResumedActivity.activityName)) {
+            return true;
+        }
+
+        return false;
+    }
+    /// M: PerfService for recording the last pause activity information. @}
+
+    /// M: BMW freeform mode @{
+    public ActivityStack findStack(int stackId) {
+        final ActivityDisplay display = mActivityDisplays.get(Display.DEFAULT_DISPLAY);
+        if (display == null) {
+            return null;
+        }
+        final ArrayList<ActivityStack> stacks = display.mStacks;
+        if (MultiWindowManager.DEBUG) {
+            Slog.d(TAG_STACK, "findStack, stacks = "  + stacks);
+        }
+        for (ActivityStack stack : stacks) {
+            if (stack.mStackId == stackId) {
+                return stack;
+            }
+        }
+        return null;
+    }
+    /// @}
+
+    /// M: Prevent too many waiting visible activity @{
+    private void forceStopWaitingVisibleActivitiesLocked(int stopIndex, ActivityRecord s) {
+        // If we already have a few activities waiting to stop, then give up
+        // on things and start clearing them out.
+        if (mStoppingActivities.size() > ActivityStack.getMaxStoppingToForce()) {
+            final int forceIndex = mStoppingActivities.size() - 1
+                 - ActivityStack.getMaxStoppingToForce();
+            if (DEBUG_STATES) {
+                Slog.d(TAG, "Force stop waitingVisible activity? ["
+                    + stopIndex + "," + forceIndex + "]");
+            }
+            if (stopIndex <= forceIndex) {
+                final boolean contain = mWaitingVisibleActivities.remove(s);
+                if (contain && DEBUG_STATES) {
+                    Slog.d(TAG, "Force stop waitingVisible activity: " + s);
+                }
+            }
+        }
+    }
+    /// M: Prevent too many waiting visible activity @}
+
+    /// M: Mediatek added functions end
 }

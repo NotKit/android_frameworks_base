@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not
@@ -151,6 +156,7 @@ public final class BluetoothLeScanner {
     private void startScan(List<ScanFilter> filters, ScanSettings settings,
                            final WorkSource workSource, final ScanCallback callback,
                            List<List<ResultStorageDescriptor>> resultStorages) {
+        Log.d(TAG, "startScan");
         BluetoothLeUtils.checkAdapterStateOn(mBluetoothAdapter);
         if (callback == null) {
             throw new IllegalArgumentException("callback is null");
@@ -203,8 +209,10 @@ public final class BluetoothLeScanner {
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_ADMIN)
     public void stopScan(ScanCallback callback) {
+        Log.d(TAG, "stopScan");
         BluetoothLeUtils.checkAdapterStateOn(mBluetoothAdapter);
         synchronized (mLeScanClients) {
+            Log.i(TAG, "startRegisteration: mLeScanClients=" + mLeScanClients + " ,callback=" + callback);
             BleScanCallbackWrapper wrapper = mLeScanClients.remove(callback);
             if (wrapper == null) {
                 if (DBG) Log.d(TAG, "could not find callback wrapper");
@@ -261,6 +269,7 @@ public final class BluetoothLeScanner {
      * @hide
      */
     public void cleanup() {
+        Log.d(TAG, "cleanup");
         mLeScanClients.clear();
     }
 
@@ -309,6 +318,7 @@ public final class BluetoothLeScanner {
                 }
                 if (mClientIf > 0) {
                     mLeScanClients.put(mScanCallback, this);
+                    Log.i(TAG, "startRegisteration: mLeScanClients=" + mLeScanClients);
                 } else {
                     // Registration timed out or got exception, reset clientIf to -1 so no
                     // subsequent operations can proceed.
@@ -355,8 +365,9 @@ public final class BluetoothLeScanner {
         @Override
         public void onClientRegistered(int status, int clientIf) {
             Log.d(TAG, "onClientRegistered() - status=" + status +
-                    " clientIf=" + clientIf + " mClientIf=" + mClientIf);
+                    " clientIf=" + clientIf);
             synchronized (this) {
+                Log.d(TAG, "mClientIf=" + mClientIf);
                 if (status == BluetoothGatt.GATT_SUCCESS) {
                     try {
                         if (mClientIf == -1) {
@@ -458,6 +469,9 @@ public final class BluetoothLeScanner {
         mHandler.post(new Runnable() {
             @Override
             public void run() {
+                if (VDBG) {
+                    Log.d(TAG, "postCallbackError() - errorCode = " + errorCode);
+                }
                 callback.onScanFailed(errorCode);
             }
         });

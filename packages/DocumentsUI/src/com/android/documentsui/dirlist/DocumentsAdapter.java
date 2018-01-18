@@ -83,13 +83,20 @@ abstract class DocumentsAdapter
     }
 
     static boolean isDirectory(Cursor cursor) {
+        if (cursor == null)
+            return false;
         final String mimeType = getCursorString(cursor, Document.COLUMN_MIME_TYPE);
         return Document.MIME_TYPE_DIR.equals(mimeType);
     }
 
     boolean isDirectory(Model model, int position) {
+        if (getModelIds() != null && getModelIds().size() == 0) {
+            return false;
+        }
         String modelId = getModelIds().get(position);
         Cursor cursor = model.getItem(modelId);
+        if (cursor == null)
+            return false;
         return isDirectory(cursor);
     }
 

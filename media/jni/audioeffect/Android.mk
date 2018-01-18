@@ -15,6 +15,10 @@ LOCAL_SHARED_LIBRARIES := \
 
 LOCAL_C_INCLUDES := \
     $(call include-path-for, audio-effects)
+ifeq ($(MTK_AUDIO),yes)
+LOCAL_C_INCLUDES+= \
+   $(TOP)/$(MTK_PATH_SOURCE)/hardware/audio/common/include
+endif
 
 LOCAL_MODULE:= libaudioeffect_jni
 

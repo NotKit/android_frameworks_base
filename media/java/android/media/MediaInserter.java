@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,6 +24,8 @@ package android.media;
 import android.content.ContentProviderClient;
 import android.content.ContentValues;
 import android.net.Uri;
+import android.os.Handler;
+import android.os.Message;
 import android.os.RemoteException;
 
 import java.util.ArrayList;
@@ -79,17 +86,81 @@ public class MediaInserter {
     private void flushAllPriority() throws RemoteException {
         for (Uri tableUri : mPriorityRowMap.keySet()){
             List<ContentValues> list = mPriorityRowMap.get(tableUri);
-            flush(tableUri, list);
+            /// M: Folder need flush priority to insert directly
+            flushPriority(tableUri, list);
         }
         mPriorityRowMap.clear();
     }
 
     private void flush(Uri tableUri, List<ContentValues> list) throws RemoteException {
         if (!list.isEmpty()) {
-            ContentValues[] valuesArray = new ContentValues[list.size()];
-            valuesArray = list.toArray(valuesArray);
-            mProvider.bulkInsert(tableUri, valuesArray);
-            list.clear();
+            /// M: Add for MediaScaner performance enhancement with threadpool phaseII.
+            /// we insert them in a handler thread together.
+            if (mProvider != null) {
+                ContentValues[] valuesArray = new ContentValues[list.size()];
+                valuesArray = list.toArray(valuesArray);
+                mProvider.bulkInsert(tableUri, valuesArray);
+                list.clear();
+            } else {
+                /// M: we store the tableUri in a content value and put it to the first of list,
+                /// so in handler thread we will know which table we need insert.
+                ContentValues matchUriValue = new ContentValues(1);
+                matchUriValue.put(INSERT_TABLE_URI_KEY, tableUri.toString());
+                ArrayList<ContentValues> sendList = new ArrayList<ContentValues>(list.size() + 1);
+                sendList.add(matchUriValue);
+                sendList.addAll(list);
+                list.clear();
+                Message msg = mInsertHanlder.obtainMessage(0, -1, -1, sendList);
+                mInsertHanlder.sendMessage(msg);
+            }
         }
     }
+
+    /// M: Add for MediaScaner performance enhancement with threadpool phaseII. {@
+    /**
+     * M: Insert key value, store table uri in list, so that handler can get it and do insert.
+     */
+    public static final String INSERT_TABLE_URI_KEY = "insert_table_uri_key";
+    /// Insert relate message
+    public static final int MSG_INSERT_TO_DATABASE = 0;
+    public static final int MSG_INSERT_FOLDER = 1;
+    public static final int MSG_INSERT_ALL = 2;
+    public static final int MSG_STOP_INSERT = 3;
+    /// Scan relate message
+    public static final int MSG_SCAN_DIRECTORY = 10;
+    public static final int MSG_SCAN_SINGLE_FILE = 11;
+    public static final int MSG_SHUTDOWN_THREADPOOL = 12;
+    public static final int MSG_SCAN_FINISH_WITH_THREADPOOL = 13;
+    private Handler mInsertHanlder;
+
+    public MediaInserter(Handler inserterHandler, int bufferSizePerUri) {
+        mInsertHanlder = inserterHandler;
+        mBufferSizePerUri = bufferSizePerUri;
+        mProvider = null;
+    }
+
+    private void flushPriority(Uri tableUri, List<ContentValues> list) throws RemoteException {
+        if (!list.isEmpty()) {
+            /// M: Add for MediaScaner performance enhancement with threadpool phaseII.
+            /// we insert them in a handler thread together.
+            if (mProvider != null) {
+                ContentValues[] valuesArray = new ContentValues[list.size()];
+                valuesArray = list.toArray(valuesArray);
+                mProvider.bulkInsert(tableUri, valuesArray);
+                list.clear();
+            } else {
+                /// we store the tableUri in a content value and put it to the first of list, so in handler thread
+                /// we will know which table we need insert.
+                ContentValues matchUriValue = new ContentValues(1);
+                matchUriValue.put(INSERT_TABLE_URI_KEY, tableUri.toString());
+                ArrayList<ContentValues> sendList = new ArrayList<ContentValues>(list.size() + 1);
+                sendList.add(matchUriValue);
+                sendList.addAll(list);
+                list.clear();
+                Message msg = mInsertHanlder.obtainMessage(MSG_INSERT_TO_DATABASE, 1, -1, sendList);
+                mInsertHanlder.sendMessage(msg);
+            }
+        }
+    }
+    /// @}
 }

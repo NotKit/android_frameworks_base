@@ -287,6 +287,9 @@ public final class AccessibilityInteractionClient
                         accessibilityWindowId, accessibilityNodeId, interactionId, this,
                         prefetchFlags, Thread.currentThread().getId());
                 Binder.restoreCallingIdentity(identityToken);
+                if (DEBUG) {
+                    Log.i(LOG_TAG, "success = " + success);
+                }
                 // If the scale is zero the call has failed.
                 if (success) {
                     List<AccessibilityNodeInfo> infos = getFindAccessibilityNodeInfosResultAndClear(
@@ -294,6 +297,9 @@ public final class AccessibilityInteractionClient
                     finalizeAndCacheAccessibilityNodeInfos(infos, connectionId);
                     if (infos != null && !infos.isEmpty()) {
                         return infos.get(0);
+                    }
+                    if (DEBUG) {
+                        Log.i(LOG_TAG, "infos = " + infos);
                     }
                 }
             } else {

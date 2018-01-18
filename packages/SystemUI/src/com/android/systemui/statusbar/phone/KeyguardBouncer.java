@@ -21,6 +21,7 @@ import android.content.Context;
 import android.os.UserHandle;
 import android.os.UserManager;
 import android.util.Slog;
+import android.util.Log;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -30,13 +31,18 @@ import android.view.accessibility.AccessibilityEvent;
 
 import com.android.internal.widget.LockPatternUtils;
 import com.android.keyguard.KeyguardHostView;
+import com.android.keyguard.KeyguardSecurityModel;
 import com.android.keyguard.KeyguardSecurityView;
 import com.android.keyguard.KeyguardUpdateMonitor;
 import com.android.keyguard.KeyguardUpdateMonitorCallback;
 import com.android.keyguard.R;
 import com.android.keyguard.ViewMediatorCallback;
+
+import com.android.systemui.keyguard.KeyguardViewMediator;
 import com.android.systemui.DejankUtils;
 import com.android.systemui.classifier.FalsingManager;
+
+import com.mediatek.keyguard.PowerOffAlarm.PowerOffAlarmManager;
 
 import static com.android.keyguard.KeyguardHostView.OnDismissAction;
 import static com.android.keyguard.KeyguardSecurityModel.SecurityMode;
@@ -46,12 +52,13 @@ import static com.android.keyguard.KeyguardSecurityModel.SecurityMode;
  */
 public class KeyguardBouncer {
 
-    final static private String TAG = "KeyguardBouncer";
+    private final String TAG = "KeyguardBouncer";
+    private final boolean DEBUG = true;
 
-    protected Context mContext;
-    protected ViewMediatorCallback mCallback;
-    protected LockPatternUtils mLockPatternUtils;
-    protected ViewGroup mContainer;
+    private Context mContext;
+    private ViewMediatorCallback mCallback;
+    private LockPatternUtils mLockPatternUtils;
+    private ViewGroup mContainer;
     private StatusBarWindowManager mWindowManager;
     protected KeyguardHostView mKeyguardView;
     protected ViewGroup mRoot;
@@ -66,6 +73,11 @@ public class KeyguardBouncer {
                 }
             };
 
+    /// M: use securityModel to check if it needs to show full screen mode
+    private KeyguardSecurityModel mSecurityModel;
+
+    private ViewGroup mNotificationPanel ;
+
     public KeyguardBouncer(Context context, ViewMediatorCallback callback,
             LockPatternUtils lockPatternUtils, StatusBarWindowManager windowManager,
             ViewGroup container) {
@@ -74,10 +86,14 @@ public class KeyguardBouncer {
         mLockPatternUtils = lockPatternUtils;
         mContainer = container;
         mWindowManager = windowManager;
+        mNotificationPanel = (ViewGroup) mContainer.findViewById(R.id.notification_panel);
+
+        mSecurityModel = new KeyguardSecurityModel(mContext);
         KeyguardUpdateMonitor.getInstance(mContext).registerCallback(mUpdateMonitorCallback);
         mFalsingManager = FalsingManager.getInstance(mContext);
     }
 
+    ///M:
     public void show(boolean resetSecuritySelection) {
         final int keyguardUserId = KeyguardUpdateMonitor.getCurrentUser();
         if (keyguardUserId == UserHandle.USER_SYSTEM && UserManager.isSplitSystemUser()) {
@@ -86,6 +102,33 @@ public class KeyguardBouncer {
         }
         mFalsingManager.onBouncerShown();
         ensureView();
+        show(resetSecuritySelection, false) ;
+    }
+
+    /**
+     * show bouncer.
+     * @param resetSecuritySelection need to reset.
+     * @param authenticated authenticated or not.
+     */
+    public void show(boolean resetSecuritySelection, boolean authenticated) {
+        if (DEBUG) {
+            Log.d(TAG, "show(resetSecuritySelection = " + resetSecuritySelection);
+        }
+
+        if (PowerOffAlarmManager.isAlarmBoot()) {
+            Log.d(TAG, "show() - this is alarm boot, just re-inflate.") ;
+            /// M: fix ALPS01865324, we should call KeyguardPasswordView.onPause() to hide IME
+            ///    before the KeyguardPasswordView is gone.
+            if (mKeyguardView != null && mRoot != null) {
+                Log.d(TAG, "show() - before re-inflate, we should pause current view.") ;
+                mKeyguardView.onPause();
+            }
+            // force to remove views.
+            inflateView() ;
+        } else {
+            ensureView();
+        }
+
         if (resetSecuritySelection) {
             // showPrimarySecurityScreen() updates the current security method. This is needed in
             // case we are already showing and the current security method changed.
@@ -96,6 +139,7 @@ public class KeyguardBouncer {
         }
 
         final int activeUserId = ActivityManager.getCurrentUser();
+        final int keyguardUserId = KeyguardUpdateMonitor.getCurrentUser();
         final boolean allowDismissKeyguard =
                 !(UserManager.isSplitSystemUser() && activeUserId == UserHandle.USER_SYSTEM)
                 && activeUserId == keyguardUserId;
@@ -104,21 +148,28 @@ public class KeyguardBouncer {
         if (allowDismissKeyguard && mKeyguardView.dismiss()) {
             return;
         }
-
         // This condition may indicate an error on Android, so log it.
         if (!allowDismissKeyguard) {
             Slog.w(TAG, "User can't dismiss keyguard: " + activeUserId + " != " + keyguardUserId);
         }
+        // Try to dismiss the Keyguard. If no security pattern is set, this will dismiss the whole
+        // Keyguard. If we need to authenticate, show the bouncer.
+        if (!mKeyguardView.dismiss(authenticated)) {
+            if (DEBUG) {
+                Log.d(TAG, "show() - try to dismiss \"Bouncer\" directly.") ;
+            }
 
-        mShowingSoon = true;
+            mShowingSoon = true;
 
-        // Split up the work over multiple frames.
-        DejankUtils.postAfterTraversal(mShowRunnable);
+            // Split up the work over multiple frames.
+            DejankUtils.postAfterTraversal(mShowRunnable);
+        }
     }
 
     private final Runnable mShowRunnable = new Runnable() {
         @Override
         public void run() {
+            Log.d(TAG, "mShowRunnable.run() is called.") ;
             mRoot.setVisibility(View.VISIBLE);
             mKeyguardView.onResume();
             showPromptReason(mBouncerPromptReason);
@@ -161,7 +212,14 @@ public class KeyguardBouncer {
         mShowingSoon = false;
     }
 
+    public void showWithDismissAction(OnDismissAction r) {
+        ensureView();
+        mKeyguardView.setOnDismissAction(r);
+        show(false /* resetSecuritySelection */);
+    }
+
     public void showWithDismissAction(OnDismissAction r, Runnable cancelAction) {
+        if (DEBUG) Log.d(TAG, "showWithDismissAction() is called.");
         ensureView();
         mKeyguardView.setOnDismissAction(r, cancelAction);
         show(false /* resetSecuritySelection */);
@@ -169,16 +227,28 @@ public class KeyguardBouncer {
 
     public void hide(boolean destroyView) {
         mFalsingManager.onBouncerHidden();
+        if (DEBUG) {
+            Log.d(TAG, "hide() is called, destroyView = " + destroyView) ;
+        }
+
         cancelShowRunnable();
         if (mKeyguardView != null) {
             mKeyguardView.cancelDismissAction();
             mKeyguardView.cleanUp();
         }
         if (destroyView) {
+            if (DEBUG) Log.d(TAG, "call removeView()") ;
             removeView();
         } else if (mRoot != null) {
+            if (DEBUG) Log.d(TAG, "just set keyguard Invisible.") ;
             mRoot.setVisibility(View.INVISIBLE);
         }
+
+        /// M: [ALPS01748966] true place that user has left keyguard.
+        // If the alternate unlock was suppressed, it can now be safely
+        // enabled because the user has left keyguard.
+        Log.d(TAG, "hide() - user has left keyguard, setAlternateUnlockEnabled(true)") ;
+        KeyguardUpdateMonitor.getInstance(mContext).setAlternateUnlockEnabled(true);
     }
 
     /**
@@ -203,8 +273,19 @@ public class KeyguardBouncer {
 
     public void onScreenTurnedOff() {
         if (mKeyguardView != null && mRoot != null && mRoot.getVisibility() == View.VISIBLE) {
+            mKeyguardView.onScreenTurnedOff();
             mKeyguardView.onPause();
         }
+    }
+
+    public long getUserActivityTimeout() {
+        /*if (mKeyguardView != null) {
+            long timeout = mKeyguardView.getUserActivityTimeout();
+            if (timeout >= 0) {
+                return timeout;
+            }
+        }*/
+        return KeyguardViewMediator.AWAKE_INTERVAL_DEFAULT_MS;
     }
 
     public boolean isShowing() {
@@ -227,17 +308,25 @@ public class KeyguardBouncer {
     }
 
     protected void inflateView() {
+        if (DEBUG) {
+            Log.d(TAG, "inflateView() is called, we force to re-inflate the \"Bouncer\" view.");
+        }
+
         removeView();
         mRoot = (ViewGroup) LayoutInflater.from(mContext).inflate(R.layout.keyguard_bouncer, null);
         mKeyguardView = (KeyguardHostView) mRoot.findViewById(R.id.keyguard_host_view);
         mKeyguardView.setLockPatternUtils(mLockPatternUtils);
         mKeyguardView.setViewMediatorCallback(mCallback);
+        mKeyguardView.setNotificationPanelView(mNotificationPanel) ;
         mContainer.addView(mRoot, mContainer.getChildCount());
         mRoot.setVisibility(View.INVISIBLE);
     }
 
     protected void removeView() {
         if (mRoot != null && mRoot.getParent() == mContainer) {
+
+            Log.d(TAG, "removeView() - really remove all views.") ;
+
             mContainer.removeView(mRoot);
             mRoot = null;
         }
@@ -253,11 +342,18 @@ public class KeyguardBouncer {
      */
     public boolean needsFullscreenBouncer() {
         ensureView();
-        if (mKeyguardView != null) {
+        /*if (mKeyguardView != null) {
             SecurityMode mode = mKeyguardView.getSecurityMode();
             return mode == SecurityMode.SimPin || mode == SecurityMode.SimPuk;
         }
-        return false;
+        return false; */
+        SecurityMode mode = mSecurityModel.getSecurityMode();
+        return mode == SecurityMode.SimPinPukMe1
+                || mode == SecurityMode.SimPinPukMe2
+                || mode == SecurityMode.SimPinPukMe3
+                || mode == SecurityMode.SimPinPukMe4
+                || mode == SecurityMode.AntiTheft
+                || mode == SecurityMode.AlarmBoot;
     }
 
     /**
@@ -267,7 +363,12 @@ public class KeyguardBouncer {
     public boolean isFullscreenBouncer() {
         if (mKeyguardView != null) {
             SecurityMode mode = mKeyguardView.getCurrentSecurityMode();
-            return mode == SecurityMode.SimPin || mode == SecurityMode.SimPuk;
+            return mode == SecurityMode.SimPinPukMe1
+                || mode == SecurityMode.SimPinPukMe2
+                || mode == SecurityMode.SimPinPukMe3
+                || mode == SecurityMode.SimPinPukMe4
+                || mode == SecurityMode.AntiTheft
+                || mode == SecurityMode.AlarmBoot;
         }
         return false;
     }

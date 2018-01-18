@@ -230,6 +230,7 @@ public class RouterAdvertisementDaemon {
     }
 
     public void buildNewRa(RaParams deprecatedParams, RaParams newParams) {
+        Log.d(TAG, "buildNewRa()");
         synchronized (mLock) {
             if (deprecatedParams != null) {
                 mDeprecatedInfoTracker.putPrefixes(deprecatedParams.prefixes);
@@ -250,6 +251,7 @@ public class RouterAdvertisementDaemon {
     }
 
     public boolean start() {
+        Log.d(TAG, "start()");
         if (!createSocket()) {
             return false;
         }
@@ -264,19 +266,27 @@ public class RouterAdvertisementDaemon {
     }
 
     public void stop() {
+        Log.d(TAG, "stop()");
+
         closeSocket();
         mMulticastTransmitter = null;
         mUnicastResponder = null;
     }
 
     private void assembleRaLocked() {
+        Log.d(TAG, "assembleRaLocked()");
         final ByteBuffer ra = ByteBuffer.wrap(mRA);
         ra.order(ByteOrder.BIG_ENDIAN);
 
         boolean shouldSendRA = false;
 
         try {
+            if (mRaParams != null) {
+                Log.d(TAG, "putHeader mRaParams.hasDefaultRoute:" +
+                                mRaParams.hasDefaultRoute);
+            }
             putHeader(ra, mRaParams != null && mRaParams.hasDefaultRoute);
+            Log.d(TAG, "putSlla mHwAddr:" + bytesToString(mHwAddr));
             putSlla(ra, mHwAddr);
             mRaLength = ra.position();
 
@@ -288,16 +298,19 @@ public class RouterAdvertisementDaemon {
             // putExpandedFlagsOption(ra);
 
             if (mRaParams != null) {
+                Log.d(TAG, "putMtu mRaParams.mtu:" + mRaParams.mtu);
                 putMtu(ra, mRaParams.mtu);
                 mRaLength = ra.position();
 
                 for (IpPrefix ipp : mRaParams.prefixes) {
+                    Log.d(TAG, "putPio mRaParams.prefixes:" + ipp);
                     putPio(ra, ipp, DEFAULT_LIFETIME, DEFAULT_LIFETIME);
                     mRaLength = ra.position();
                     shouldSendRA = true;
                 }
 
                 if (mRaParams.dnses.size() > 0) {
+                    Log.d(TAG, "putRdnss mRaParams.dnses:" + mRaParams.dnses);
                     putRdnss(ra, mRaParams.dnses, DEFAULT_LIFETIME);
                     mRaLength = ra.position();
                     shouldSendRA = true;
@@ -305,6 +318,7 @@ public class RouterAdvertisementDaemon {
             }
 
             for (IpPrefix ipp : mDeprecatedInfoTracker.getPrefixes()) {
+                Log.d(TAG, "putPio mDeprecatedInfoTracker.getPrefixes():" + ipp);
                 putPio(ra, ipp, 0, 0);
                 mRaLength = ra.position();
                 shouldSendRA = true;
@@ -312,6 +326,7 @@ public class RouterAdvertisementDaemon {
 
             final Set<Inet6Address> deprecatedDnses = mDeprecatedInfoTracker.getDnses();
             if (!deprecatedDnses.isEmpty()) {
+                Log.d(TAG, "putRdnss mDeprecatedInfoTracker.getDnses():" + deprecatedDnses);
                 putRdnss(ra, deprecatedDnses, 0);
                 mRaLength = ra.position();
                 shouldSendRA = true;
@@ -321,6 +336,9 @@ public class RouterAdvertisementDaemon {
             // progressively as the RA was built. Log an error, and continue
             // on as best as possible.
             Log.e(TAG, "Could not construct new RA: " + e);
+        } catch (Exception e) {
+            // catch any Exception
+            Log.e(TAG, "Exception when construct new RA: " + e);
         }
 
         // We have nothing worth announcing; indicate as much to maybeSendRA().
@@ -564,6 +582,7 @@ public class RouterAdvertisementDaemon {
         final int SEND_TIMEOUT_MS = 300;
 
         try {
+            Log.d(TAG, "createSocket() mIfName:" + mIfName + "  mIfIndex:" + mIfIndex);
             mSocket = Os.socket(AF_INET6, SOCK_RAW, IPPROTO_ICMPV6);
             // Setting SNDTIMEO is purely for defensive purposes.
             Os.setsockoptTimeval(
@@ -580,6 +599,7 @@ public class RouterAdvertisementDaemon {
     }
 
     private void closeSocket() {
+        Log.d(TAG, "closeSocket() mSocket:" + mSocket);
         if (mSocket != null) {
             try {
                 IoBridge.closeAndSignalBlockedThreads(mSocket);
@@ -605,6 +625,8 @@ public class RouterAdvertisementDaemon {
     }
 
     private void maybeSendRA(InetSocketAddress dest) {
+
+        Log.d(TAG, "maybeSendRA() mRaLength:" + mRaLength);
         if (dest == null || !isSuitableDestination(dest)) {
             dest = mAllNodes;
         }
@@ -615,6 +637,7 @@ public class RouterAdvertisementDaemon {
                     // No actual RA to send.
                     return;
                 }
+                Log.d(TAG, "Os.sendto(dest:" + dest + " mRaLength:" + mRaLength);
                 Os.sendto(mSocket, mRA, 0, mRaLength, 0, dest);
             }
             Log.d(TAG, "RA sendto " + dest.getAddress().getHostAddress());
@@ -623,6 +646,20 @@ public class RouterAdvertisementDaemon {
                 Log.e(TAG, "sendto error: " + e);
             }
         }
+    }
+
+    static String bytesToString(byte[] bytes) {
+        if (bytes == null)
+            return "";
+        StringBuffer sb = new StringBuffer();
+        for (byte b : bytes) {
+            sb.append(String.format("%02x ", b & 0xFF));
+        }
+        String str = sb.toString();
+        if (str.length() > 0) {
+            str = str.substring(0, str.length() - 1);
+        }
+        return str;
     }
 
     private final class UnicastResponder extends Thread {
@@ -637,8 +674,13 @@ public class RouterAdvertisementDaemon {
             while (isSocketValid()) {
                 try {
                     // Blocking receive.
+                    Log.d(TAG, "Thread start Blocking receive");
                     final int rval = Os.recvfrom(
                             mSocket, mSolication, 0, mSolication.length, 0, solicitor);
+                    if (rval > -1) {
+                        Log.e(TAG, "Os.recvfrom rval:" + rval + "  length:" + mSolication.length +
+                            " mSolication[0]:" + mSolication[0]);
+                    }
                     // Do the least possible amount of validation.
                     if (rval < 1 || mSolication[0] != ICMPV6_ND_ROUTER_SOLICIT) {
                         continue;
@@ -665,7 +707,9 @@ public class RouterAdvertisementDaemon {
         public void run() {
             while (isSocketValid()) {
                 try {
-                    Thread.sleep(getNextMulticastTransmitDelayMs());
+                    long sleepTime = getNextMulticastTransmitDelayMs();
+                    Log.d(TAG, "Thread.sleep: " + sleepTime);
+                    Thread.sleep(sleepTime);
                 } catch (InterruptedException ignored) {
                     // Stop sleeping, immediately send an RA, and continue.
                 }
@@ -688,6 +732,7 @@ public class RouterAdvertisementDaemon {
             // sleep interval computation (i.e. this way we send 3 and not 4).
             mUrgentAnnouncements.set(MAX_URGENT_RTR_ADVERTISEMENTS - 1);
             interrupt();
+            Log.d(TAG, "hup() ");
         }
 
         private int getNextMulticastTransmitDelaySec() {

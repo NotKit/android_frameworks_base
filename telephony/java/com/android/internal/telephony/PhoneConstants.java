@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2012 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -50,7 +55,19 @@ public class PhoneConstants {
         CONNECTED, CONNECTING, DISCONNECTED, SUSPENDED;
     };
 
+    // M: [LTE][Low Power][UL traffic shaping] Start
+    // abnormal mode
+    public static final String LTE_ACCESS_STRATUM_STATE_UNKNOWN  = "unknown";
+    // power saving mode candidate
+    public static final String LTE_ACCESS_STRATUM_STATE_IDLE  = "idle";
+    // normal power mode
+    public static final String LTE_ACCESS_STRATUM_STATE_CONNECTED  = "connected";
+    // M: [LTE][Low Power][UL traffic shaping] End
+
     public static final String STATE_KEY = "state";
+
+    /// M: CC: Notify Call state with phoneType
+    public static final String PHONE_TYPE_KEY = "phoneType";
 
     // Radio Type
     public static final int PHONE_TYPE_NONE = RILConstants.NO_PHONE;
@@ -92,6 +109,12 @@ public class PhoneConstants {
     public static final String PHONE_IN_EMERGENCY_CALL = "phoneInEmergencyCall";
 
     public static final String REASON_LINK_PROPERTIES_CHANGED = "linkPropertiesChanged";
+
+    // M: [LTE][Low Power][UL traffic shaping] Start
+    public static final String LTE_ACCESS_STRATUM_STATE_KEY = "lteAccessStratumState";
+    public static final String SHARED_DEFAULT_APN_KEY = "sharedDefaultApn";
+    public static final String PS_NETWORK_TYPE_KEY = "psNetworkType";
+    // M: [LTE][Low Power][UL traffic shaping] End
 
     /**
      * Return codes for supplyPinReturnResult and
@@ -153,6 +176,43 @@ public class PhoneConstants {
             APN_TYPE_EMERGENCY
     };
 
+    /** M: APN type for device management */
+    public static final String APN_TYPE_DM = "dm";
+    /** M: APN type for WAP */
+    public static final String APN_TYPE_WAP = "wap";
+    /** M: APN type for NET */
+    public static final String APN_TYPE_NET = "net";
+    /** M: APN type for CMMAIL */
+    public static final String APN_TYPE_CMMAIL = "cmmail";
+    /** M: APN type for dedicate tethering apn */
+    public static final String APN_TYPE_TETHERING = "tethering";
+    /** M: APN type for RCSE */
+    public static final String APN_TYPE_RCSE = "rcse";
+    /** M: APN type for XCAP */
+    public static final String APN_TYPE_XCAP = "xcap";
+    /** M: APN type for RCS */
+    public static final String APN_TYPE_RCS = "rcs";
+    /** M: APN type for BIP */
+    public static final String APN_TYPE_BIP = "bip";
+
+    // M: VDF MMS over ePDG @{
+    public static final int APN_RAT_CELLULAR_ONLY = 1;
+    public static final int APN_RAT_WIFI_ONLY = 2;
+    public static final int APN_RAT_CELLULAR_WIFI = 3;
+    /// @}
+
+    /* M: SS part */
+    // CFU query type
+    public static final String CFU_QUERY_TYPE_PROP = "persist.radio.cfu.querytype";
+    public static final String CFU_QUERY_TYPE_DEF_VALUE = "0";
+    /* M: SS part end */
+
+    /**
+     * used to query current capability switch setting value.
+     * @internal
+     */
+    public static final String PROPERTY_CAPABILITY_SWITCH = "persist.radio.simswitch";
+
     public static final int RIL_CARD_MAX_APPS    = 8;
 
     public static final int DEFAULT_CARD_INDEX   = 0;
@@ -173,6 +233,7 @@ public class PhoneConstants {
 
     // FIXME: This is used to pass a subId via intents, we need to look at its usage, which is
     // FIXME: extensive, and see if this should be an array of all active subId's or ...?
+
     public static final String SUBSCRIPTION_KEY  = "subscription";
 
     public static final String SUB_SETTING  = "subSettings";
@@ -186,6 +247,9 @@ public class PhoneConstants {
     public static final int SIM_ID_2 = 1;
     public static final int SIM_ID_3 = 2;
     public static final int SIM_ID_4 = 3;
+
+    public static final int EVENT_SUBSCRIPTION_ACTIVATED   = 500;
+    public static final int EVENT_SUBSCRIPTION_DEACTIVATED = 501;
 
     // ICC SIM Application Types
     // TODO: Replace the IccCardApplicationStatus.AppType enums with these constants
@@ -220,6 +284,51 @@ public class PhoneConstants {
     public static final int AUTH_CONTEXT_EAP_SIM = 128;
     public static final int AUTH_CONTEXT_EAP_AKA = 129;
     public static final int AUTH_CONTEXT_UNDEFINED = -1;
+
+    // Added by M begin
+    // MVNO-API START
+    public static final String MVNO_TYPE_NONE = "";
+    public static final String MVNO_TYPE_SPN = "spn";
+    public static final String MVNO_TYPE_IMSI = "imsi";
+    public static final String MVNO_TYPE_PNN = "pnn";
+    public static final String MVNO_TYPE_GID = "gid";
+    // MVNO-API END
+    // Added by M end
+
+    //[ALPS01577029]-START
+    // The TELEPHONY_MISC_FEATURE_CONFIG for tester to switch some features via engineering mode
+    //Bit 1: To support auto switch rat mode to 2G only for 3M TDD csfb project when we are not in china
+    public static final int MISC_FEATURE_CONFIG_MASK_AUTO_SWITCH_RAT = 0x01;
+    //[ALPS01577029]-END
+
+    //VOLTE IMS STATE
+    public static final int IMS_STATE_DISABLED = 0;
+
+    public static final int IMS_STATE_ENABLE = 1;
+
+    public static final int IMS_STATE_ENABLING = 2;
+
+    public static final int IMS_STATE_DISABLING = 3;
+
+    /**
+     * UT/XCAP Supplementary Service request domain selection constant definitions from IR.92 A.4
+     * IMS Voice Service settings management when using CS access.
+     * UT_CSFB_PS_PREFERRED is to indicate that sending SS request in the PS domain.
+     * @internal
+     */
+    public static final int UT_CSFB_PS_PREFERRED = 0;
+    /**
+     * UT_CSFB_ONCE is to indicate that sending SS request in the CS domain once, and restore to
+     * the PS domain next time.
+     * @internal
+     */
+    public static final int UT_CSFB_ONCE = 1;
+    /**
+     * UT_CSFB_UNTIL_NEXT_BOOT is to indicate that sending SS request in the CS domain until the
+     * UE performs a power-off/power-on or the UE detects a change of USIM/ISIM.
+     # @internal
+     */
+    public static final int UT_CSFB_UNTIL_NEXT_BOOT = 2;
 
     /**
      * Value for the global property CELL_ON

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,6 +29,10 @@ import android.filterfw.core.StopWatchMap;
 import android.filterfw.core.VertexFrame;
 import android.filterfw.geometry.Quad;
 import android.opengl.GLES20;
+
+
+import android.os.SystemProperties;
+import android.util.Log;
 
 /**
  * @hide
@@ -124,12 +133,14 @@ public class ShaderProgram extends Program {
         }
 
         if (mTimer.LOG_MFF_RUNNING_TIMES) {
-          GLES20.glFinish();
+            wait3DReady();
+            GLES20.glFinish();
         }
     }
 
     @Override
     public void setHostValue(String variableName, Object value) {
+        if (mLogVerbose) Log.v(TAG, "setHostValue(" + variableName + ", " + explainObject(value) + ")");
         if (!setUniformValue(variableName, value)) {
             throw new RuntimeException("Error setting uniform value for variable '" +
                                        variableName + "'!");
@@ -298,4 +309,40 @@ public class ShaderProgram extends Program {
                                                          int offsetInBytes,
                                                          boolean normalize);
 
+
+    /// M: for debug @{
+    private static final String TAG = "ShaderProgram";
+    private final boolean mLogVerbose = Log.isLoggable(TAG, Log.VERBOSE);
+
+    private void wait3DReady() {
+        if (mLogVerbose && SystemProperties.getInt("debug.effect.wait", 0) == 1) {
+            Frame.wait3DReady();
+        }
+    }
+
+    private String explainObject(Object obj) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("[");
+        if (obj instanceof float[]) {
+            for (float one : (float[]) obj) {
+                sb.append(one);
+                sb.append(",");
+            }
+        } else if (obj instanceof int[]) {
+            for (int one : (int[]) obj) {
+                sb.append(one);
+                sb.append(",");
+            }
+        } else if (obj instanceof byte[]) {
+            for (byte one : (byte[]) obj) {
+                sb.append(one);
+                sb.append(",");
+            }
+        } else {
+            sb.append(obj);
+        }
+        sb.append("]");
+        return sb.toString();
+    }
+    /// @}
 }

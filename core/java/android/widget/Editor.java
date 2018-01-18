@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2012 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -655,7 +660,7 @@ public class Editor {
         // other is an side effect of showing the suggestions pop-up itself. We use isShowingUp()
         // to distinguish one from the other.
         if (mSuggestionsPopupWindow != null && ((mTextView.isInExtractedMode()) ||
-                !mSuggestionsPopupWindow.isShowingUp())) {
+                !mSuggestionsPopupWindow.isShowingUp()) && !mTextView.hasSelection()) {
             // Should be done before hide insertion point controller since it triggers a show of it
             mSuggestionsPopupWindow.hide();
         }
@@ -2019,6 +2024,15 @@ public class Editor {
     boolean extractedTextModeWillBeStarted() {
         if (!(mTextView.isInExtractedMode())) {
             final InputMethodManager imm = InputMethodManager.peekInstance();
+            if (TextUtils.DEBUG_LOG) {
+                if (imm.isFullscreenMode() ^ mTextView.isInExtractedMode()) {
+                    TextUtils.printDebugLog(TAG,
+                            "[IME issue] imm.isFullscreenMode return wrong value! \n" +
+                            "IME is full screen: " + imm.isFullscreenMode() + ", " +
+                            "TextView is instanceof ExtractEditText: " +
+                            mTextView.isInExtractedMode());
+                }
+            }
             return  imm != null && imm.isFullscreenMode();
         }
         return false;
@@ -2426,28 +2440,23 @@ public class Editor {
             }
         }
 
-        final int originalLength = mTextView.getText().length();
         int min = offset;
         int max = offset;
-
-        Selection.setSelection((Spannable) mTextView.getText(), max);
-        mTextView.replaceText_internal(min, max, content);
-
         if (dragDropIntoItself) {
             int dragSourceStart = dragLocalState.start;
             int dragSourceEnd = dragLocalState.end;
-            if (max <= dragSourceStart) {
-                // Inserting text before selection has shifted positions
-                final int shift = mTextView.getText().length() - originalLength;
-                dragSourceStart += shift;
-                dragSourceEnd += shift;
+            // Delete original selection
+            mTextView.deleteText_internal(dragSourceStart, dragSourceEnd);
+            int deleteLength = dragSourceEnd - dragSourceStart;
+            if (dragSourceStart < max) { // move backward: minus the deleted offset
+                min -= deleteLength;
+                max -= deleteLength;
             }
 
+            // Make drag&drop be atomic for undo/redo.
             mUndoInputFilter.setForceMerge(true);
             try {
-                // Delete original selection
-                mTextView.deleteText_internal(dragSourceStart, dragSourceEnd);
-
+                mTextView.replaceText_internal(min, max, content);
                 // Make sure we do not leave two adjacent spaces.
                 final int prevCharIdx = Math.max(0,  dragSourceStart - 1);
                 final int nextCharIdx = Math.min(mTextView.getText().length(), dragSourceStart + 1);
@@ -2457,9 +2466,13 @@ public class Editor {
                         mTextView.deleteText_internal(prevCharIdx, prevCharIdx + 1);
                     }
                 }
-            } finally {
+
+            }
+            finally {
                 mUndoInputFilter.setForceMerge(false);
             }
+        } else {
+            mTextView.replaceText_internal(min, max, content);
         }
     }
 
@@ -3038,6 +3051,25 @@ public class Editor {
 
             final PositionListener positionListener = getPositionListener();
             updatePosition(positionListener.getPositionX(), positionListener.getPositionY());
+            /// M: hide popwindow when WindowFocus is false
+            final ViewTreeObserver observer = mContentView.getViewTreeObserver();
+            observer.addOnWindowFocusChangeListener(
+                new ViewTreeObserver.OnWindowFocusChangeListener() {
+                    @Override
+                    public void onWindowFocusChanged(boolean hasFocus) {
+                        if (!hasFocus) {
+                            if (isShowing()) {
+                                /// M: handling ParentLostFocus here directly because
+                                /// ExtractEditText does not receive onWindowFocusChange
+                                if (mSuggestionsPopupWindow != null) {
+                                    mSuggestionsPopupWindow.onParentLostFocus() ;
+                                }
+                                hideCursorAndSpanControllers();
+                            }
+                        }
+                    }
+                }
+            );
         }
 
         protected void measureContent() {
@@ -3234,6 +3266,12 @@ public class Editor {
                 suggestionLoop:
                 for (int suggestionIndex = 0; suggestionIndex < nbSuggestions; suggestionIndex++) {
                     final String suggestion = suggestions[suggestionIndex];
+                    // M: only add suggestions whose length is smaller than mTextView.mMaxLength
+                    // Refer to ALPS02869416 for more detail.
+                    if ((mTextView.mMaxLength >= 0) && (suggestion.length() + mTextView.length() -
+                               (spanEnd - spanStart) > mTextView.mMaxLength)) {
+                        continue;
+                    }
                     for (int i = 0; i < numberOfSuggestions; i++) {
                         final SuggestionInfo otherSuggestionInfo = suggestionInfos[i];
                         if (otherSuggestionInfo.mText.toString().equals(suggestion)) {
@@ -5204,10 +5242,7 @@ public class Editor {
             final boolean isMouse = event.isFromSource(InputDevice.SOURCE_MOUSE);
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
-                    if (extractedTextModeWillBeStarted()) {
-                        // Prevent duplicating the selection handles until the mode starts.
-                        hide();
-                    } else {
+
                         // Remember finger down position, to be able to start selection from there.
                         mMinTouchOffset = mMaxTouchOffset = mTextView.getOffsetForPosition(
                                 eventX, eventY);
@@ -5223,8 +5258,7 @@ public class Editor {
                                 ViewConfiguration viewConfiguration = ViewConfiguration.get(
                                         mTextView.getContext());
                                 int doubleTapSlop = viewConfiguration.getScaledDoubleTapSlop();
-                                boolean stayedInArea =
-                                        distanceSquared < doubleTapSlop * doubleTapSlop;
+                            boolean stayedInArea = distanceSquared < doubleTapSlop * doubleTapSlop;
 
                                 if (stayedInArea && (isMouse || isPositionOnText(eventX, eventY))) {
                                     if (mTapState == TAP_STATE_DOUBLE_TAP) {
@@ -5241,8 +5275,7 @@ public class Editor {
                         mDownPositionY = eventY;
                         mGestureStayedInTapRegion = true;
                         mHaventMovedEnoughToStartDrag = true;
-                    }
-                    break;
+                        break;
 
                 case MotionEvent.ACTION_POINTER_DOWN:
                 case MotionEvent.ACTION_POINTER_UP:

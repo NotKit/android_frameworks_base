@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,6 +33,8 @@ import android.content.res.Resources;
 import android.content.res.TypedArray;
 import android.database.DataSetObserver;
 import android.graphics.drawable.Drawable;
+import android.os.Build;
+import android.os.Debug;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.ActionProvider;
@@ -38,6 +45,9 @@ import android.view.ViewTreeObserver;
 import android.view.ViewTreeObserver.OnGlobalLayoutListener;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.ActivityChooserModel.ActivityChooserModelClient;
+
+import com.mediatek.common.MPlugin;
+import com.mediatek.common.media.IRCSePriorityExt;
 
 /**
  * This class is a view for choosing an activity for handling a given {@link Intent}.
@@ -65,6 +75,7 @@ import android.widget.ActivityChooserModel.ActivityChooserModelClient;
 public class ActivityChooserView extends ViewGroup implements ActivityChooserModelClient {
 
     private static final String LOG_TAG = "ActivityChooserView";
+    private static final boolean DBG = "eng".equals(Build.TYPE);
 
     /**
      * An adapter for displaying the activities in an {@link AdapterView}.
@@ -91,6 +102,8 @@ public class ActivityChooserView extends ViewGroup implements ActivityChooserMod
      */
     private final FrameLayout mExpandActivityOverflowButton;
 
+    private IRCSePriorityExt mRCSePriorityExt = null;
+
     /**
      * The image for the expand activities action button;
      */
@@ -116,6 +129,9 @@ public class ActivityChooserView extends ViewGroup implements ActivityChooserMod
      */
     ActionProvider mProvider;
 
+    /// M: HotKnot, for recent button
+    private boolean mRecentButtonEnabled;
+
     /**
      * Observer for the model data.
      */
@@ -124,11 +140,23 @@ public class ActivityChooserView extends ViewGroup implements ActivityChooserMod
         @Override
         public void onChanged() {
             super.onChanged();
+
+            if (DBG) {
+                Log.d(LOG_TAG, "mModelDataSetOberver.onChanged" +
+                        ", mIsAttachedToWindow = " + mIsAttachedToWindow);
+            }
+
             mAdapter.notifyDataSetChanged();
         }
         @Override
         public void onInvalidated() {
             super.onInvalidated();
+
+            if (DBG) {
+                Log.d(LOG_TAG, "mModelDataSetOberver.onInvalidated" +
+                        ", mIsAttachedToWindow = " + mIsAttachedToWindow);
+            }
+
             mAdapter.notifyDataSetInvalidated();
         }
     };
@@ -186,6 +214,7 @@ public class ActivityChooserView extends ViewGroup implements ActivityChooserMod
      */
     public ActivityChooserView(Context context) {
         this(context, null);
+        mRCSePriorityExt = MPlugin.createInstance(IRCSePriorityExt.class.getName(), context);
     }
 
     /**
@@ -249,7 +278,13 @@ public class ActivityChooserView extends ViewGroup implements ActivityChooserMod
 
         mDefaultActivityButton = (FrameLayout) findViewById(R.id.default_activity_button);
         mDefaultActivityButton.setOnClickListener(mCallbacks);
-        mDefaultActivityButton.setOnLongClickListener(mCallbacks);
+        //Modified : Rcse Plugin for higher priority on share list
+        if (mRCSePriorityExt == null) {
+            if (DBG) {
+                Log.e(LOG_TAG, "Rcse Plugin is null, so register for long click listener");
+            }
+            mDefaultActivityButton.setOnLongClickListener(mCallbacks);
+        }
         mDefaultActivityButtonImage = (ImageView) mDefaultActivityButton.findViewById(R.id.image);
 
         final FrameLayout expandButton = (FrameLayout) findViewById(R.id.expand_activities_button);
@@ -297,6 +332,8 @@ public class ActivityChooserView extends ViewGroup implements ActivityChooserMod
         Resources resources = context.getResources();
         mListPopupMaxWidth = Math.max(resources.getDisplayMetrics().widthPixels / 2,
               resources.getDimensionPixelSize(com.android.internal.R.dimen.config_prefDialogWidth));
+        /// M: HotKnot, for recent button
+        mRecentButtonEnabled = true;
     }
 
     /**
@@ -379,8 +416,10 @@ public class ActivityChooserView extends ViewGroup implements ActivityChooserMod
 
         final int activityCount = mAdapter.getActivityCount();
         final int maxActivityCountOffset = defaultActivityButtonShown ? 1 : 0;
+        // M: need to consider default activity when long pressed
+        final int selectingDefault = mIsSelectingDefaultActivity ? 1 : 0;
         if (maxActivityCount != ActivityChooserViewAdapter.MAX_ACTIVITY_COUNT_UNLIMITED
-                && activityCount > maxActivityCount + maxActivityCountOffset) {
+                && activityCount + selectingDefault > maxActivityCount + maxActivityCountOffset) {
             mAdapter.setShowFooterView(true);
             mAdapter.setMaxActivityCount(maxActivityCount - 1);
         } else {
@@ -434,6 +473,11 @@ public class ActivityChooserView extends ViewGroup implements ActivityChooserMod
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
+
+        if (DBG) {
+            Log.d(LOG_TAG, "onAttachedToWindow");
+        }
+
         ActivityChooserModel dataModel = mAdapter.getDataModel();
         if (dataModel != null) {
             dataModel.registerObserver(mModelDataSetOberver);
@@ -444,6 +488,11 @@ public class ActivityChooserView extends ViewGroup implements ActivityChooserMod
     @Override
     protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
+
+        if (DBG) {
+            Log.d(LOG_TAG, "onDetachedFromWindow");
+        }
+
         ActivityChooserModel dataModel = mAdapter.getDataModel();
         if (dataModel != null) {
             dataModel.unregisterObserver(mModelDataSetOberver);
@@ -549,7 +598,19 @@ public class ActivityChooserView extends ViewGroup implements ActivityChooserMod
         // Default activity button.
         final int activityCount = mAdapter.getActivityCount();
         final int historySize = mAdapter.getHistorySize();
-        if (activityCount==1 || activityCount > 1 && historySize > 0) {
+        //Modified : Rcse Plugin for higher priority on share list
+        boolean checkCount = false;
+        if (mRCSePriorityExt != null) {
+            if (DBG) {
+                Log.e(LOG_TAG, "RCSe Plugin not null, No need to check previous history");
+            }
+            checkCount = activityCount >= 1;
+        } else {
+            checkCount = activityCount == 1 || activityCount > 1
+                    && historySize > 0;
+        }
+        /// M: HotKnot, for recent button
+        if (mRecentButtonEnabled == true && checkCount) {
             mDefaultActivityButton.setVisibility(VISIBLE);
             ResolveInfo activity = mAdapter.getDefaultActivity();
             PackageManager packageManager = mContext.getPackageManager();
@@ -562,12 +623,22 @@ public class ActivityChooserView extends ViewGroup implements ActivityChooserMod
             }
         } else {
             mDefaultActivityButton.setVisibility(View.GONE);
+
+            /// M: HotKnot, for recent button
+            if (activityCount > 0) {
+                mExpandActivityOverflowButton.setEnabled(true);
+            }
         }
         // Activity chooser content.
         if (mDefaultActivityButton.getVisibility() == VISIBLE) {
             mActivityChooserContent.setBackground(mActivityChooserContentBackground);
         } else {
             mActivityChooserContent.setBackground(null);
+        }
+
+        if (DBG) {
+            Log.d(LOG_TAG, "updateAppearance, mRecentButtonEnabled = " + mRecentButtonEnabled +
+                    ", checkCount = " + checkCount + ", backtrace = " + Debug.getCallers(5));
         }
     }
 
@@ -579,6 +650,10 @@ public class ActivityChooserView extends ViewGroup implements ActivityChooserMod
 
         // AdapterView#OnItemClickListener
         public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+            if (DBG) {
+                Log.d(LOG_TAG, "Callbacks.onItemClick");
+            }
+
             ActivityChooserViewAdapter adapter = (ActivityChooserViewAdapter) parent.getAdapter();
             final int itemViewType = adapter.getItemViewType(position);
             switch (itemViewType) {
@@ -611,6 +686,10 @@ public class ActivityChooserView extends ViewGroup implements ActivityChooserMod
 
         // View.OnClickListener
         public void onClick(View view) {
+            if (DBG) {
+                Log.d(LOG_TAG, "Callbacks.onClick, view = " + view);
+            }
+
             if (view == mDefaultActivityButton) {
                 dismissPopup();
                 ResolveInfo defaultActivity = mAdapter.getDefaultActivity();
@@ -619,6 +698,8 @@ public class ActivityChooserView extends ViewGroup implements ActivityChooserMod
                 if (launchIntent != null) {
                     launchIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_WHEN_TASK_RESET);
                     startActivity(launchIntent, defaultActivity);
+                    /// M: disable button to prevent from multiple clicks
+                    mDefaultActivityButton.setEnabled(false);
                 }
             } else if (view == mExpandActivityOverflowButton) {
                 mIsSelectingDefaultActivity = false;
@@ -631,7 +712,15 @@ public class ActivityChooserView extends ViewGroup implements ActivityChooserMod
         // OnLongClickListener#onLongClick
         @Override
         public boolean onLongClick(View view) {
+            if (DBG) {
+                Log.d(LOG_TAG, "Callbacks.onLongClick");
+            }
+
             if (view == mDefaultActivityButton) {
+                /// M: HotKnot, for recent button
+                if (mRecentButtonEnabled == false) {
+                    return false;
+                }
                 if (mAdapter.getCount() > 0) {
                     mIsSelectingDefaultActivity = true;
                     showPopupUnchecked(mInitialActivityCount);
@@ -644,6 +733,10 @@ public class ActivityChooserView extends ViewGroup implements ActivityChooserMod
 
         // PopUpWindow.OnDismissListener#onDismiss
         public void onDismiss() {
+            if (DBG) {
+                Log.d(LOG_TAG, "Callbacks.onDismiss");
+            }
+
             notifyOnDismissListener();
             if (mProvider != null) {
                 mProvider.subUiVisibilityChanged(false);
@@ -651,6 +744,10 @@ public class ActivityChooserView extends ViewGroup implements ActivityChooserMod
         }
 
         private void notifyOnDismissListener() {
+            if (DBG) {
+                Log.d(LOG_TAG, "Callbacks.notifyOnDismissListener");
+            }
+
             if (mOnDismissListener != null) {
                 mOnDismissListener.onDismiss();
             }
@@ -667,6 +764,24 @@ public class ActivityChooserView extends ViewGroup implements ActivityChooserMod
                 Toast.makeText(mContext, message, Toast.LENGTH_SHORT).show();
             }
         }
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasWindowFocus) {
+        super.onWindowFocusChanged(hasWindowFocus);
+        if (hasWindowFocus) {
+            mDefaultActivityButton.setEnabled(true);
+        }
+    }
+
+    /**
+     * Set if recent button should be displayed (used by HotKnot).
+     *
+     * @param enable Enable recent button or not.
+     */
+    public void setRecentButtonEnabled(boolean enable) {
+        mRecentButtonEnabled = enable;
+        updateAppearance();
     }
 
     /**
@@ -695,6 +810,11 @@ public class ActivityChooserView extends ViewGroup implements ActivityChooserMod
         private boolean mShowFooterView;
 
         public void setDataModel(ActivityChooserModel dataModel) {
+            if (DBG) {
+                Log.d(LOG_TAG, "ActivityChooserViewAdapter.setDataModel" +
+                        ", dataModel = " + dataModel + ", isShown = " + isShown());
+            }
+
             ActivityChooserModel oldDataModel = mAdapter.getDataModel();
             if (oldDataModel != null && isShown()) {
                 oldDataModel.unregisterObserver(mModelDataSetOberver);

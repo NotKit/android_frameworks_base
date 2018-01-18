@@ -19,6 +19,11 @@ extern jfieldID gOptions_heightFieldID;
 extern jfieldID gOptions_mimeFieldID;
 extern jfieldID gOptions_mCancelID;
 extern jfieldID gOptions_bitmapFieldID;
+#ifdef MTK_IMAGE_ENABLE_PQ_FOR_JPEG
+extern jfieldID gOptions_postprocFieldID;
+extern jfieldID gOptions_postprocflagFieldID;
+#endif
+
 
 jstring encodedFormatToString(JNIEnv* env, SkEncodedFormat format);
 

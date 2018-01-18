@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,6 +20,10 @@
  */
 
 package android.database;
+/// M: Debug for StaleDataException @{
+import android.util.Log;
+import android.os.Build;
+/// M: }@
 
 /**
  * A base class for Cursors that store their data in {@link CursorWindow}s.
@@ -38,6 +47,12 @@ public abstract class AbstractWindowedCursor extends AbstractCursor {
      * The cursor window owned by this cursor.
      */
     protected CursorWindow mWindow;
+
+    /// M: Debug for StaleDataException @{
+    private Throwable mWindowCloseTrace;
+    private static final boolean DEBUG_CLOSE_TRACE = Log.isLoggable("DBStaleDataTrace", Log.VERBOSE);
+    private static final boolean DEBUG_IS_ENG_BUILD = "eng".equals(Build.TYPE);
+    /// M: }@
 
     @Override
     public byte[] getBlob(int columnIndex) {
@@ -136,6 +151,12 @@ public abstract class AbstractWindowedCursor extends AbstractCursor {
         super.checkPosition();
         
         if (mWindow == null) {
+            /// M: Debug for StaleDataException @{
+            if (DEBUG_IS_ENG_BUILD || DEBUG_CLOSE_TRACE) {
+                Log.v("CursorOrCursorWindowClosed", "CursorWindow close stack trace", mWindowCloseTrace);
+            }
+            /// M: }@
+
             throw new StaleDataException("Attempting to access a closed CursorWindow." +
                     "Most probable cause: cursor is deactivated prior to calling this method.");
         }
@@ -183,6 +204,12 @@ public abstract class AbstractWindowedCursor extends AbstractCursor {
         if (mWindow != null) {
             mWindow.close();
             mWindow = null;
+
+            /// M: Debug for StaleDataException @{
+            if (DEBUG_IS_ENG_BUILD || DEBUG_CLOSE_TRACE) {
+                mWindowCloseTrace = new Throwable("stacktrace");
+            }
+            /// M: }@
         }
     }
 

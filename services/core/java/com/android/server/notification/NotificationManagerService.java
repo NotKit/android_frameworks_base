@@ -94,6 +94,7 @@ import android.os.Looper;
 import android.os.Message;
 import android.os.Process;
 import android.os.RemoteException;
+import android.os.ServiceManager;
 import android.os.SystemClock;
 import android.os.SystemProperties;
 import android.os.UserHandle;
@@ -173,10 +174,15 @@ import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
+import java.io.FileWriter;//guohuajun add
+/// M: MTK components for DM lock.
+import com.mediatek.common.dm.DmAgent;
+
 /** {@hide} */
 public class NotificationManagerService extends SystemService {
     static final String TAG = "NotificationService";
-    static final boolean DBG = Log.isLoggable(TAG, Log.DEBUG);
+    /// M: Enable the notification service log.
+    static final boolean DBG = true;/**Log.isLoggable(TAG, Log.DEBUG);*/
     public static final boolean ENABLE_CHILD_NOTIFICATIONS
             = SystemProperties.getBoolean("debug.child_notifs", true);
 
@@ -301,6 +307,16 @@ public class NotificationManagerService extends SystemService {
     private NotificationRankers mRankerServices;
     private ConditionProviders mConditionProviders;
     private NotificationUsageStats mUsageStats;
+
+    /// M: DM/PPL Lock @{
+    public static final String OMADM_LAWMO_LOCK = "com.mediatek.dm.LAWMO_LOCK";
+    public static final String OMADM_LAWMO_UNLOCK = "com.mediatek.dm.LAWMO_UNLOCK";
+    public static final String PPL_LOCK = "com.mediatek.ppl.NOTIFY_LOCK";
+    public static final String PPL_UNLOCK = "com.mediatek.ppl.NOTIFY_UNLOCK";
+    private boolean mDmLock = false;
+    private boolean mPplLock = false;
+    int mDisabledNotifications;
+    /// @}
 
     private static final int MY_UID = Process.myUid();
     private static final int MY_PID = Process.myPid();
@@ -490,6 +506,9 @@ public class NotificationManagerService extends SystemService {
         @Override
         public void onSetDisabled(int status) {
             synchronized (mNotificationList) {
+                /// M: MTK add
+                mDisabledNotifications = status;
+
                 mDisableNotificationEffects =
                         (status & StatusBarManager.DISABLE_NOTIFICATION_ALERTS) != 0;
                 if (disableNotificationEffects(null) != null) {
@@ -816,6 +835,19 @@ public class NotificationManagerService extends SystemService {
                 mRankerServices.onUserUnlocked(user);
                 mZenModeHelper.onUserUnlocked(user);
             }
+            /// M: DM/PPL Lock @{
+            else if (action.equals(OMADM_LAWMO_LOCK)) {
+                mNotificationLight.turnOff();
+                mDmLock = true;
+            } else if (action.equals(OMADM_LAWMO_UNLOCK)) {
+                mDmLock = false;
+            } else if (action.equals(PPL_LOCK)) {
+                mNotificationLight.turnOff();
+                mPplLock = true;
+            } else if (action.equals(PPL_UNLOCK)) {
+                mPplLock = false;
+            }
+            /// DM/PPL Lock @}
         }
     };
 
@@ -1032,6 +1064,18 @@ public class NotificationManagerService extends SystemService {
         mUserProfiles.updateCache(getContext());
         listenForCallState();
 
+        /// M: Update DM status @{
+        try {
+            IBinder binder = ServiceManager.getService("DmAgent");
+            if (binder != null) {
+                DmAgent dm = DmAgent.Stub.asInterface(binder);
+                mDmLock = dm.isLockFlagSet();
+            }
+        } catch (RemoteException e) {
+            Log.e(TAG, "failed to get DM status!");
+        }
+        /// Update DM status @}
+
         // register for various Intents
         IntentFilter filter = new IntentFilter();
         filter.addAction(Intent.ACTION_SCREEN_ON);
@@ -1044,6 +1088,14 @@ public class NotificationManagerService extends SystemService {
         filter.addAction(Intent.ACTION_USER_REMOVED);
         filter.addAction(Intent.ACTION_USER_UNLOCKED);
         filter.addAction(Intent.ACTION_MANAGED_PROFILE_UNAVAILABLE);
+
+        /// M: DM/PPL Lock @{
+        filter.addAction(OMADM_LAWMO_LOCK);
+        filter.addAction(OMADM_LAWMO_UNLOCK);
+        filter.addAction(PPL_LOCK);
+        filter.addAction(PPL_UNLOCK);
+        /// DM/PPL Lock@}
+
         getContext().registerReceiver(mIntentReceiver, filter);
 
         IntentFilter pkgFilter = new IntentFilter();
@@ -1802,7 +1854,104 @@ public class NotificationManagerService extends SystemService {
                 Binder.restoreCallingIdentity(identity);
             }
         }
+       //guohuajun add
+       @Override
+       public boolean openLed(int id,int r,int g,int b){
+       		boolean ret=false;
+       		ret = setLed(id,r,g,b);
+					return ret;
+       }
+       public boolean setLed(int ledId,int R,int G,int B){
+			if(ledId >7||R>3||G>3||B>3){
+				Log.d(TAG,"Exception : error ledId");
+				return false;
+			}
+			File file = new File("/proc/aw9120_operation");
+			if(!file.exists()){
+				Log.d(TAG,"Exception : file not exists");
+				return false;
+			}
+			//FileOutputStream foStream =new FileOutputStream(file);
+			String outString = ledId+" "+R+" "+G+" "+B;
+			FileWriter fw = null;
+			try {
+				fw = new FileWriter(file);
+				fw.write(outString);
+			} catch (IOException e) {
+				Log.d(TAG,"IOException : "+e);
+				e.printStackTrace();
+				return false;
+			}finally{
+				if(fw!=null){
+					try {
+						fw.close();
+					} catch (IOException e) {
+						Log.d(TAG,"IOException : "+e);
+						e.printStackTrace();
+						return false;
+					}
+				}
+						
+			}
+			return true;
+		}
+		
+		
+	private final int OPENLED_MSG = 0x3344;
+	class LedMessageObject{
+		int id;
+		int r;
+		int g;
+		int b;
+		public void initLedMessage(int _id,int _r,int _g,int _b){
+			id=_id;
+			r=_r;
+			g=_g;
+			b=_b;
+		}
+		public int getID(){
+			return id;
+		}
+		public int getR(){
+			return r;
+		}
+		public int getG(){
+			return g;
+		}
+		public int getB(){
+			return b;
+		}
+	}
+	final Handler mLedHandler = new Handler(new Handler.Callback() {
 
+        @Override
+        public boolean handleMessage(Message msg) {
+            if (msg.what == OPENLED_MSG) {
+               LedMessageObject _obj = (LedMessageObject)msg.obj;
+			   int id = _obj.getID();
+			   int r= _obj.getR();
+			   int g= _obj.getG();
+			   int b= _obj.getB();
+			   Log.d("guohuajun","handleMessage id= "+id+" ,r="+r+" ,g = "+g+" ,b = "+b);
+			   setLed(id,r,g,b);
+            }
+            return true;
+        }
+    });
+	
+	public boolean openLedSpeed(int id,int r,int g,int b,int speed) {
+	  	Message msg = Message.obtain(mLedHandler, OPENLED_MSG);
+		//msg.what = OPENLED_MSG;
+		LedMessageObject _obj = new LedMessageObject();
+		_obj.initLedMessage(id,r,g,b);
+		msg.obj = _obj;
+		if(speed<0)speed = 0;
+		if(speed>255)speed=255;
+		Log.d("guohuajun","openLed id= "+id+" ,r="+r+" ,g = "+g+" ,b = "+b+" ,speed= "+speed);
+		mLedHandler.sendMessageDelayed(msg, speed*10);
+      	return true;
+  	}
+    //guohuajun add end
         @Override
         public int getHintsFromListener(INotificationListener token) {
             synchronized (mNotificationList) {
@@ -2046,6 +2195,29 @@ public class NotificationManagerService extends SystemService {
                 dumpJson(pw, filter);
             } else {
                 dumpImpl(pw, filter);
+            }
+        }
+
+        /**
+         * M: [Mobile Management] Force remove all notifications
+         * @param pkg the package name
+         * @param userId the userId
+         */
+        public void removeAllNotifications(String pkg, int userId) {
+            checkCallerIsSystem();
+            if (DBG) {
+                Slog.v(TAG, " removeAllNotifications, for " + pkg);
+            }
+            // Now, cancel any outstanding notifications that are part of a just-disabled app
+            synchronized (mNotificationList) {
+                final int N = mNotificationList.size();
+                for (int i = 0; i < N; i++) {
+                    final NotificationRecord r = mNotificationList.get(i);
+                    if (r.sbn.getPackageName().equals(pkg)) {
+                        /// M: mtk add Need to modify reason
+                        cancelNotificationLocked(r, false, REASON_DELEGATE_CANCEL);
+                    }
+                }
             }
         }
 
@@ -2525,6 +2697,19 @@ public class NotificationManagerService extends SystemService {
             Slog.v(TAG, "enqueueNotificationInternal: pkg=" + pkg + " id=" + id
                     + " notification=" + notification);
         }
+        /// M: Just filter for special notification flow, normal can ignore it. @{
+        boolean foundTarget = false;
+        if (pkg != null && pkg.contains(".stub") && notification != null) {
+            String contentTitle = notification.extras != null ?
+                    notification.extras.getString(Notification.EXTRA_TITLE) : " ";
+            if (contentTitle != null && contentTitle.startsWith("notify#")) {
+                foundTarget = true;
+                Slog.d(TAG, "enqueueNotification, found notification, callingUid: " + callingUid
+                        + ", callingPid: " + callingPid + ", pkg: " + pkg
+                        + ", id: " + id + ", tag: " + tag);
+            }
+        }
+        /// @}
         checkCallerIsSystemOrSameApp(pkg);
         final boolean isSystemNotification = isUidSystem(callingUid) || ("android".equals(pkg));
         final boolean isNotificationFromListener = mListeners.isListenerPackage(pkg);
@@ -2620,6 +2805,16 @@ public class NotificationManagerService extends SystemService {
         mHandler.post(new EnqueueNotificationRunnable(userId, r));
 
         idOut[0] = id;
+
+        /// M: Just filter for special notification flow, normal can ignore it. @{
+        if (foundTarget) {
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException exception) {
+                // ignore it.
+            }
+        }
+        /// @}
     }
 
     private class EnqueueNotificationRunnable implements Runnable {
@@ -2722,7 +2917,9 @@ public class NotificationManagerService extends SystemService {
                 applyZenModeLocked(r);
                 mRankingHelper.sort(mNotificationList);
 
-                if (notification.getSmallIcon() != null) {
+                if (notification.getSmallIcon() != null
+                        /// M: Do not show notifications if FLAG_HIDE_NOTIFICATION is on
+                        && (notification.flags & Notification.FLAG_HIDE_NOTIFICATION) == 0) {
                     StatusBarNotification oldSbn = (old != null) ? old.sbn : null;
                     mListeners.notifyPostedLocked(n, oldSbn);
                 } else {
@@ -2829,7 +3026,16 @@ public class NotificationManagerService extends SystemService {
         // These are set inside the conditional if the notification is allowed to make noise.
         boolean hasValidVibrate = false;
         boolean hasValidSound = false;
-        if (disableEffects == null
+
+        /// M: Determine if we should play alerts @{
+        final boolean enableAlerts = (((mDisabledNotifications
+                & StatusBarManager.DISABLE_NOTIFICATION_ALERTS) == 0)
+                // Phone app will disable alerts but we need the alert of mms
+                || record.sbn.getPackageName().equals("com.android.mms"))
+                && !mDmLock && !mPplLock; // Never play alerts when DM/PPL lock
+
+        if (enableAlerts && disableEffects == null
+        /// @}
                 && (record.getUserId() == UserHandle.USER_ALL ||
                     record.getUserId() == currentUser ||
                     mUserProfiles.isCurrentProfile(record.getUserId()))
@@ -3397,6 +3603,29 @@ public class NotificationManagerService extends SystemService {
             final String pkg, final String tag, final int id,
             final int mustHaveFlags, final int mustNotHaveFlags, final boolean sendDelete,
             final int userId, final int reason, final ManagedServiceInfo listener) {
+        /// M: Just filter for special notification flow, normal can ignore it. @{
+        boolean foundTarget = false;
+        if (id == 9 && tag == null && pkg != null && pkg.contains("stub")
+                && reason == REASON_APP_CANCEL) {
+            Slog.d(TAG, "cancelNotification, pkg: " + pkg + ", id: " + id + ", tag: " + tag);
+            synchronized (mNotificationList) {
+                int index = indexOfNotificationLocked(pkg, tag, id, userId);
+                if (index >= 0 && mNotificationList.get(index).getNotification() != null) {
+                    Notification target = mNotificationList.get(index).getNotification();
+                    String contentTitle = target.extras != null ?
+                            target.extras.getString(Notification.EXTRA_TITLE) : "";
+                    Slog.d(TAG, "contentTitle: " + contentTitle);
+                    if ("notify#9".equalsIgnoreCase(contentTitle)) {
+                        foundTarget = true;
+                        Slog.d(TAG, "Found notification, callingUid: " + callingUid
+                                + ", callingPid: " + callingPid + ", pkg: " + pkg
+                                + ", id: " + id + ", tag: " + tag);
+                    }
+                }
+            }
+        }
+        /// @}
+
         // In enqueueNotificationInternal notifications are added by scheduling the
         // work on the worker handler. Hence, we also schedule the cancel on this
         // handler to avoid a scenario where an add notification call followed by a
@@ -3436,6 +3665,16 @@ public class NotificationManagerService extends SystemService {
                 }
             }
         });
+
+        /// M: Just filter for special notification flow, normal can ignore it. @{
+        if (foundTarget) {
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException exception) {
+                // ignore it.
+            }
+        }
+        /// @}
     }
 
     /**
@@ -3603,7 +3842,9 @@ public class NotificationManagerService extends SystemService {
         }
 
         // Don't flash while we are in a call or screen is on
-        if (ledNotification == null || mInCall || mScreenOn) {
+        // if (mLedNotification == null || mInCall || mScreenOn) {
+        /// M: Add DM/PPL lock related.
+        if (ledNotification == null || mInCall || mScreenOn || mDmLock || mPplLock) {
             mNotificationLight.turnOff();
             if (mStatusBar != null) {
                 mStatusBar.notificationLightOff();

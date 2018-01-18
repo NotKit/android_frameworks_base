@@ -38,6 +38,9 @@ import android.view.animation.Transformation;
 import java.io.PrintWriter;
 import java.util.ArrayList;
 
+/// M: Add import.
+import android.os.Trace;
+
 public class AppWindowAnimator {
     static final String TAG = TAG_WITH_CLASS_NAME ? "AppWindowAnimator" : TAG_WM;
 
@@ -416,9 +419,14 @@ public class AppWindowAnimator {
             mService.moveInputMethodWindowsIfNeededLocked(true);
         }
 
+        /// M: add systrace for animation start and end @{
+        Trace.traceBegin(Trace.TRACE_TAG_WINDOW_MANAGER | Trace.TRACE_TAG_PERF
+                , "app animation done : " + mAppToken.toString());
         if (DEBUG_ANIM) Slog.v(TAG,
                 "Animation done in " + mAppToken
                 + ": reportedVisible=" + mAppToken.reportedVisible);
+        Trace.traceEnd(Trace.TRACE_TAG_WINDOW_MANAGER | Trace.TRACE_TAG_PERF);
+        /// @}
 
         transformation.clear();
 
@@ -427,6 +435,12 @@ public class AppWindowAnimator {
             mAllAppWinAnimators.get(i).finishExit();
         }
         mService.mAppTransition.notifyAppTransitionFinishedLocked(mAppToken.token);
+
+        /// M: add for cache fast starting window
+        if (mAppToken != null && mAppToken.startingWindow != null) {
+            mService.cacheStartingWindow(mAppToken);
+        }
+
         return false;
     }
 

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2008 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -141,11 +146,20 @@ public class SntpClient
             //             = ((transit + skew) + (transmitTime - transmitTime - transit + skew))/2
             //             = (transit + skew - transit + skew)/2
             //             = (2 * skew)/2 = skew
-            long clockOffset = ((receiveTime - originateTime) + (transmitTime - responseTime))/2;
+            ///M: ALPS00657881 bug fixed @{
+            long clockOffset = 0;
+
+            if (originateTime <= 0) {
+                Log.d(TAG, "originateTime: " + originateTime);
+                clockOffset = ((receiveTime - requestTime) + (transmitTime - responseTime)) / 2;
+            } else {
+                clockOffset = ((receiveTime - originateTime) + (transmitTime - responseTime)) / 2;
+            }
             if (DBG) {
                 Log.d(TAG, "round trip: " + roundTripTime + "ms, " +
                         "clock offset: " + clockOffset + "ms");
             }
+            ///@}
 
             // save our results - use the times on this side of the network latency
             // (response rather than request time)

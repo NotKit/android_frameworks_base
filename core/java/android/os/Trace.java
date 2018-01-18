@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2012 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -62,27 +67,34 @@ public final class Trace {
     /** @hide */
     public static final long TRACE_TAG_CAMERA = 1L << 10;
     /** @hide */
-    public static final long TRACE_TAG_HAL = 1L << 11;
+    public static final long TRACE_TAG_HWUI = 1L << 11;
+    /**
+     * @hide
+     * @internal
+     */
+    public static final long TRACE_TAG_PERF = 1L << 12;
     /** @hide */
-    public static final long TRACE_TAG_APP = 1L << 12;
+    public static final long TRACE_TAG_HAL = 1L << 13;
     /** @hide */
-    public static final long TRACE_TAG_RESOURCES = 1L << 13;
+    public static final long TRACE_TAG_APP = 1L << 14;
     /** @hide */
-    public static final long TRACE_TAG_DALVIK = 1L << 14;
+    public static final long TRACE_TAG_RESOURCES = 1L << 15;
     /** @hide */
-    public static final long TRACE_TAG_RS = 1L << 15;
+    public static final long TRACE_TAG_DALVIK = 1L << 16;
     /** @hide */
-    public static final long TRACE_TAG_BIONIC = 1L << 16;
+    public static final long TRACE_TAG_RS = 1L << 17;
     /** @hide */
-    public static final long TRACE_TAG_POWER = 1L << 17;
+    public static final long TRACE_TAG_BIONIC = 1L << 18;
     /** @hide */
-    public static final long TRACE_TAG_PACKAGE_MANAGER = 1L << 18;
+    public static final long TRACE_TAG_POWER = 1L << 19;
     /** @hide */
-    public static final long TRACE_TAG_SYSTEM_SERVER = 1L << 19;
+    public static final long TRACE_TAG_PACKAGE_MANAGER = 1L << 20;
     /** @hide */
-    public static final long TRACE_TAG_DATABASE = 1L << 20;
+    public static final long TRACE_TAG_SYSTEM_SERVER = 1L << 21;
     /** @hide */
-    public static final long TRACE_TAG_NETWORK = 1L << 21;
+    public static final long TRACE_TAG_DATABASE = 1L << 22;
+    /** @hide */
+    public static final long TRACE_TAG_NETWORK = 1L << 23;
 
     private static final long TRACE_TAG_NOT_READY = 1L << 63;
     private static final int MAX_SECTION_NAME_LEN = 127;

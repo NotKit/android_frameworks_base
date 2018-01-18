@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -1220,6 +1225,16 @@ public class DevicePolicyManager {
      * Note that quality constants are ordered so that higher values are more restrictive.
      */
     public static final int PASSWORD_QUALITY_BIOMETRIC_WEAK = 0x8000;
+
+    /**
+     * M:
+     * Constant for {@link #setPasswordQuality}: the policy allows for low-security voice
+     * recognition technology. Note that quality constants are ordered so that higher
+     * values are more restrictive.
+     * @hide
+     * @internal
+     */
+    public static final int PASSWORD_QUALITY_VOICE_WEAK = 0x4000;
 
     /**
      * Constant for {@link #setPasswordQuality}: the policy requires some kind

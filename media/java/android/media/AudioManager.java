@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,6 +37,7 @@ import android.media.session.MediaController;
 import android.media.session.MediaSession;
 import android.media.session.MediaSessionLegacyHelper;
 import android.media.session.MediaSessionManager;
+import android.os.Build;
 import android.os.Binder;
 import android.os.Handler;
 import android.os.IBinder;
@@ -40,6 +46,7 @@ import android.os.Message;
 import android.os.Process;
 import android.os.RemoteException;
 import android.os.SystemClock;
+import android.os.SystemProperties;
 import android.os.ServiceManager;
 import android.os.UserHandle;
 import android.provider.Settings;
@@ -62,13 +69,23 @@ import java.util.List;
  */
 public class AudioManager {
 
+    private static String TAG = "AudioManager";
+    /// M: Add for control debug log, only default enable it on eng/userdebug load. @{
+    private static final boolean LOGD = !"user".equals(Build.TYPE);
+    private static final boolean DEBUG = Log.isLoggable(TAG, Log.DEBUG) || LOGD;
+    /// @}
+
     private Context mOriginalContext;
     private Context mApplicationContext;
     private long mVolumeKeyUpTime;
     private final boolean mUseVolumeKeySounds;
     private final boolean mUseFixedVolume;
-    private static String TAG = "AudioManager";
     private static final AudioPortEventHandler sAudioPortEventHandler = new AudioPortEventHandler();
+
+    /// M: Add for feature option @{
+    private static final boolean IS_DOLBY_DAP_SUPPORT =
+            SystemProperties.getBoolean("ro.mtk_dolby_dap_support", false);
+    /// @}
 
     /**
      * Broadcast intent, a hint for applications that audio is about to become
@@ -806,6 +823,7 @@ public class AudioManager {
      */
     public void adjustStreamVolume(int streamType, int direction, int flags) {
         IAudioService service = getService();
+        Log.d(TAG, "adjustStreamVolume: StreamType = " + streamType + ", direction = " + direction);
         try {
             service.adjustStreamVolume(streamType, direction, flags,
                     getContext().getOpPackageName());
@@ -838,6 +856,7 @@ public class AudioManager {
      * @see #isVolumeFixed()
      */
     public void adjustVolume(int direction, int flags) {
+        Log.d(TAG, "adjustVolume: Flags = " + flags + ", direction = " + direction);
         MediaSessionLegacyHelper helper = MediaSessionLegacyHelper.getHelper(getContext());
         helper.sendAdjustVolumeBy(USE_DEFAULT_STREAM_TYPE, direction, flags);
     }
@@ -867,6 +886,8 @@ public class AudioManager {
      * @see #isVolumeFixed()
      */
     public void adjustSuggestedStreamVolume(int direction, int suggestedStreamType, int flags) {
+        Log.d(TAG, "adjustSuggestedStreamVolume: Direction = " + direction
+                    + ", streamType = " + suggestedStreamType);
         MediaSessionLegacyHelper helper = MediaSessionLegacyHelper.getHelper(getContext());
         helper.sendAdjustVolumeBy(suggestedStreamType, direction, flags);
     }
@@ -1014,6 +1035,9 @@ public class AudioManager {
      * @see #isVolumeFixed()
      */
     public void setRingerMode(int ringerMode) {
+        if (DEBUG) {
+            Log.d(TAG, "setRingerMode: ringerMode = " + ringerMode);
+        }
         if (!isValidRingerMode(ringerMode)) {
             return;
         }
@@ -1041,6 +1065,10 @@ public class AudioManager {
      * @see #isVolumeFixed()
      */
     public void setStreamVolume(int streamType, int index, int flags) {
+        if (DEBUG) {
+            Log.d(TAG, "setStreamVolume: StreamType = " + streamType + ", index = " + index
+                    + ", flags = " + flags);
+        }
         IAudioService service = getService();
         try {
             service.setStreamVolume(streamType, index, flags, getContext().getOpPackageName());
@@ -1248,6 +1276,7 @@ public class AudioManager {
      */
     public void setSpeakerphoneOn(boolean on){
         IAudioService service = getService();
+        Log.d(TAG, "setSpeakerphoneOn(" + on + ")");
         try {
             service.setSpeakerphoneOn(on);
         } catch (RemoteException e) {
@@ -1401,6 +1430,9 @@ public class AudioManager {
      * @see #ACTION_SCO_AUDIO_STATE_UPDATED
      */
     public void startBluetoothSco(){
+        if (DEBUG) {
+            Log.d(TAG, "startBluetoothSco");
+        }
         IAudioService service = getService();
         try {
             service.startBluetoothSco(mICallBack,
@@ -1426,6 +1458,9 @@ public class AudioManager {
      * @see #ACTION_SCO_AUDIO_STATE_UPDATED
      */
     public void startBluetoothScoVirtualCall() {
+        if (DEBUG) {
+            Log.d(TAG, "startBluetoothScoVirtualCall");
+        }
         IAudioService service = getService();
         try {
             service.startBluetoothScoVirtualCall(mICallBack);
@@ -1445,6 +1480,9 @@ public class AudioManager {
      */
     // Also used for connections started with {@link #startBluetoothScoVirtualCall()}
     public void stopBluetoothSco(){
+        if (DEBUG) {
+            Log.d(TAG, "stopBluetoothSco");
+        }
         IAudioService service = getService();
         try {
             service.stopBluetoothSco(mICallBack);
@@ -1463,6 +1501,9 @@ public class AudioManager {
      *               <var>false</var> to not use bluetooth SCO for communications
      */
     public void setBluetoothScoOn(boolean on){
+        if (DEBUG) {
+            Log.d(TAG, "setBluetoothScoOn: on = " + on);
+        }
         IAudioService service = getService();
         try {
             service.setBluetoothScoOn(on);
@@ -1553,7 +1594,10 @@ public class AudioManager {
      * @param on set <var>true</var> to mute the microphone;
      *           <var>false</var> to turn mute off
      */
-    public void setMicrophoneMute(boolean on) {
+    public void setMicrophoneMute(boolean on){
+        if (DEBUG) {
+            Log.d(TAG, "setMicrophoneMute: on = " + on);
+        }
         IAudioService service = getService();
         try {
             service.setMicrophoneMute(on, getContext().getOpPackageName(),
@@ -1588,6 +1632,9 @@ public class AudioManager {
      *              it can route the audio appropriately.
      */
     public void setMode(int mode) {
+        if (DEBUG) {
+            Log.d(TAG, "setMode: mode = " + mode);
+        }
         IAudioService service = getService();
         try {
             service.setMode(mode, mICallBack, mApplicationContext.getOpPackageName());
@@ -1640,6 +1687,22 @@ public class AudioManager {
      * In communication audio mode. An audio/video chat or VoIP call is established.
      */
     public static final int MODE_IN_COMMUNICATION   = AudioSystem.MODE_IN_COMMUNICATION;
+    /**
+     * M: In call 2 audio mode for modem 2. A telephony call is established.
+     *
+     * @hide
+     */
+    public static final int MODE_IN_CALL_2          = AudioSystem.MODE_IN_CALL_2;
+
+    /// M: add MODE_IN_CALL_EXTERNAL for T+C @{
+    /**
+     * In call external audio mode for external modem. A telephony call is
+     * established.
+     *
+     * @hide
+     */
+    public static final int MODE_IN_CALL_EXTERNAL = AudioSystem.MODE_IN_CALL_EXTERNAL;
+    /// @}
 
     /* Routing bits for setRouting/getRouting API */
     /**
@@ -2186,6 +2249,30 @@ public class AudioManager {
             final Message m = mServiceEventHandlerDelegate.getHandler().obtainMessage(
                     MSSG_FOCUS_CHANGE/*what*/, focusChange/*arg1*/, 0/*arg2 ignored*/, id/*obj*/);
             mServiceEventHandlerDelegate.getHandler().sendMessage(m);
+            /// M: Add for MTK_DOLBY_DAP_SUPPORT @{
+            // Send an intent to DsService, keeping it informed of the audio focus change
+            if (IS_DOLBY_DAP_SUPPORT) {
+                Intent intent = new Intent("DS_AUDIO_FOCUS_CHANGE_ACTION");
+                intent.setPackage("com.dolby");
+                intent.putExtra("packageName", getContext().getOpPackageName());
+                switch (focusChange) {
+                    case AUDIOFOCUS_LOSS:
+                    case AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
+                    case AUDIOFOCUS_LOSS_TRANSIENT:
+                        intent.putExtra("focusChange", "loss");
+                        getContext().sendBroadcast(intent);
+                        break;
+                    case AUDIOFOCUS_GAIN:
+                    case AUDIOFOCUS_GAIN_TRANSIENT:
+                    case AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK:
+                        intent.putExtra("focusChange", "gain");
+                        getContext().sendBroadcast(intent);
+                        break;
+                    default:
+                        break;
+                }
+            }
+            /// @}
         }
 
     };
@@ -2463,10 +2550,23 @@ public class AudioManager {
      * Should match one or more calls to {@link #requestAudioFocusForCall(int, int)}.
      */
     public void abandonAudioFocusForCall() {
+        int status = AUDIOFOCUS_REQUEST_FAILED;
         IAudioService service = getService();
         try {
-            service.abandonAudioFocus(null, AudioSystem.IN_VOICE_COMM_FOCUS_ID,
+            status = service.abandonAudioFocus(null, AudioSystem.IN_VOICE_COMM_FOCUS_ID,
                     null /*AudioAttributes, legacy behavior*/);
+            /// M: Add for MTK_DOLBY_DAP_SUPPORT @{
+            // Send an intent to DsService, keeping it informed of the audio focus change
+            if (IS_DOLBY_DAP_SUPPORT) {
+                if (status == AUDIOFOCUS_REQUEST_GRANTED) {
+                    Intent intent = new Intent("DS_AUDIO_FOCUS_CHANGE_ACTION");
+                    intent.setPackage("com.dolby");
+                    intent.putExtra("packageName", getContext().getOpPackageName());
+                    intent.putExtra("focusChange", "abandon");
+                    getContext().sendBroadcast(intent);
+                }
+            }
+            /// @}
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
         }
@@ -2501,6 +2601,25 @@ public class AudioManager {
         }
         return status;
     }
+
+    /// M: Add for MTK_DOLBY_DAP_SUPPORT @{
+    /**
+     *  @hide
+     *  Check if the specified App obtains the focus.
+     *  @param packageName the package name of the App.
+     *  @return ture if the App obtains the focus.
+     */
+    public boolean isAppInFocus(String packageName) {
+        boolean isFocus = false;
+        IAudioService service = getService();
+        try {
+            isFocus = service.isAppInFocus(packageName);
+        } catch (RemoteException e) {
+            Log.e(TAG, "Can't call isAppInFocus() on AudioService due to " + e);
+        }
+        return isFocus;
+    }
+    /// @}
 
     //====================================================================
     // Remote Control
@@ -3246,6 +3365,10 @@ public class AudioManager {
      * {@hide}
      */
     public void setWiredDeviceConnectionState(int type, int state, String address, String name) {
+        if (DEBUG) {
+            Log.d(TAG, "setWiredDeviceConnectionState: type = " + type
+                    + ", state = " + state + " , address = " + address + ", name = " + name);
+        }
         IAudioService service = getService();
         try {
             service.setWiredDeviceConnectionState(type, state, address, name,
@@ -3268,6 +3391,10 @@ public class AudioManager {
      */
     public int setBluetoothA2dpDeviceConnectionState(BluetoothDevice device, int state,
             int profile) {
+        if (DEBUG) {
+            Log.d(TAG, "setBluetoothA2dpDeviceConnectionState: device = " + device
+                    + ", state = " + state);
+        }
         IAudioService service = getService();
         int delay = 0;
         try {
@@ -3365,6 +3492,40 @@ public class AudioManager {
     }
 
     /**
+      * M: Add to set audio to FMTX.
+      *
+      *  @return If success or not.
+      *  {@hide}
+      *
+      */
+     public boolean setAudioPathToFMTx() {
+         IAudioService service = getService();
+         try {
+             return service.setAudioPathToFMTx(mICallBack);
+         } catch (RemoteException e) {
+             Log.e(TAG, "Dead object in setAudioPathToFMTx" + e);
+             return false;
+         }
+     }
+
+     /**
+      * M: Add to set audio outof  FMTX.
+      *
+      *  @return If success or not.
+      *  {@hide}
+      *
+      */
+     public boolean setAudioPathOutofFMTx() {
+         IAudioService service = getService();
+         try {
+             return service.setAudioPathOutofFMTx();
+         } catch (RemoteException e) {
+             Log.e(TAG, "Dead object in setAudioPathOutofFMTx" + e);
+             return false;
+         }
+     }
+
+    /**
      * Returns the estimated latency for the given stream type in milliseconds.
      *
      * DO NOT UNHIDE. The existing approach for doing A/V sync has too many problems. We need
@@ -3443,6 +3604,9 @@ public class AudioManager {
      * @hide
      */
     public void setRingerModeInternal(int ringerMode) {
+        if (DEBUG) {
+            Log.d(TAG, "setRingerModeInternal: ringerMode = " + ringerMode);
+        }
         try {
             getService().setRingerModeInternal(ringerMode, getContext().getOpPackageName());
         } catch (RemoteException e) {
@@ -3482,6 +3646,9 @@ public class AudioManager {
      * @hide
      */
     public int setHdmiSystemAudioSupported(boolean on) {
+        if (DEBUG) {
+            Log.d(TAG, "setHdmiSystemAudioSupported: on = " + on);
+        }
         try {
             return getService().setHdmiSystemAudioSupported(on);
         } catch (RemoteException e) {

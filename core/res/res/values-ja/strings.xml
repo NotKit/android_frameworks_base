@@ -1102,8 +1102,8 @@
     <string name="decline" msgid="2112225451706137894">"同意しない"</string>
     <string name="wifi_p2p_invitation_sent_title" msgid="1318975185112070734">"招待状を送信しました"</string>
     <string name="wifi_p2p_invitation_to_connect_title" msgid="4958803948658533637">"接続への招待"</string>
-    <string name="wifi_p2p_from_message" msgid="570389174731951769">"From:"</string>
-    <string name="wifi_p2p_to_message" msgid="248968974522044099">"To:"</string>
+    <string name="wifi_p2p_from_message" msgid="570389174731951769">"から:"</string>
+    <string name="wifi_p2p_to_message" msgid="248968974522044099">"へ:"</string>
     <string name="wifi_p2p_enter_pin_message" msgid="5920929550367828970">"必要なPINを入力してください:"</string>
     <string name="wifi_p2p_show_pin_message" msgid="8530563323880921094">"PIN:"</string>
     <string name="wifi_p2p_frequency_conflict_message" product="tablet" msgid="8012981257742232475">"タブレットが<xliff:g id="DEVICE_NAME">%1$s</xliff:g>に接続されている間は一時的にWi-Fi接続が切断されます"</string>

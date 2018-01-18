@@ -278,7 +278,9 @@ public class ActionMenuItemView extends TextView
         final int midy = screenPos[1] + height / 2;
         int referenceX = screenPos[0] + width / 2;
         if (v.getLayoutDirection() == View.LAYOUT_DIRECTION_LTR) {
-            final int screenWidth = context.getResources().getDisplayMetrics().widthPixels;
+            /// M: It should use whole screen width but not app window width.
+            ///    Otherwise, multi-window will have problem of toast position.
+            final int screenWidth = Resources.getSystem().getDisplayMetrics().widthPixels;
             referenceX = screenWidth - referenceX; // mirror
         }
         Toast cheatSheet = Toast.makeText(context, mItemData.getTitle(), Toast.LENGTH_SHORT);

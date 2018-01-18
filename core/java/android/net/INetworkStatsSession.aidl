@@ -43,4 +43,6 @@ interface INetworkStatsSession {
 
     void close();
 
+    /**M: Return usage summary for sim slot. */
+    long getMobileTotalBytes(int subSim,long start_time,long end_time);
 }

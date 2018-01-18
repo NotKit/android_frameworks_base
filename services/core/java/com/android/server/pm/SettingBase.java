@@ -21,6 +21,8 @@ import android.content.pm.ApplicationInfo;
 abstract class SettingBase {
     int pkgFlags;
     int pkgPrivateFlags;
+    /// M: [FlagExt] Flags for MTK internal use
+    int pkgFlagsEx;
 
     protected final PermissionsState mPermissionsState;
 
@@ -30,9 +32,18 @@ abstract class SettingBase {
         mPermissionsState = new PermissionsState();
     }
 
+    /// M: [FlagExt] Additional constructor for MTK flags
+    SettingBase(int pkgFlags, int pkgPrivateFlags, int pkgFlagsEx) {
+        setFlags(pkgFlags);
+        setPrivateFlags(pkgPrivateFlags);
+        setFlagsEx(pkgFlagsEx);
+        mPermissionsState = new PermissionsState();
+    }
+
     SettingBase(SettingBase base) {
         pkgFlags = base.pkgFlags;
         pkgPrivateFlags = base.pkgPrivateFlags;
+        pkgFlagsEx = base.pkgFlagsEx;
         mPermissionsState = new PermissionsState(base.mPermissionsState);
     }
 
@@ -51,5 +62,10 @@ abstract class SettingBase {
                 & (ApplicationInfo.PRIVATE_FLAG_PRIVILEGED
                 | ApplicationInfo.PRIVATE_FLAG_FORWARD_LOCK
                 | ApplicationInfo.PRIVATE_FLAG_REQUIRED_FOR_SYSTEM_USER);
+    }
+
+    /// M: [FlagExt] mtkFlags set up function
+    void setFlagsEx(int pkgFlagsEx) {
+        this.pkgFlagsEx = pkgFlagsEx;
     }
 }

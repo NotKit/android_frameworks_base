@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,6 +24,7 @@ package android.telephony;
 import android.os.Bundle;
 import android.os.RemoteException;
 import android.os.ServiceManager;
+import android.util.Log;
 
 import android.telephony.cdma.CdmaCellLocation;
 import android.telephony.gsm.GsmCellLocation;
@@ -29,6 +35,11 @@ import com.android.internal.telephony.PhoneConstants;
  * Abstract class that represents the location of the device.  {@more}
  */
 public abstract class CellLocation {
+    /// M: @{
+    private static final String TAG = "CellLocation";
+    /** @hide */
+    protected int mType;
+    /// @}
 
     /**
      * Request an update of the current location.  If the location has changed,
@@ -52,6 +63,8 @@ public abstract class CellLocation {
      * This method is used by PhoneStateIntentReceiver and maybe by
      * external applications.
      *
+     * M: Replace getCurrentPhoneType method with bundle object.
+     *
      * @param bundle Bundle from intent notifier
      * @return newly created CellLocation
      *
@@ -60,12 +73,16 @@ public abstract class CellLocation {
     public static CellLocation newFromBundle(Bundle bundle) {
         // TelephonyManager.getDefault().getCurrentPhoneType() handles the case when
         // ITelephony interface is not up yet.
-        switch(TelephonyManager.getDefault().getCurrentPhoneType()) {
+        //switch(TelephonyManager.getDefault().getCurrentPhoneType()) {
+        switch(bundle.getInt("type", PhoneConstants.PHONE_TYPE_NONE)) {
         case PhoneConstants.PHONE_TYPE_CDMA:
+            Log.e(TAG, "create CdmaCellLocation");
             return new CdmaCellLocation(bundle);
         case PhoneConstants.PHONE_TYPE_GSM:
+            Log.e(TAG, "create GsmCellLocation");
             return new GsmCellLocation(bundle);
         default:
+            Log.e(TAG, "create null");
             return null;
         }
     }

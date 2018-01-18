@@ -1,4 +1,10 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -46,6 +52,7 @@ import android.content.pm.ProviderInfo;
 import android.content.pm.UserInfo;
 import android.content.res.Configuration;
 import android.content.res.ObbInfo;
+import android.hardware.usb.UsbManager;
 import android.net.Uri;
 import android.os.Binder;
 import android.os.DropBoxManager;
@@ -89,6 +96,7 @@ import android.util.Log;
 import android.util.Slog;
 import android.util.TimeUtils;
 import android.util.Xml;
+import android.widget.Toast;
 
 import com.android.internal.annotations.GuardedBy;
 import com.android.internal.app.IMediaContainerService;
@@ -143,6 +151,10 @@ import javax.crypto.SecretKey;
 import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
 
+import com.google.android.collect.Lists;
+
+import com.mediatek.storage.StorageManagerEx;
+
 /**
  * Service responsible for various storage media. Connects to {@code vold} to
  * watch for and manage dynamically added storage, such as SD cards and USB mass
@@ -156,6 +168,7 @@ class MountService extends IMountService.Stub
 
     public static class Lifecycle extends SystemService {
         private MountService mMountService;
+        private String oldDefaultPath = "";
 
         public Lifecycle(Context context) {
             super(context);
@@ -163,17 +176,31 @@ class MountService extends IMountService.Stub
 
         @Override
         public void onStart() {
+            Slog.d(TAG, "MountService onStart");
+            sSelf.isBootingPhase = true;
             mMountService = new MountService(getContext());
             publishBinderService("mount", mMountService);
             mMountService.start();
+            oldDefaultPath = sSelf.getDefaultPath();
+            Slog.d(TAG, "get Default path onStart default path=" + oldDefaultPath);
         }
 
         @Override
         public void onBootPhase(int phase) {
+            Slog.d(TAG, "MountService onBootPhase");
             if (phase == SystemService.PHASE_ACTIVITY_MANAGER_READY) {
                 mMountService.systemReady();
             } else if (phase == SystemService.PHASE_BOOT_COMPLETED) {
                 mMountService.bootCompleted();
+            }
+            if (phase == SystemService.PHASE_BOOT_COMPLETED) {
+                Slog.d(TAG, "MountService onBootPhase: PHASE_BOOT_COMPLETED");
+                sSelf.isBootingPhase = false;
+                if (!oldDefaultPath.contains("emulated") && !"".equals(oldDefaultPath)) {
+                    Slog.d(TAG, "set defaut path to " + oldDefaultPath);
+                    sSelf.setDefaultPath(oldDefaultPath);
+                    sSelf.updateDefaultPathIfNeed();
+                }
             }
         }
 
@@ -184,17 +211,19 @@ class MountService extends IMountService.Stub
 
         @Override
         public void onUnlockUser(int userHandle) {
+            Slog.d(TAG, "MountService onUnlockUser, userHandle=" + userHandle);
             mMountService.onUnlockUser(userHandle);
         }
 
         @Override
         public void onCleanupUser(int userHandle) {
+            Slog.d(TAG, "MountService onCleanupUser, userHandle=" + userHandle);
             mMountService.onCleanupUser(userHandle);
         }
     }
 
-    private static final boolean DEBUG_EVENTS = false;
-    private static final boolean DEBUG_OBB = false;
+    private static final boolean DEBUG_EVENTS = true;
+    private static final boolean DEBUG_OBB = true;
 
     // Disable this since it messes up long-running cryptfs operations.
     private static final boolean WATCHDOG_ENABLE = false;
@@ -608,14 +637,17 @@ class MountService extends IMountService.Stub
         public void handleMessage(Message msg) {
             switch (msg.what) {
                 case H_SYSTEM_READY: {
+                    Slog.i(TAG, "handleMessage:H_SYSTEM_READY");
                     handleSystemReady();
                     break;
                 }
                 case H_DAEMON_CONNECTED: {
+                    Slog.i(TAG, "H_DAEMON_CONNECTED");
                     handleDaemonConnected();
                     break;
                 }
                 case H_FSTRIM: {
+                    Slog.i(TAG, "H_FSTRIM");
                     if (!isReady()) {
                         Slog.i(TAG, "fstrim requested, but no daemon connection yet; trying again");
                         sendMessageDelayed(obtainMessage(H_FSTRIM, msg.obj),
@@ -651,6 +683,8 @@ class MountService extends IMountService.Stub
                     break;
                 }
                 case H_SHUTDOWN: {
+                    Slog.i(TAG, "H_SHUTDOWN");
+                    isShuttingDown = true;
                     final IMountShutdownObserver obs = (IMountShutdownObserver) msg.obj;
                     boolean success = false;
                     try {
@@ -663,18 +697,39 @@ class MountService extends IMountService.Stub
                         } catch (RemoteException ignored) {
                         }
                     }
+                    Slog.i(TAG, "finsh shut down");
+                    isShuttingDown = false;
                     break;
                 }
                 case H_VOLUME_MOUNT: {
+                    Slog.i(TAG, "H_VOLUME_MOUNT");
                     final VolumeInfo vol = (VolumeInfo) msg.obj;
                     if (isMountDisallowed(vol)) {
                         Slog.i(TAG, "Ignoring mount " + vol.getId() + " due to policy");
                         break;
                     }
+                    int rc = StorageResultCode.OperationSucceeded;
                     try {
                         mConnector.execute("volume", "mount", vol.id, vol.mountFlags,
                                 vol.mountUserId);
                     } catch (NativeDaemonConnectorException ignored) {
+                        rc = ignored.getCode();
+                        Slog.w(TAG, "mount volume fail, ignored=" + ignored);
+                    }
+                    if (rc == StorageResultCode.OperationSucceeded) {
+                        VolumeInfo curVol = null;
+                        synchronized (mLock) {
+                            curVol = mVolumes.get(vol.getId());
+                        }
+                        if (isShowDefaultPathDialog(curVol)) {
+                            showDefaultPathDialog(curVol);
+                        }
+                    } else {
+                        // if mount fail, for other volume mount operation
+                        // should not marked as disk insert
+                        isDiskInsert = false;
+                        Slog.w(TAG, "mount volume fail, vol=" + vol
+                                + ", return code=" + rc);
                     }
                     break;
                 }
@@ -684,6 +739,7 @@ class MountService extends IMountService.Stub
                     break;
                 }
                 case H_VOLUME_BROADCAST: {
+                    Slog.i(TAG, "H_VOLUME_BROADCAST");
                     final StorageVolume userVol = (StorageVolume) msg.obj;
                     final String envState = userVol.getState();
                     Slog.d(TAG, "Volume " + userVol.getId() + " broadcasting " + envState + " to "
@@ -695,6 +751,8 @@ class MountService extends IMountService.Stub
                                 Uri.fromFile(userVol.getPathFile()));
                         intent.putExtra(StorageVolume.EXTRA_STORAGE_VOLUME, userVol);
                         intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
+                        Slog.i(TAG, "sendBroadcastAsUser, intent=" + intent
+                                + ", userVol=" + userVol);
                         mContext.sendBroadcastAsUser(intent, userVol.getOwner());
                     }
                     break;
@@ -731,6 +789,7 @@ class MountService extends IMountService.Stub
 
             try {
                 if (Intent.ACTION_USER_ADDED.equals(action)) {
+                    Slog.i(TAG, "onReceive:ACTION_USER_ADDED");
                     final UserManager um = mContext.getSystemService(UserManager.class);
                     final int userSerialNumber = um.getUserSerialNumber(userId);
                     mConnector.execute("volume", "user_added", userId, userSerialNumber);
@@ -745,7 +804,12 @@ class MountService extends IMountService.Stub
                             }
                         }
                     }
+                    Slog.i(TAG, "onReceive:ACTION_USER_REMOVED");
                     mConnector.execute("volume", "user_removed", userId);
+                } else if (Intent.ACTION_USER_SWITCHED.equals(action)) {
+                    Slog.i(TAG, "ACTION_USER_SWITCHED");
+                    mCurrentUserId = userId;
+                    updateDefaultPathForUserSwitch();
                 }
             } catch (NativeDaemonConnectorException e) {
                 Slog.w(TAG, "Failed to send user details to vold", e);
@@ -801,6 +865,15 @@ class MountService extends IMountService.Stub
     private void handleSystemReady() {
         initIfReadyAndConnected();
         resetIfReadyAndConnected();
+
+        /*
+         * If UMS was connected on boot
+         * send the connected broadcast when system ready
+         */
+        if (mSendUmsConnectedOnBoot) {
+            sendUmsIntent(true);
+            mSendUmsConnectedOnBoot = false;
+        }
 
         // Start scheduling nominally-daily fstrim operations
         MountServiceIdler.scheduleIdlePass(mContext);
@@ -976,6 +1049,7 @@ class MountService extends IMountService.Stub
     }
 
     private void handleDaemonConnected() {
+        Slog.i(TAG, "handleDaemonConnected");
         initIfReadyAndConnected();
         resetIfReadyAndConnected();
 
@@ -1049,6 +1123,7 @@ class MountService extends IMountService.Stub
     private boolean onEventLocked(int code, String raw, String[] cooked) {
         switch (code) {
             case VoldResponseCode.DISK_CREATED: {
+                Slog.d(TAG, "DISK_CREATED");
                 if (cooked.length != 3) break;
                 final String id = cooked[1];
                 int flags = Integer.parseInt(cooked[2]);
@@ -1061,17 +1136,23 @@ class MountService extends IMountService.Stub
                     flags &= ~DiskInfo.FLAG_ADOPTABLE;
                 }
                 mDisks.put(id, new DiskInfo(id, flags));
+                Slog.d(TAG, "create diskInfo=" + mDisks.get(id));
+                isDiskInsert = true;
                 break;
             }
             case VoldResponseCode.DISK_SIZE_CHANGED: {
+                Slog.d(TAG, "DISK_SIZE_CHANGED");
                 if (cooked.length != 3) break;
                 final DiskInfo disk = mDisks.get(cooked[1]);
                 if (disk != null) {
+                    Slog.d(TAG, "disk size change from + " + disk.size
+                            + " to " + Long.parseLong(cooked[2]));
                     disk.size = Long.parseLong(cooked[2]);
                 }
                 break;
             }
             case VoldResponseCode.DISK_LABEL_CHANGED: {
+                Slog.d(TAG, "DISK_LABEL_CHANGED");
                 final DiskInfo disk = mDisks.get(cooked[1]);
                 if (disk != null) {
                     final StringBuilder builder = new StringBuilder();
@@ -1079,10 +1160,13 @@ class MountService extends IMountService.Stub
                         builder.append(cooked[i]).append(' ');
                     }
                     disk.label = builder.toString().trim();
+                    Slog.d(TAG, "DISK_LABEL_CHANGED, new label = " + disk.label +
+                            ", diskInfo=" + disk);
                 }
                 break;
             }
             case VoldResponseCode.DISK_SCANNED: {
+                Slog.d(TAG, "DISK_SCANNED");
                 if (cooked.length != 2) break;
                 final DiskInfo disk = mDisks.get(cooked[1]);
                 if (disk != null) {
@@ -1099,15 +1183,18 @@ class MountService extends IMountService.Stub
                 break;
             }
             case VoldResponseCode.DISK_DESTROYED: {
+                Slog.d(TAG, "DISK_DESTROYED");
                 if (cooked.length != 2) break;
                 final DiskInfo disk = mDisks.remove(cooked[1]);
                 if (disk != null) {
                     mCallbacks.notifyDiskDestroyed(disk);
                 }
+                updateDefaultPathIfNeed();
                 break;
             }
 
             case VoldResponseCode.VOLUME_CREATED: {
+                Slog.d(TAG, "VOLUME_CREATED");
                 final String id = cooked[1];
                 final int type = Integer.parseInt(cooked[2]);
                 final String diskId = TextUtils.nullIfEmpty(cooked[3]);
@@ -1117,9 +1204,11 @@ class MountService extends IMountService.Stub
                 final VolumeInfo vol = new VolumeInfo(id, type, disk, partGuid);
                 mVolumes.put(id, vol);
                 onVolumeCreatedLocked(vol);
+                Slog.d(TAG, "create volumeInfo=" + mVolumes.get(id));
                 break;
             }
             case VoldResponseCode.VOLUME_STATE_CHANGED: {
+                Slog.d(TAG, "VOLUME_STATE_CHANGED");
                 if (cooked.length != 3) break;
                 final VolumeInfo vol = mVolumes.get(cooked[1]);
                 if (vol != null) {
@@ -1131,22 +1220,29 @@ class MountService extends IMountService.Stub
                 break;
             }
             case VoldResponseCode.VOLUME_FS_TYPE_CHANGED: {
+                Slog.d(TAG, "VOLUME_FS_TYPE_CHANGED");
                 if (cooked.length != 3) break;
                 final VolumeInfo vol = mVolumes.get(cooked[1]);
                 if (vol != null) {
                     vol.fsType = cooked[2];
+                    Slog.d(TAG, "new fsType=" + vol.fsType
+                            + ", volumeInfo=" + vol);
                 }
                 break;
             }
             case VoldResponseCode.VOLUME_FS_UUID_CHANGED: {
+                Slog.d(TAG, "VOLUME_FS_UUID_CHANGED");
                 if (cooked.length != 3) break;
                 final VolumeInfo vol = mVolumes.get(cooked[1]);
                 if (vol != null) {
                     vol.fsUuid = cooked[2];
+                    Slog.d(TAG, "new fsUuid=" + vol.fsUuid
+                            + ", volumeInfo=" + vol);
                 }
                 break;
             }
             case VoldResponseCode.VOLUME_FS_LABEL_CHANGED: {
+                Slog.d(TAG, "VOLUME_FS_LABEL_CHANGED");
                 final VolumeInfo vol = mVolumes.get(cooked[1]);
                 if (vol != null) {
                     final StringBuilder builder = new StringBuilder();
@@ -1154,33 +1250,44 @@ class MountService extends IMountService.Stub
                         builder.append(cooked[i]).append(' ');
                     }
                     vol.fsLabel = builder.toString().trim();
+                    Slog.d(TAG, "new fsLabel=" + vol.fsLabel
+                            + ", volumeInfo=" + vol);
                 }
                 // TODO: notify listeners that label changed
                 break;
             }
             case VoldResponseCode.VOLUME_PATH_CHANGED: {
+                Slog.d(TAG, "VOLUME_PATH_CHANGED");
                 if (cooked.length != 3) break;
                 final VolumeInfo vol = mVolumes.get(cooked[1]);
                 if (vol != null) {
                     vol.path = cooked[2];
+                    Slog.d(TAG, "new path= " + vol.path
+                            + ", volumeInfo=" + vol);
                 }
                 break;
             }
             case VoldResponseCode.VOLUME_INTERNAL_PATH_CHANGED: {
+                Slog.d(TAG, "VOLUME_INTERNAL_PATH_CHANGED");
                 if (cooked.length != 3) break;
                 final VolumeInfo vol = mVolumes.get(cooked[1]);
                 if (vol != null) {
                     vol.internalPath = cooked[2];
+                    Slog.d(TAG, "new internal path= " + vol.internalPath
+                            + ", volumeInfo=" + vol);
                 }
                 break;
             }
             case VoldResponseCode.VOLUME_DESTROYED: {
+                Slog.d(TAG, "VOLUME_DESTROYED");
                 if (cooked.length != 2) break;
+                Slog.d(TAG, "destroyed volumeInfo=" + mVolumes.get(cooked[1]));
                 mVolumes.remove(cooked[1]);
                 break;
             }
 
             case VoldResponseCode.MOVE_STATUS: {
+                Slog.d(TAG, "MOVE_STATUS");
                 final int status = Integer.parseInt(cooked[1]);
                 onMoveStatusLocked(status);
                 break;
@@ -1234,6 +1341,7 @@ class MountService extends IMountService.Stub
     }
 
     private void onDiskScannedLocked(DiskInfo disk) {
+        Slog.d(TAG, "onDiskScannedLocked, diskInfo=" + disk);
         int volumeCount = 0;
         for (int i = 0; i < mVolumes.size(); i++) {
             final VolumeInfo vol = mVolumes.valueAt(i);
@@ -1241,12 +1349,16 @@ class MountService extends IMountService.Stub
                 volumeCount++;
             }
         }
+        Slog.d(TAG, "this disk has " + volumeCount + " volumes");
 
         final Intent intent = new Intent(DiskInfo.ACTION_DISK_SCANNED);
         intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT
                 | Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND);
         intent.putExtra(DiskInfo.EXTRA_DISK_ID, disk.id);
         intent.putExtra(DiskInfo.EXTRA_VOLUME_COUNT, volumeCount);
+        Slog.d(TAG, "sendBroadcastAsUser, intent=" + intent
+                + ", disk.id=" + disk.id
+                + ", volumeCount=" + volumeCount);
         mHandler.obtainMessage(H_INTERNAL_BROADCAST, intent).sendToTarget();
 
         final CountDownLatch latch = mDiskScanLatches.remove(disk.id);
@@ -1263,11 +1375,12 @@ class MountService extends IMountService.Stub
             Slog.d(TAG, "System booted in core-only mode; ignoring volume " + vol.getId());
             return;
         }
-
+        Slog.d(TAG, "onVolumeCreatedLocked, volumeInfo=" + vol);
         if (vol.type == VolumeInfo.TYPE_EMULATED) {
             final StorageManager storage = mContext.getSystemService(StorageManager.class);
             final VolumeInfo privateVol = storage.findPrivateForEmulated(vol);
 
+            Slog.d(TAG, "privateVol=" + privateVol);
             if (Objects.equals(StorageManager.UUID_PRIVATE_INTERNAL, mPrimaryStorageUuid)
                     && VolumeInfo.ID_PRIVATE_INTERNAL.equals(privateVol.id)) {
                 Slog.v(TAG, "Found primary storage at " + vol);
@@ -1293,7 +1406,7 @@ class MountService extends IMountService.Stub
 
             // Adoptable public disks are visible to apps, since they meet
             // public API requirement of being in a stable location.
-            if (vol.disk.isAdoptable()) {
+            if (vol.disk.isAdoptable() || vol.isPhoneStorage()|| vol.isUSBOTG()) {
                 vol.mountFlags |= VolumeInfo.MOUNT_FLAG_VISIBLE;
             }
 
@@ -1309,6 +1422,7 @@ class MountService extends IMountService.Stub
     }
 
     private boolean isBroadcastWorthy(VolumeInfo vol) {
+        //Slog.d(TAG, "isBroadcastWorthy, volumeInfo=" + vol);
         switch (vol.getType()) {
             case VolumeInfo.TYPE_PRIVATE:
             case VolumeInfo.TYPE_PUBLIC:
@@ -1334,6 +1448,10 @@ class MountService extends IMountService.Stub
     }
 
     private void onVolumeStateChangedLocked(VolumeInfo vol, int oldState, int newState) {
+        Slog.d(TAG, "onVolumeStateChangedLocked"
+                + ", oldState=" + VolumeInfo.getEnvironmentForState(oldState)
+                + ", newState=" + VolumeInfo.getEnvironmentForState(newState)
+                + ", volumeInfo=" + vol);
         // Remember that we saw this volume so we're ready to accept user
         // metadata, or so we can annoy them when a private volume is ejected
         if (vol.isMountedReadable() && !TextUtils.isEmpty(vol.fsUuid)) {
@@ -1367,6 +1485,11 @@ class MountService extends IMountService.Stub
             intent.putExtra(VolumeRecord.EXTRA_FS_UUID, vol.fsUuid);
             intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT
                     | Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND);
+            Slog.d(TAG, "sendBroadcastAsUser, intent=" + intent
+                    + ", vol.id=" + vol.id
+                    + ", newState=" + newState
+                    + ", vol.fsUuid=" + vol.fsUuid
+                    + ", flags=FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT");
             mHandler.obtainMessage(H_INTERNAL_BROADCAST, intent).sendToTarget();
         }
 
@@ -1382,6 +1505,7 @@ class MountService extends IMountService.Stub
                     final StorageVolume userVol = vol.buildStorageVolume(mContext, userId, false);
                     mHandler.obtainMessage(H_VOLUME_BROADCAST, userVol).sendToTarget();
 
+                    Slog.d(TAG, "notify callbacks StorageStateChanged, storageVolume=" + userVol);
                     mCallbacks.notifyStorageStateChanged(userVol.getPath(), oldStateEnv,
                             newStateEnv);
                 }
@@ -1398,6 +1522,8 @@ class MountService extends IMountService.Stub
             mObbActionHandler.sendMessage(mObbActionHandler.obtainMessage(
                     OBB_FLUSH_MOUNT_STATE, vol.path));
         }
+
+        updateDefaultPathIfNeed();
     }
 
     private void onMoveStatusLocked(int status) {
@@ -1538,6 +1664,7 @@ class MountService extends IMountService.Stub
         final IntentFilter userFilter = new IntentFilter();
         userFilter.addAction(Intent.ACTION_USER_ADDED);
         userFilter.addAction(Intent.ACTION_USER_REMOVED);
+        userFilter.addAction(Intent.ACTION_USER_SWITCHED);
         mContext.registerReceiver(mUserReceiver, userFilter, null, mHandler);
 
         synchronized (mLock) {
@@ -1548,6 +1675,8 @@ class MountService extends IMountService.Stub
         if (WATCHDOG_ENABLE) {
             Watchdog.getInstance().addMonitor(this);
         }
+
+        initMTKFeature();
     }
 
     private void start() {
@@ -1573,6 +1702,7 @@ class MountService extends IMountService.Stub
     }
 
     private void readSettingsLocked() {
+        Slog.i(TAG, "readSettingsLocked");
         mRecords.clear();
         mPrimaryStorageUuid = getDefaultPrimaryStorageUuid();
         mForceAdoptable = false;
@@ -1599,8 +1729,14 @@ class MountService extends IMountService.Stub
                         }
                         mForceAdoptable = readBooleanAttribute(in, ATTR_FORCE_ADOPTABLE, false);
 
+                        Slog.i(TAG, "read start tag: version=" + version
+                                + ", primaryPhysical=" + primaryPhysical
+                                + ", mPrimaryStorageUuid=" + mPrimaryStorageUuid
+                                + ", mForceAdoptable=" + mForceAdoptable);
+
                     } else if (TAG_VOLUME.equals(tag)) {
                         final VolumeRecord rec = readVolumeRecord(in);
+                        Slog.i(TAG, "read volume tag: volumeRecode=" + rec);
                         mRecords.put(rec.fsUuid, rec);
                     }
                 }
@@ -1617,6 +1753,7 @@ class MountService extends IMountService.Stub
     }
 
     private void writeSettingsLocked() {
+        Slog.i(TAG, "writeSettingsLocked");
         FileOutputStream fos = null;
         try {
             fos = mSettingsFile.startWrite();
@@ -1628,9 +1765,13 @@ class MountService extends IMountService.Stub
             writeIntAttribute(out, ATTR_VERSION, VERSION_FIX_PRIMARY);
             writeStringAttribute(out, ATTR_PRIMARY_STORAGE_UUID, mPrimaryStorageUuid);
             writeBooleanAttribute(out, ATTR_FORCE_ADOPTABLE, mForceAdoptable);
+            Slog.i(TAG, "write start tag: version=" + VERSION_FIX_PRIMARY
+                    + ", mPrimaryStorageUuid=" + mPrimaryStorageUuid
+                    + ", mForceAdoptable=" + mForceAdoptable);
             final int size = mRecords.size();
             for (int i = 0; i < size; i++) {
                 final VolumeRecord rec = mRecords.valueAt(i);
+                Slog.i(TAG, "write volume record: " + rec);
                 writeVolumeRecord(out, rec);
             }
             out.endTag(null, TAG_VOLUMES);
@@ -1689,22 +1830,91 @@ class MountService extends IMountService.Stub
         enforcePermission(android.Manifest.permission.SHUTDOWN);
 
         Slog.i(TAG, "Shutting down");
+        waitMTKNetlogStopped();
         mHandler.obtainMessage(H_SHUTDOWN, observer).sendToTarget();
     }
 
     @Override
     public boolean isUsbMassStorageConnected() {
-        throw new UnsupportedOperationException();
+        Slog.i(TAG, "isUsbMassStorageConnected");
+        waitForReady();
+
+        if (getUmsEnabling()) {
+            Slog.i(TAG, "isUsbMassStorageConnected return true");
+            return true;
+        }
+
+        Slog.i(TAG, "isUsbMassStorageConnected return " + mIsUsbConnected);
+        return mIsUsbConnected;
     }
 
     @Override
     public void setUsbMassStorageEnabled(boolean enable) {
-        throw new UnsupportedOperationException();
+        Slog.d(TAG, "setUsbMassStorageEnabled, enable=" + enable);
+        waitForReady();
+        enforcePermission(android.Manifest.permission.MOUNT_UNMOUNT_FILESYSTEMS);
+        validateUserRestriction(UserManager.DISALLOW_USB_FILE_TRANSFER);
+
+        // erternal sd card can also share to pc when the primary is emulated.
+        int userId = mCurrentUserId;
+        mIsTurnOnOffUsb = true;
+        synchronized (mLock) {
+            for (int i = 0; i < mVolumes.size(); i++) {
+                final VolumeInfo vol = mVolumes.valueAt(i);
+                if (!vol.isAllowUsbMassStorage(userId)) {
+                    Slog.d(TAG, "no need share, skip volume=" + vol);
+                    continue;
+                }
+
+                if (enable) {
+                    setUmsEnabling(true);
+                    if (vol.getState() == VolumeInfo.STATE_MOUNTED
+                            || vol.getState() == VolumeInfo.STATE_MOUNTED_READ_ONLY) {
+                        Slog.d(TAG, "setUsbMassStorageEnabled, first unmount volume="
+                            + vol);
+                        unmount(vol.getId());
+                        Slog.d(TAG, "setUsbMassStorageEnabled, second share volume");
+                        doShareUnshareVolume(vol.getId(), true);
+                    } else if (vol.getState() == VolumeInfo.STATE_UNMOUNTED) {
+                        Slog.d(TAG, "setUsbMassStorageEnabled, just share volume");
+                        doShareUnshareVolume(vol.getId(), true);
+                    }
+                    setUmsEnabling(false);
+                } else {
+                    if (vol.getState() != VolumeInfo.STATE_REMOVED
+                        && vol.getState() != VolumeInfo.STATE_BAD_REMOVAL) {
+                        Slog.d(TAG, "setUsbMassStorageEnabled, first unshare volume="
+                                + vol);
+                        doShareUnshareVolume(vol.getId(), false);
+                        Slog.d(TAG, "setUsbMassStorageEnabled, second mount volume");
+                        mount(vol.getId());
+                    }
+                }
+            }
+        }
+        mIsTurnOnOffUsb = false;
     }
 
     @Override
     public boolean isUsbMassStorageEnabled() {
-        throw new UnsupportedOperationException();
+        Slog.i(TAG, "isUsbMassStorageEnabled");
+        waitForReady();
+        // if there is any one storage can be share, return true
+        // otherwise return false.
+        boolean result = false;
+
+        synchronized (mVolumes) {
+            for (int i = 0; i < mVolumes.size(); i++) {
+                final VolumeInfo vol = mVolumes.valueAt(i);
+                if (isVolumeSharedEnable(vol)) {
+                    result = true;
+                    break;
+                }
+            }
+        }
+
+        Slog.i(TAG, "isUsbMassStorageEnabled return + " + result);
+        return result;
     }
 
     @Override
@@ -1719,17 +1929,20 @@ class MountService extends IMountService.Stub
 
     @Override
     public int mountVolume(String path) {
+        Slog.i(TAG, "mountVolume, path=" + path);
         mount(findVolumeIdForPathOrThrow(path));
         return 0;
     }
 
     @Override
     public void unmountVolume(String path, boolean force, boolean removeEncryption) {
+        Slog.i(TAG, "unmountVolume, path=" + path);
         unmount(findVolumeIdForPathOrThrow(path));
     }
 
     @Override
     public int formatVolume(String path) {
+        Slog.i(TAG, "formatVolume, path=" + path);
         format(findVolumeIdForPathOrThrow(path));
         return 0;
     }
@@ -1740,13 +1953,15 @@ class MountService extends IMountService.Stub
         waitForReady();
 
         final VolumeInfo vol = findVolumeByIdOrThrow(volId);
+        Slog.i(TAG, "mount, volId=" + volId + ", volumeInfo=" + vol);
         if (isMountDisallowed(vol)) {
             throw new SecurityException("Mounting " + volId + " restricted by policy");
         }
         try {
             mConnector.execute("volume", "mount", vol.id, vol.mountFlags, vol.mountUserId);
         } catch (NativeDaemonConnectorException e) {
-            throw e.rethrowAsParcelableException();
+            //throw e.rethrowAsParcelableException();
+            Slog.e(TAG, "mount" + vol + "ERROR!!");
         }
     }
 
@@ -1756,6 +1971,7 @@ class MountService extends IMountService.Stub
         waitForReady();
 
         final VolumeInfo vol = findVolumeByIdOrThrow(volId);
+        Slog.i(TAG, "unmount, volId=" + volId + ", volumeInfo=" + vol);
 
         // TODO: expand PMS to know about multiple volumes
         if (vol.isPrimaryPhysical()) {
@@ -1777,6 +1993,7 @@ class MountService extends IMountService.Stub
         } catch (NativeDaemonConnectorException e) {
             throw e.rethrowAsParcelableException();
         }
+        updateDefaultPathIfNeed();
     }
 
     @Override
@@ -1785,6 +2002,7 @@ class MountService extends IMountService.Stub
         waitForReady();
 
         final VolumeInfo vol = findVolumeByIdOrThrow(volId);
+        Slog.i(TAG, "format, volId=" + volId + ", volumeInfo=" + vol);
         try {
             mConnector.execute("volume", "format", vol.id, "auto");
         } catch (NativeDaemonConnectorException e) {
@@ -1794,6 +2012,7 @@ class MountService extends IMountService.Stub
 
     @Override
     public long benchmark(String volId) {
+        Slog.i(TAG, "benchmark, volId=" + volId);
         enforcePermission(android.Manifest.permission.MOUNT_FORMAT_FILESYSTEMS);
         waitForReady();
 
@@ -1811,6 +2030,7 @@ class MountService extends IMountService.Stub
 
     @Override
     public void partitionPublic(String diskId) {
+        Slog.i(TAG, "partitionPublic, diskId=" + diskId);
         enforcePermission(android.Manifest.permission.MOUNT_FORMAT_FILESYSTEMS);
         waitForReady();
 
@@ -1819,14 +2039,20 @@ class MountService extends IMountService.Stub
             mConnector.execute("volume", "partition", diskId, "public");
             waitForLatch(latch, "partitionPublic", 3 * DateUtils.MINUTE_IN_MILLIS);
         } catch (NativeDaemonConnectorException e) {
+            Slog.i(TAG, "partitionPublic NativeDaemonConnectorException, e=" + e.getMessage());
+            popFormatFailToast();
             throw e.rethrowAsParcelableException();
         } catch (TimeoutException e) {
+            Slog.i(TAG, "partitionPublic timeout exception, e=" + e.getMessage());
+            popFormatFailToast();
             throw new IllegalStateException(e);
         }
+        Slog.i(TAG, "partitionPublic return");
     }
 
     @Override
     public void partitionPrivate(String diskId) {
+        Slog.i(TAG, "partitionPrivate, diskId=" + diskId);
         enforcePermission(android.Manifest.permission.MOUNT_FORMAT_FILESYSTEMS);
         enforceAdminUser();
         waitForReady();
@@ -1836,14 +2062,20 @@ class MountService extends IMountService.Stub
             mConnector.execute("volume", "partition", diskId, "private");
             waitForLatch(latch, "partitionPrivate", 3 * DateUtils.MINUTE_IN_MILLIS);
         } catch (NativeDaemonConnectorException e) {
+            Slog.i(TAG, "partitionPrivate NativeDaemonConnectorException, e=" + e.getMessage());
+            popFormatFailToast();
             throw e.rethrowAsParcelableException();
         } catch (TimeoutException e) {
+            Slog.i(TAG, "partitionPrivate timeout exception, e=" + e.getMessage());
+            popFormatFailToast();
             throw new IllegalStateException(e);
         }
+        Slog.i(TAG, "partitionPrivate return");
     }
 
     @Override
     public void partitionMixed(String diskId, int ratio) {
+        Slog.i(TAG, "partitionMixed, diskId=" + diskId + ", ratio=" + ratio);
         enforcePermission(android.Manifest.permission.MOUNT_FORMAT_FILESYSTEMS);
         enforceAdminUser();
         waitForReady();
@@ -1861,6 +2093,8 @@ class MountService extends IMountService.Stub
 
     @Override
     public void setVolumeNickname(String fsUuid, String nickname) {
+        Slog.i(TAG, "setVolumeNickname, fsUuid=" + fsUuid
+                + ", nickname=" + nickname);
         enforcePermission(android.Manifest.permission.MOUNT_UNMOUNT_FILESYSTEMS);
         waitForReady();
 
@@ -1875,6 +2109,8 @@ class MountService extends IMountService.Stub
 
     @Override
     public void setVolumeUserFlags(String fsUuid, int flags, int mask) {
+        Slog.i(TAG, "setVolumeUserFlags, fsUuid=" + fsUuid
+                + ", flags=" + flags + ", mask=" + mask);
         enforcePermission(android.Manifest.permission.MOUNT_UNMOUNT_FILESYSTEMS);
         waitForReady();
 
@@ -1889,6 +2125,7 @@ class MountService extends IMountService.Stub
 
     @Override
     public void forgetVolume(String fsUuid) {
+        Slog.i(TAG, "forgetVolume, fsUuid=" + fsUuid);
         enforcePermission(android.Manifest.permission.MOUNT_UNMOUNT_FILESYSTEMS);
         waitForReady();
 
@@ -1914,6 +2151,7 @@ class MountService extends IMountService.Stub
 
     @Override
     public void forgetAllVolumes() {
+        Slog.i(TAG, "forgetAllVolumes");
         enforcePermission(android.Manifest.permission.MOUNT_UNMOUNT_FILESYSTEMS);
         waitForReady();
 
@@ -1933,11 +2171,14 @@ class MountService extends IMountService.Stub
             }
 
             writeSettingsLocked();
-            mHandler.obtainMessage(H_RESET).sendToTarget();
+            /// M: ALPS02841558 aysnc H_RESET msg cause AdoptableHostTest fail@{
+            resetIfReadyAndConnected();
+            /// M: ALPS02841558 aysnc H_RESET msg cause AdoptableHostTest fail@}
         }
     }
 
     private void forgetPartition(String partGuid) {
+        Slog.i(TAG, "forgetPartition, partGuid=" + partGuid);
         try {
             mConnector.execute("volume", "forget_partition", partGuid);
         } catch (NativeDaemonConnectorException e) {
@@ -1972,6 +2213,7 @@ class MountService extends IMountService.Stub
 
     @Override
     public void setDebugFlags(int flags, int mask) {
+        Slog.i(TAG, "setDebugFlags, flags=" + flags + ", mask=" + mask);
         enforcePermission(android.Manifest.permission.MOUNT_UNMOUNT_FILESYSTEMS);
         waitForReady();
 
@@ -2040,12 +2282,14 @@ class MountService extends IMountService.Stub
         waitForReady();
 
         synchronized (mLock) {
+            Slog.i(TAG, "getPrimaryStorageUuid, mPrimaryStorageUuid=" + mPrimaryStorageUuid);
             return mPrimaryStorageUuid;
         }
     }
 
     @Override
     public void setPrimaryStorageUuid(String volumeUuid, IPackageMoveObserver callback) {
+        Slog.i(TAG, "setPrimaryStorageUuid, volumeUuid=" + volumeUuid);
         enforcePermission(android.Manifest.permission.MOUNT_UNMOUNT_FILESYSTEMS);
         waitForReady();
 
@@ -2098,6 +2342,7 @@ class MountService extends IMountService.Stub
 
     @Override
     public int[] getStorageUsers(String path) {
+        Slog.i(TAG, "getStorageUsers, path=" + path);
         enforcePermission(android.Manifest.permission.MOUNT_UNMOUNT_FILESYSTEMS);
         waitForReady();
         try {
@@ -2152,6 +2397,8 @@ class MountService extends IMountService.Stub
 
     public int createSecureContainer(String id, int sizeMb, String fstype, String key,
             int ownerUid, boolean external) {
+        Slog.i(TAG, "createSecureContainer, id=" + id + ", sizeMb="
+            + sizeMb + ", fstype=" + fstype + ", key=" + key);
         enforcePermission(android.Manifest.permission.ASEC_CREATE);
         waitForReady();
         warnOnNotMounted();
@@ -2174,6 +2421,8 @@ class MountService extends IMountService.Stub
 
     @Override
     public int resizeSecureContainer(String id, int sizeMb, String key) {
+        Slog.i(TAG, "resizeSecureContainer, id=" + id
+                + ", sizeMb=" + sizeMb + ", key=" + key);
         enforcePermission(android.Manifest.permission.ASEC_CREATE);
         waitForReady();
         warnOnNotMounted();
@@ -2188,6 +2437,7 @@ class MountService extends IMountService.Stub
     }
 
     public int finalizeSecureContainer(String id) {
+        Slog.i(TAG, "finalizeSecureContainer, id=" + id);
         enforcePermission(android.Manifest.permission.ASEC_CREATE);
         warnOnNotMounted();
 
@@ -2205,6 +2455,8 @@ class MountService extends IMountService.Stub
     }
 
     public int fixPermissionsSecureContainer(String id, int gid, String filename) {
+        Slog.i(TAG, "fixPermissionsSecureContainer, id=" + id + ", gid=" + gid
+                + ", filename=" + filename);
         enforcePermission(android.Manifest.permission.ASEC_CREATE);
         warnOnNotMounted();
 
@@ -2222,6 +2474,7 @@ class MountService extends IMountService.Stub
     }
 
     public int destroySecureContainer(String id, boolean force) {
+        Slog.i(TAG, "destroySecureContainer, id=" + id + ", force=" + force);
         enforcePermission(android.Manifest.permission.ASEC_DESTROY);
         waitForReady();
         warnOnNotMounted();
@@ -2262,6 +2515,8 @@ class MountService extends IMountService.Stub
     }
 
     public int mountSecureContainer(String id, String key, int ownerUid, boolean readOnly) {
+        Slog.i(TAG, "mountSecureContainer, id=" + id + ", key=" + key
+                + ", ownerUid=" + ownerUid + ", readOnly=" + readOnly);
         enforcePermission(android.Manifest.permission.ASEC_MOUNT_UNMOUNT);
         waitForReady();
         warnOnNotMounted();
@@ -2292,12 +2547,15 @@ class MountService extends IMountService.Stub
     }
 
     public int unmountSecureContainer(String id, boolean force) {
+        Slog.i(TAG, "unmountSecureContainer, id=" + id
+                + ", force=" + force);
         enforcePermission(android.Manifest.permission.ASEC_MOUNT_UNMOUNT);
         waitForReady();
         warnOnNotMounted();
 
         synchronized (mAsecMountSet) {
             if (!mAsecMountSet.contains(id)) {
+                Slog.i(TAG, "OperationFailedStorageNotMounted");
                 return StorageResultCode.OperationFailedStorageNotMounted;
             }
          }
@@ -2309,6 +2567,7 @@ class MountService extends IMountService.Stub
          * open on the external storage.
          */
         Runtime.getRuntime().gc();
+        System.runFinalization();
 
         int rc = StorageResultCode.OperationSucceeded;
         try {
@@ -2345,6 +2604,8 @@ class MountService extends IMountService.Stub
     }
 
     public int renameSecureContainer(String oldId, String newId) {
+        Slog.i(TAG, "renameSecureContainer, oldId=" + oldId
+                + ", newId=" + newId);
         enforcePermission(android.Manifest.permission.ASEC_RENAME);
         waitForReady();
         warnOnNotMounted();
@@ -2370,6 +2631,7 @@ class MountService extends IMountService.Stub
     }
 
     public String getSecureContainerPath(String id) {
+        Slog.i(TAG, "getSecureContainerPath, id=" + id);
         enforcePermission(android.Manifest.permission.ASEC_ACCESS);
         waitForReady();
         warnOnNotMounted();
@@ -2391,6 +2653,7 @@ class MountService extends IMountService.Stub
     }
 
     public String getSecureContainerFilesystemPath(String id) {
+        Slog.i(TAG, "getSecureContainerFilesystemPath, id=" + id);
         enforcePermission(android.Manifest.permission.ASEC_ACCESS);
         waitForReady();
         warnOnNotMounted();
@@ -2413,6 +2676,7 @@ class MountService extends IMountService.Stub
 
     @Override
     public void finishMediaUpdate() {
+        Slog.i(TAG, "finishMediaUpdate");
         if (Binder.getCallingUid() != Process.SYSTEM_UID) {
             throw new SecurityException("no permission to call finishMediaUpdate()");
         }
@@ -2444,6 +2708,7 @@ class MountService extends IMountService.Stub
     }
 
     public String getMountedObbPath(String rawPath) {
+        Slog.i(TAG, "getMountedObbPath, rawPath=" + rawPath);
         Preconditions.checkNotNull(rawPath, "rawPath cannot be null");
 
         waitForReady();
@@ -2523,6 +2788,7 @@ class MountService extends IMountService.Stub
 
     @Override
     public int getEncryptionState() {
+        Slog.i(TAG, "getEncryptionState");
         mContext.enforceCallingOrSelfPermission(Manifest.permission.CRYPT_KEEPER,
                 "no permission to access the crypt keeper");
 
@@ -2545,6 +2811,7 @@ class MountService extends IMountService.Stub
 
     @Override
     public int decryptStorage(String password) {
+        Slog.i(TAG, "decryptStorage, password=" + password);
         if (TextUtils.isEmpty(password)) {
             throw new IllegalArgumentException("password cannot be empty");
         }
@@ -2585,6 +2852,8 @@ class MountService extends IMountService.Stub
     }
 
     public int encryptStorage(int type, String password) {
+        Slog.i(TAG, "encryptStorage, type=" + CRYPTO_TYPES[type]
+                + ", password=" + password);
         if (TextUtils.isEmpty(password) && type != StorageManager.CRYPT_TYPE_DEFAULT) {
             throw new IllegalArgumentException("password cannot be empty");
         }
@@ -2598,6 +2867,7 @@ class MountService extends IMountService.Stub
             Slog.i(TAG, "encrypting storage...");
         }
 
+        waitMtkLogStopped();
         try {
             if (type == StorageManager.CRYPT_TYPE_DEFAULT) {
                 mCryptConnector.execute("cryptfs", "enablecrypto", "inplace",
@@ -2619,6 +2889,8 @@ class MountService extends IMountService.Stub
      *  @param password The password to set.
      */
     public int changeEncryptionPassword(int type, String password) {
+        Slog.i(TAG, "changeEncryptionPassword, type=" + CRYPTO_TYPES[type]
+                + ", password=" + password);
         mContext.enforceCallingOrSelfPermission(Manifest.permission.CRYPT_KEEPER,
             "no permission to access the crypt keeper");
 
@@ -2628,9 +2900,20 @@ class MountService extends IMountService.Stub
             Slog.i(TAG, "changing encryption password...");
         }
 
+        if (mOldEncryptionType == -1) {
+            mOldEncryptionType = getPasswordType();
+        }
+
         try {
             NativeDaemonEvent event = mCryptConnector.execute("cryptfs", "changepw", CRYPTO_TYPES[type],
                         new SensitiveArg(password));
+
+            if (type != mOldEncryptionType) {
+                Slog.i(TAG, "Encryption type changed from " + mOldEncryptionType + " to " + type);
+                mOldEncryptionType = type;
+                sendEncryptionTypeIntent();
+            }
+
             return Integer.parseInt(event.getMessage());
         } catch (NativeDaemonConnectorException e) {
             // Encryption failed
@@ -2643,6 +2926,7 @@ class MountService extends IMountService.Stub
      */
     @Override
     public int verifyEncryptionPassword(String password) throws RemoteException {
+        Slog.i(TAG, "verifyEncryptionPassword, password=" + password);
         // Only the system process is permitted to validate passwords
         if (Binder.getCallingUid() != android.os.Process.SYSTEM_UID) {
             throw new SecurityException("no permission to access the crypt keeper");
@@ -2678,6 +2962,7 @@ class MountService extends IMountService.Stub
      */
     @Override
     public int getPasswordType() {
+        Slog.i(TAG, "getPasswordType");
         mContext.enforceCallingOrSelfPermission(Manifest.permission.STORAGE_INTERNAL,
             "no permission to access the crypt keeper");
 
@@ -2687,8 +2972,12 @@ class MountService extends IMountService.Stub
         try {
             event = mCryptConnector.execute("cryptfs", "getpwtype");
             for (int i = 0; i < CRYPTO_TYPES.length; ++i) {
-                if (CRYPTO_TYPES[i].equals(event.getMessage()))
+                Slog.i(TAG, "CRYPTO_TYPES[" + i + "]=" + CRYPTO_TYPES[i]
+                        + ", event.getMessage()=" + event.getMessage());
+                if (CRYPTO_TYPES[i].equals(event.getMessage())) {
+                    Slog.i(TAG, "return CRYPTO_TYPES=" + CRYPTO_TYPES[i]);
                     return i;
+                }
             }
 
             throw new IllegalStateException("unexpected return from cryptfs");
@@ -2704,6 +2993,7 @@ class MountService extends IMountService.Stub
      */
     @Override
     public void setField(String field, String contents) throws RemoteException {
+        Slog.i(TAG, "setField, field=" + field + ", contens=" + contents);
         mContext.enforceCallingOrSelfPermission(Manifest.permission.STORAGE_INTERNAL,
             "no permission to access the crypt keeper");
 
@@ -2724,6 +3014,7 @@ class MountService extends IMountService.Stub
      */
     @Override
     public String getField(String field) throws RemoteException {
+        Slog.i(TAG, "getField, field=" + field);
         mContext.enforceCallingOrSelfPermission(Manifest.permission.STORAGE_INTERNAL,
             "no permission to access the crypt keeper");
 
@@ -2738,6 +3029,7 @@ class MountService extends IMountService.Stub
             for (String content : contents) {
                 result += content;
             }
+            Slog.i(TAG, "getField, return " + result);
             return result;
         } catch (NativeDaemonConnectorException e) {
             throw e.rethrowAsParcelableException();
@@ -2766,10 +3058,13 @@ class MountService extends IMountService.Stub
 
     @Override
     public String getPassword() throws RemoteException {
-        mContext.enforceCallingOrSelfPermission(Manifest.permission.STORAGE_INTERNAL,
+        Slog.i(TAG, "getPassword");
+        mContext.enforceCallingOrSelfPermission(Manifest.permission.ACCESS_KEYGUARD_SECURE_STORAGE,
                 "only keyguard can retrieve password");
-
+        mContext.enforceCallingOrSelfPermission(Manifest.permission.STORAGE_INTERNAL,
+                "no permission to access the crypt keeper");
         if (!isReady()) {
+            Slog.i(TAG, "not ready, reutn null");
             return new String();
         }
 
@@ -2778,6 +3073,7 @@ class MountService extends IMountService.Stub
             event = mCryptConnector.execute("cryptfs", "getpw");
             if ("-1".equals(event.getMessage())) {
                 // -1 equals no password
+                Slog.i(TAG, "no password, reutn null");
                 return null;
             }
             return event.getMessage();
@@ -2791,9 +3087,9 @@ class MountService extends IMountService.Stub
 
     @Override
     public void clearPassword() throws RemoteException {
+        Slog.i(TAG, "clearPassword");
         mContext.enforceCallingOrSelfPermission(Manifest.permission.STORAGE_INTERNAL,
                 "only keyguard can clear password");
-
         if (!isReady()) {
             return;
         }
@@ -2836,6 +3132,20 @@ class MountService extends IMountService.Stub
             return new SensitiveArg("!");
         } else {
             return new SensitiveArg(HexDump.toHexString(bytes));
+        }
+    }
+
+    @Override
+    public void changeUserKey(int userId, int serialNumber,
+            byte[] token, byte[] oldSecret, byte[] newSecret) {
+        enforcePermission(android.Manifest.permission.STORAGE_INTERNAL);
+        waitForReady();
+
+        try {
+            mCryptConnector.execute("cryptfs", "change_user_key", userId, serialNumber,
+                encodeBytes(token), encodeBytes(oldSecret), encodeBytes(newSecret));
+        } catch (NativeDaemonConnectorException e) {
+            throw e.rethrowAsParcelableException();
         }
     }
 
@@ -2981,6 +3291,8 @@ class MountService extends IMountService.Stub
 
     @Override
     public int mkdirs(String callingPkg, String appPath) {
+        Slog.i(TAG, "mkdirs, callingPkg=" + callingPkg
+                + ", appPath=" + appPath);
         final int userId = UserHandle.getUserId(Binder.getCallingUid());
         final UserEnvironment userEnv = new UserEnvironment(userId);
 
@@ -3599,6 +3911,7 @@ class MountService extends IMountService.Stub
         private static final int MSG_VOLUME_FORGOTTEN = 4;
         private static final int MSG_DISK_SCANNED = 5;
         private static final int MSG_DISK_DESTROYED = 6;
+        private static final int MSG_UMS_CONNECTION_CHANGED = 7;
 
         private final RemoteCallbackList<IMountServiceListener>
                 mCallbacks = new RemoteCallbackList<>();
@@ -3658,6 +3971,10 @@ class MountService extends IMountService.Stub
                     callback.onDiskDestroyed((DiskInfo) args.arg1);
                     break;
                 }
+                case MSG_UMS_CONNECTION_CHANGED: {
+                    callback.onUsbMassStorageConnectionChanged((boolean)args.arg1);
+                    break;
+                }
             }
         }
 
@@ -3700,6 +4017,12 @@ class MountService extends IMountService.Stub
             final SomeArgs args = SomeArgs.obtain();
             args.arg1 = disk.clone();
             obtainMessage(MSG_DISK_DESTROYED, args).sendToTarget();
+        }
+
+        private void onUsbMassStorageConnectionChanged(boolean connected) {
+            final SomeArgs args = SomeArgs.obtain();
+            args.arg1 = connected;
+            obtainMessage(MSG_UMS_CONNECTION_CHANGED, args).sendToTarget();
         }
     }
 
@@ -3851,6 +4174,835 @@ class MountService extends IMountService.Stub
                 }
             }
             return true;
+        }
+    }
+
+/////////////////////////MTK feature/////////////////////////////////////////
+
+    /**
+     * register receiver for MTK feature
+     */
+    private void initMTKFeature() {
+        // for DM APP feature
+        registerDMAPPReceiver();
+
+        // for Privacy Protection feature
+        registerPrivacyProtectionReceiver();
+
+        // for UMS feature
+        registerUsbStateReceiver();
+
+        // for IPO feature
+        registerBootIPOReceiver();
+    }
+
+    private void popFormatFailToast() {
+        mHandler.post(new Runnable() {
+            public void run() {
+                Toast.makeText(mContext, mContext.getString(
+                        com.mediatek.internal.R.string.format_error),
+                        Toast.LENGTH_LONG).show();
+            }
+        });
+    }
+
+    /**
+     * for mtk multi-log feature
+     * when to encrypt phone storage, send eject broadcast and wait mtklog
+     * stopped, if stopped, then do encrypt
+     */
+    private void waitMtkLogStopped() {
+        Slog.i(TAG, "waitMtkLogStopped...");
+        VolumeInfo emulatedVolume = null;
+        synchronized (mLock) {
+            for (int i = 0; i < mVolumes.size(); i++) {
+                final VolumeInfo vol = mVolumes.valueAt(i);
+                if (vol.getType() == VolumeInfo.TYPE_EMULATED
+                        && vol.getState() == VolumeInfo.STATE_MOUNTED) {
+                    emulatedVolume = vol;
+                    break;
+                }
+            }
+        }
+        if (emulatedVolume == null) {
+            Slog.i(TAG, "cannot find emulated volume, return");
+            return;
+        }
+
+        final StorageVolume userVol = emulatedVolume.buildStorageVolume(
+                mContext, mCurrentUserId, false);
+        final Intent intent = new Intent(Intent.ACTION_MEDIA_EJECT,
+                Uri.fromFile(userVol.getPathFile()));
+        intent.putExtra(StorageVolume.EXTRA_STORAGE_VOLUME, userVol);
+        intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
+        Slog.i(TAG, "sendBroadcastAsUser, intent=" + intent
+                + ", userVol=" + userVol);
+        mContext.sendBroadcastAsUser(intent, userVol.getOwner());
+
+        int tryCount = 0;
+        final String netlog = "debug.mtklog.netlog.Running";
+        final String mdlogger = "debug.mdlogger.Running";
+        final String MBlog = "debug.MB.running";
+        final String GPSlog = "debug.gpsdbglog.enable";
+        while (!SystemProperties.get(netlog, "0").equals("0")
+                || !SystemProperties.get(mdlogger, "0").equals("0")
+                || !SystemProperties.get(MBlog, "0").equals("0")
+                || !SystemProperties.get(GPSlog, "0").equals("0")) {
+            if (tryCount == 60) {
+                Slog.i(TAG, "try count = 60, break");
+                break;
+            }
+            try {
+                Slog.i(TAG, netlog + "=" + SystemProperties.get(netlog));
+                Slog.i(TAG, mdlogger + "=" + SystemProperties.get(mdlogger));
+                Slog.i(TAG, MBlog + "=" + SystemProperties.get(MBlog));
+                Slog.i(TAG, GPSlog + "=" + SystemProperties.get(GPSlog));
+                Thread.sleep(500);
+                tryCount++;
+            } catch (Exception e) {
+            }
+        }
+        if (tryCount != 60) {
+            try {
+                Thread.sleep(3000);
+            } catch (Exception e) {
+            }
+        }
+        Slog.i(TAG, "waitMtkLogStopped done");
+    }
+
+/////////////////////////default write path/////////////////
+
+    private static final String PROP_VOLD_DECRYPT = "vold.decrypt";
+    private static final String INSERT_OTG = "insert_otg";
+    private boolean isDiskInsert = false;
+    private static boolean isBootingPhase = false;
+    private static boolean isShuttingDown = false;
+    //private int mCurrentUserId = 0;
+
+    /**
+     * set default path for APP to storage data.
+     */
+    public void setDefaultPath(String path) {
+        if (path == null) {
+            Slog.e(TAG, "setDefaultPath error! path=null");
+            return;
+        }
+        try {
+            SystemProperties.set(StorageManagerEx.PROP_SD_DEFAULT_PATH, path);
+            Slog.e(TAG, "setDefaultPath new path=" + path);
+        } catch (IllegalArgumentException e) {
+            Slog.e(TAG, "IllegalArgumentException when set default path:", e);
+        }
+    }
+
+    private void updateDefaultPathForUserSwitch() {
+        Slog.i(TAG, "updateDefaultPathForUserSwitch");
+        String defaultPath = getDefaultPath();
+        Slog.i(TAG, "current default path = " + defaultPath);
+        if (defaultPath.contains("emulated")) {
+            defaultPath = "/storage/emulated/" + mCurrentUserId;
+            // no need to pop default path changed toast
+            Slog.i(TAG, "change default path to " + defaultPath);
+            setDefaultPath(defaultPath);
+        } else {
+            updateDefaultPathIfNeed();
+        }
+    }
+
+    /**
+     * If old default path is not mounted, choose the first mounted
+     * and visible volume as default path
+     */
+    private void updateDefaultPathIfNeed() {
+        Slog.i(TAG, "updateDefaultPathIfNeed");
+
+        if (isBootingPhase) {
+            Slog.i(TAG, "In booting phase, don't update default path");
+            return;
+        }
+
+        if (isIPOBooting) {
+            Slog.i(TAG, "In IPO booting phase, don't update default path");
+            return;
+        }
+
+        if (isShuttingDown) {
+            Slog.i(TAG, "In shutting down, don't update default path");
+            return;
+        }
+
+        String defaultPath = getDefaultPath();
+        Slog.i(TAG, "current default path = " + defaultPath);
+        String newPath = "";
+        boolean needChange = false;
+        boolean isFindCurrentDefaultPathVolume = false;
+
+        int userId = mCurrentUserId;
+        synchronized(mLock) {
+            for (int i = 0; i < mVolumes.size(); i++) {
+                final VolumeInfo vol = mVolumes.valueAt(i);
+                File pathFile = vol.getPathForUser(userId);
+                if (pathFile != null && pathFile.getAbsolutePath().equals(defaultPath)) {
+                    Slog.i(TAG, "find default path volume= " + vol);
+                    isFindCurrentDefaultPathVolume = true;
+                    if (vol.getState() != VolumeInfo.STATE_MOUNTED) {
+                        Slog.i(TAG, "old default path is not mounted");
+                        needChange = true;
+                        break;
+                    } else {
+                        if (!vol.isVisibleForWrite(userId)) {
+                            Slog.i(TAG, "old default path is not visible for write, userId="
+                                   + userId);
+                            needChange = true;
+                            break;
+                        } else {
+                            Slog.i(TAG, "old default path is visible for write, userId=" + userId);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (needChange || !isFindCurrentDefaultPathVolume) {
+            Slog.i(TAG, "need change default path " + defaultPath);
+            synchronized(mLock) {
+                for (int i = 0; i < mVolumes.size(); i++) {
+                    final VolumeInfo vol = mVolumes.valueAt(i);
+                    if (vol.getState() == VolumeInfo.STATE_MOUNTED
+                            && vol.isVisibleForWrite(userId)) {
+                        newPath = vol.getPathForUser(userId).getAbsolutePath();
+                        Slog.i(TAG, "updateDefaultPathIfNeed from " + defaultPath
+                                + " to " + newPath);
+                        setDefaultPath(newPath);
+                        popDefaultPathChangedToast();
+                        break;
+                    }
+                }
+            }
+
+            if (newPath.equals("")) {
+                Slog.i(TAG, "not find mounted and visible volume, keep old default path:"
+                       + defaultPath);
+            }
+        } else {
+            Slog.i(TAG, "no need change default path, keep default path:" + defaultPath);
+        }
+    }
+
+    private String getDefaultPath() {
+        StorageManagerEx sm = new StorageManagerEx();
+        return sm.getDefaultPath();
+    }
+
+    /**
+     * check all storage state
+     * if there is more than one storage in MOUNTED state
+     * we should show the dialog after insert and mount succeed
+     */
+    private boolean isShowDefaultPathDialog(VolumeInfo curVol) {
+        Slog.i(TAG, "isShowDefaultPathDialog, curVol=" + curVol);
+
+        if (curVol == null) {
+            Slog.i(TAG, "curVolume is null, skip it.");
+            return false;
+        }
+
+        if(isBootingPhase) {
+            Slog.i(TAG, "in booting phase, not show defaultPathDialog, skip it.");
+            return false;
+        }
+
+        if (isIPOBooting) {
+            Slog.i(TAG, "in IPO booting phase, not show defaultPathDialog, skip it.");
+            return false;
+        }
+
+        if (curVol.getState() != VolumeInfo.STATE_MOUNTED
+                && curVol.getState() != VolumeInfo.STATE_CHECKING) {
+            Slog.i(TAG, "this volume state is not mounted/checking, skip it.");
+            return false;
+        }
+
+        if (!isDiskInsert) {
+            Slog.i(TAG, "not disk insert, no need show dialog, return false");
+            return false;
+        }
+
+        isDiskInsert = false;
+        int mountCount = 0;
+        //"vold.decrypt" property is null on FBE mode
+        if(!"file".equalsIgnoreCase(SystemProperties.get("ro.crypto.type", "")) &&
+            SystemProperties.get(PROP_VOLD_DECRYPT).equals("trigger_restart_min_framework")) {
+        //if(SystemProperties.get(PROP_VOLD_DECRYPT).equals("trigger_restart_min_framework")) {
+            Slog.i(TAG, "PROP_VOLD_DECRYPT=trigger_restart_min_framework, return false");
+            return false;
+        }
+
+        // when emulated volume is mounted, no need to show default path dialog
+        if (curVol.getType() == VolumeInfo.TYPE_EMULATED && curVol.getDiskId() != null) {
+            Slog.i(TAG, "isShowDefaultPathDialog, emulated volume, return false");
+            return false;
+        }
+
+        int userId = mCurrentUserId;
+        synchronized (mLock) {
+            for (int i = 0; i < mVolumes.size(); i++) {
+                final VolumeInfo vol = mVolumes.valueAt(i);
+                if (vol.getState() == VolumeInfo.STATE_MOUNTED && vol.isVisibleForWrite(userId)) {
+                    Slog.i(TAG, "find a visibe & mounted volume, volumeId=" + vol.getId());
+                    mountCount++;
+                }
+            }
+            Slog.i(TAG, "mount and visible volumes count=" + mountCount);
+        }
+        return (mountCount > 1);
+    }
+
+    /**
+     * check all storage, if there is one internal storage
+     * we should show the toast when plug out sd card
+     */
+    private void popDefaultPathChangedToast() {
+        mHandler.post(new Runnable() {
+            public void run() {
+                Toast.makeText(mContext, mContext.getString(
+                        com.mediatek.internal.R.string.sdcard_default_path_change),
+                        Toast.LENGTH_LONG).show();
+            }
+        });
+    }
+
+    /**
+     * open setting activity about Storage & USB
+     *
+     */
+    private void showDefaultPathDialog(VolumeInfo vol) {
+        Slog.i(TAG, "showDefaultPathDialog, vol=" + vol);
+        int userId = mCurrentUserId;
+        if (!vol.isVisibleForWrite(userId)) {
+            Slog.i(TAG, "showDefaultPathDialog,but vol is not visible to userID="
+                    + userId + ", volumeInfo=" + vol);
+            return;
+        }
+
+        Intent intent = new Intent("com.mediatek.storage.StorageDefaultPathDialog");
+        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        if (vol.isUSBOTG()) {
+            intent.putExtra(INSERT_OTG, true);
+        }
+        mContext.startActivity(intent);
+    }
+
+/////////////////////////DM APP//////////////////////////////////////////////////
+
+    private static final String PROP_DM_APP = "ro.mtk_dm_app";
+    private static final String OMADM_USB_ENABLE =  "com.mediatek.dm.LAWMO_UNLOCK";
+    private static final String OMADM_USB_DISABLE = "com.mediatek.dm.LAWMO_LOCK";
+    private static final String OMADM_SD_FORMAT =   "com.mediatek.dm.LAWMO_WIPE";
+    private static final Object OMADM_SYNC_LOCK = new Object();
+    /**
+     * register DM_APP receiver if need
+     */
+    private void registerDMAPPReceiver() {
+        if (SystemProperties.get(PROP_DM_APP).equals("1")) {
+            final IntentFilter DMFilter = new IntentFilter();
+            DMFilter.addAction(OMADM_USB_ENABLE);
+            DMFilter.addAction(OMADM_USB_DISABLE);
+            DMFilter.addAction(OMADM_SD_FORMAT);
+            mContext.registerReceiver(mDMReceiver, DMFilter, null, mHandler);
+        }
+    }
+
+    private void enableUSBFuction(boolean enable) {
+        waitForReady();
+        try {
+            mConnector.execute("USB", enable ? "enable" : "disable");
+        } catch (NativeDaemonConnectorException e) {
+            Slog.e(TAG, "enableUSBFunction failed, ", e);
+        }
+    }
+
+    private final BroadcastReceiver mDMReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            if (action.equals(OMADM_USB_ENABLE)) {
+                Slog.d(TAG, "mDMReceiver USB enable");
+                new Thread() {
+                    public void run() {
+                        synchronized (OMADM_SYNC_LOCK) {
+                            enableUSBFuction(true);
+                        }
+                    }
+                } .start();
+            } else if (action.equals(OMADM_USB_DISABLE)) {
+                Slog.d(TAG, "mDMReceiver USB disable");
+                new Thread() {
+                    public void run() {
+                        synchronized (OMADM_SYNC_LOCK) {
+                           enableUSBFuction(false);
+                        }
+                    }
+                } .start();
+            } else if (action.equals(OMADM_SD_FORMAT)) {
+                Slog.d(TAG, "mDMReceiver format SD");
+                new Thread() {
+                    public void run() {
+                        VolumeInfo[] volumes = getVolumes(0);
+                        synchronized (OMADM_SYNC_LOCK) {
+                            int userId = mCurrentUserId;
+                            for (int i = 0; i < volumes.length; i++) {
+                                final VolumeInfo vol = volumes[i];
+                                if (!vol.isVisible()
+                                        || vol.getType() != VolumeInfo.TYPE_PUBLIC) {
+                                    Slog.d(TAG, "no need format, skip volume=" + vol);
+                                    continue;
+                                }
+                                try {
+                                    if (vol.getState() == VolumeInfo.STATE_MOUNTED) {
+                                        unmount(vol.getId());
+                                        //wait for unmount succeed...
+                                        for (int j = 0; j < 20; j++) {
+                                            sleep(1000);
+                                            if (vol.getState() == VolumeInfo.STATE_UNMOUNTED) {
+                                                Slog.d(TAG, "Unmount Succeeded, volume=" + vol);
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    else if (vol.getState() == VolumeInfo.STATE_MEDIA_SHARED) {
+                                        Slog.d(TAG, "volume is shared, unshared firstly, volume="
+                                               + vol);
+                                        doShareUnshareVolume(vol.getId(), false);
+                                    }
+
+                                    format(vol.getId());
+                                    Slog.d(TAG, "format Succeed! volume=" + vol);
+                                } catch (InterruptedException e) {
+                                    Slog.e(TAG, "SD format exception", e);
+                                } catch (IllegalArgumentException e) {
+                                    Slog.e(TAG, "SD format exception", e);
+                                } catch (SecurityException e) {
+                                    Slog.e(TAG, "SD format exception", e);
+                                } catch (NullPointerException e) {
+                                    Slog.e(TAG, "SD format exception", e);
+                                }
+                            }
+                        }
+                    }
+                } .start();
+            }
+        }
+    };
+
+/////////////////////////Privacy Protection feature////////////////////////////////////////////
+
+    private static final String PRIVACY_PROTECTION_LOCK = "com.mediatek.ppl.NOTIFY_LOCK";
+    private static final String PRIVACY_PROTECTION_UNLOCK = "com.mediatek.ppl.NOTIFY_UNLOCK";
+    private static final String PRIVACY_PROTECTION_WIPE
+      = "com.mediatek.ppl.NOTIFY_MOUNT_SERVICE_WIPE";
+    private static final String PRIVACY_PROTECTION_WIPE_DONE
+      = "com.mediatek.ppl.MOUNT_SERVICE_WIPE_RESPONSE";
+    private static final Object FORMAT_LOCK = new Object();
+
+    private void registerPrivacyProtectionReceiver() {
+        final IntentFilter privacyProtectionFilter = new IntentFilter();
+        privacyProtectionFilter.addAction(PRIVACY_PROTECTION_LOCK);
+        privacyProtectionFilter.addAction(PRIVACY_PROTECTION_UNLOCK);
+        privacyProtectionFilter.addAction(PRIVACY_PROTECTION_WIPE);
+        mContext.registerReceiver(mPrivacyProtectionReceiver,
+                                  privacyProtectionFilter,
+                                  null,
+                                  mHandler);
+    }
+
+    private ArrayList<VolumeInfo> findVolumeListNeedFormat() {
+        Slog.i(TAG, "findVolumeListNeedFormat");
+        ArrayList<VolumeInfo> tempVolumes = Lists.newArrayList();
+        synchronized (mLock) {
+            for (int i = 0; i < mVolumes.size(); i++) {
+                final VolumeInfo vol = mVolumes.valueAt(i);
+                // if external sd card is formatted as internal storage
+                // it shoule be formatted, but don't format data partition
+                // which will be formatted by factory reset
+                if ((!vol.isUSBOTG() && vol.isVisible()
+                        && vol.getType() == VolumeInfo.TYPE_PUBLIC)
+                        || (vol.getType() == VolumeInfo.TYPE_PRIVATE
+                        && vol.getDiskId() != null)) {
+                    tempVolumes.add(vol);
+                    Slog.i(TAG, "i will try to format volume= " + vol);
+                }
+            }
+        }
+        return tempVolumes;
+    }
+
+    private void formatPhoneStorageAndExternalSDCard() {
+
+        final ArrayList<VolumeInfo> tempVolumes = findVolumeListNeedFormat();
+
+        new Thread() {
+            public void run() {
+                synchronized (FORMAT_LOCK) {
+                    int userId = mCurrentUserId;
+                    for (int i = 0; i < tempVolumes.size(); i++) {
+                        final VolumeInfo vol = tempVolumes.get(i);
+                        // if external sd card is formatted as internal storage
+                        // we just format it as public storage
+                        if (vol.getType() == VolumeInfo.TYPE_PRIVATE
+                                && vol.getDiskId() != null) {
+                            Slog.i(TAG, "use partition public to format, volume= " + vol);
+                            partitionPublic(vol.getDiskId());
+                            if (vol.getFsUuid() != null) {
+                                forgetVolume(vol.getFsUuid());
+                            }
+                            continue;
+                        }
+
+                        // first need to wait checking state if needed
+                        if (vol.getState() == VolumeInfo.STATE_CHECKING) {
+                            Slog.i(TAG, "volume is checking, wait..");
+                            for (int j = 0; j < 30; j++) {
+                                try {
+                                    sleep(1000);
+                                } catch (InterruptedException ex) {
+                                    Slog.e(TAG, "Exception when wait!", ex);
+                                }
+                                if (vol.getState() != VolumeInfo.STATE_CHECKING) {
+                                    Slog.i(TAG, "volume wait checking done!");
+                                    break;
+                                }
+                            }
+                        }
+                        // then unmount if needed
+                        if (vol.getState() == VolumeInfo.STATE_MOUNTED) {
+                            Slog.i(TAG, "volume is mounted, unmount firstly"
+                                    + ", volume=" + vol);
+                            unmount(vol.getId());
+                            for (int j = 0; j < 30; j++) {
+                                try {
+                                    sleep(1000);
+                                } catch (InterruptedException ex) {
+                                    Slog.e(TAG, "Exception when wait!", ex);
+                                }
+                                if (vol.getState() == VolumeInfo.STATE_UNMOUNTED) {
+                                    Slog.i(TAG, "wait unmount done!");
+                                    break;
+                                }
+                            }
+                        }
+                        // then unshare if needed
+                        if (vol.getState() == VolumeInfo.STATE_MEDIA_SHARED) {
+                            Slog.i(TAG, "volume is shared, unshared firstly"
+                                    + " volume=" + vol);
+                            doShareUnshareVolume(vol.getId(), false);
+                            for (int j = 0; j < 30; j++) {
+                                try {
+                                    sleep(1000);
+                                } catch (InterruptedException ex) {
+                                    Slog.e(TAG, "Exception when wait!", ex);
+                                }
+                                if (vol.getState() == VolumeInfo.STATE_UNMOUNTED) {
+                                    Slog.i(TAG, "wait unshare done!");
+                                    break;
+                                }
+                            }
+                        }
+
+                        format(vol.getId());
+                        Slog.d(TAG, "format Succeed! volume=" + vol);
+                    }
+
+                    // notify Privacy Protection that format done
+                    Intent intent = new Intent(PRIVACY_PROTECTION_WIPE_DONE);
+                    mContext.sendBroadcast(intent);
+                    Slog.d(TAG, "Privacy Protection wipe: send " + intent);
+                }
+            }
+        } .start();
+    }
+
+    private final BroadcastReceiver mPrivacyProtectionReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            if (action.equals(PRIVACY_PROTECTION_UNLOCK)) {
+                Slog.i(TAG, "Privacy Protection unlock!");
+                new Thread() {
+                    public void run() {
+                        enableUSBFuction(true);
+                    }
+                } .start();
+            } else if (action.equals(PRIVACY_PROTECTION_LOCK)) {
+                Slog.i(TAG, "Privacy Protection lock!");
+                new Thread() {
+                    public void run() {
+                        enableUSBFuction(false);
+                    }
+                } .start();
+            } else if (action.equals(PRIVACY_PROTECTION_WIPE)) {
+                Slog.i(TAG, "Privacy Protection wipe!");
+                formatPhoneStorageAndExternalSDCard();
+            }
+        }
+    };
+
+///////////////////USB Mass Storage feature///////////////////////////
+
+    private boolean mUmsEnabling;
+    // this will set to true when user is turning on UMS or turning off UMS
+    private boolean mIsTurnOnOffUsb = false;
+    private boolean mIsUsbConnected = false;
+    private boolean mSendUmsConnectedOnBoot = false;
+    private int mUMSCount = 0;
+    private static final Object TURNONUSB_SYNC_LOCK = new Object();
+
+    private void registerUsbStateReceiver() {
+        mContext.registerReceiver(
+                mUsbReceiver,
+                new IntentFilter(UsbManager.ACTION_USB_STATE),
+                null,
+                mHandler);
+    }
+
+    private final BroadcastReceiver mUsbReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            Slog.i(TAG, "mUsbReceiver onReceive, intent=" + intent);
+            boolean isConnected =
+                    intent.getBooleanExtra(UsbManager.USB_CONNECTED, false) &&
+                    intent.getBooleanExtra(UsbManager.USB_FUNCTION_MASS_STORAGE, false) &&
+                    !intent.getBooleanExtra("SettingUsbCharging", false);
+            mIsUsbConnected = isConnected;
+            notifyShareAvailabilityChange(isConnected);
+        }
+    };
+
+    private void notifyShareAvailabilityChange(boolean isConnected) {
+        Slog.i(TAG, "notifyShareAvailabilityChange, isConnected=" + isConnected);
+        mCallbacks.onUsbMassStorageConnectionChanged(isConnected);
+
+        if (mSystemReady == true) {
+            sendUmsIntent(isConnected);
+        } else {
+            mSendUmsConnectedOnBoot = isConnected;
+        }
+
+        if (!isConnected) {
+            // M: two case need turn off
+            // 1. is turning on UMS
+            // 2. there is any storage at SHARED status
+            boolean needTurnOff = false;
+            if (mIsTurnOnOffUsb) {
+                needTurnOff = true;
+            } else {
+                synchronized (mLock) {
+                    for (int i = 0; i < mVolumes.size(); i++) {
+                        final VolumeInfo vol = mVolumes.valueAt(i);
+                        if (vol.getState() == VolumeInfo.STATE_MEDIA_SHARED) {
+                            needTurnOff = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            /*
+             * USB mass storage disconnected while enabled
+            */
+            if (needTurnOff) {
+                new Thread("MountService#turnOffUMS") {
+                    @Override
+                    public void run() {
+                        synchronized (TURNONUSB_SYNC_LOCK) {
+                            setUsbMassStorageEnabled(false);
+                        }
+                    }
+                } .start();
+            }
+        }
+    }
+
+    private void doShareUnshareVolume(String volId, boolean enable) {
+        Slog.i(TAG, "doShareUnshareVolume, volId=" + volId
+                + ", enable=" + enable);
+        final VolumeInfo vol = findVolumeByIdOrThrow(volId);
+        Slog.i(TAG, "doShareUnshareVolume, find volumeInfo=" + vol);
+        if (vol.getType() == VolumeInfo.TYPE_EMULATED) {
+            Slog.i(TAG, "emulated storage no need to share/unshare");
+            return;
+        }
+
+        try {
+            mConnector.execute("volume", enable ? "share" : "unshare", volId, "ums");
+        } catch (NativeDaemonConnectorException e) {
+            Slog.e(TAG, "Failed to share/unshare", e);
+        }
+    }
+
+    private boolean getUmsEnabling() {
+        return mUmsEnabling;
+    }
+
+    private void setUmsEnabling(boolean enable) {
+        mUmsEnabling = enable;
+    }
+
+    private void sendUmsIntent(boolean c) {
+        mContext.sendBroadcastAsUser(
+                new Intent((c ? Intent.ACTION_UMS_CONNECTED : Intent.ACTION_UMS_DISCONNECTED)),
+                UserHandle.ALL);
+    }
+
+    /**
+     * Just check if the volume is enable to be share
+     * @param vol
+     * @return
+     */
+    private boolean isVolumeSharedEnable(VolumeInfo vol) {
+        int userId = mCurrentUserId;
+        // only public and visible is sharedable volume
+        if (!vol.isAllowUsbMassStorage(userId)) {
+            Slog.i(TAG, "not able to shared Volume=" + vol);
+            return false;
+        }
+
+        boolean result = doGetVolumeShared(vol.getId());
+        Slog.i(TAG, "isVolumeSharedEnable return " + result);
+        return result;
+    }
+
+    private boolean doGetVolumeShared(String volId) {
+        Slog.i(TAG, "doGetVolumeShared volId=" + volId);
+
+        final NativeDaemonEvent event;
+        try {
+            event = mConnector.execute("volume", "shared", volId, "ums");
+        } catch (NativeDaemonConnectorException ex) {
+            Slog.e(TAG, "Failed to read response to volume shared " + volId + " ums");
+            return false;
+        }
+
+        if (event.getCode() == VoldResponseCode.ShareEnabledResult) {
+            return event.getMessage().endsWith("enabled");
+        } else {
+            return false;
+        }
+    }
+
+    private void validateUserRestriction(String restriction) {
+        UserManager um = (UserManager) mContext.getSystemService(Context.USER_SERVICE);
+
+        if (um != null
+                && um.hasUserRestriction(restriction, Binder.getCallingUserHandle())) {
+            throw new SecurityException("User has restriction " + restriction);
+        }
+    }
+
+///////////////////IPO feature///////////////////////////
+    private static final String BOOT_IPO = "android.intent.action.ACTION_BOOT_IPO";
+    private static boolean isIPOBooting = false;
+
+    private void registerBootIPOReceiver() {
+        final IntentFilter bootIPOFilter = new IntentFilter();
+        bootIPOFilter.addAction(BOOT_IPO);
+        mContext.registerReceiver(mBootIPOReceiver, bootIPOFilter, null, mHandler);
+    }
+
+    private final BroadcastReceiver mBootIPOReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+
+            new Thread() {
+                public void run() {
+                    Slog.d(TAG, "MountService BOOT_IPO");
+                    isIPOBooting = true;
+                    try {
+                        Slog.d(TAG, "Notify VOLD IPO startup");
+                        mConnector.execute("volume", "ipo", "startup");
+                    } catch (NativeDaemonConnectorException e) {
+                        Slog.e(TAG, "Error reinit SD card while IPO", e);
+                    }
+
+                    waitAllVolumeMounted();
+                    Slog.d(TAG, "MountService BOOT_IPO finish");
+                    isIPOBooting = false;
+                    updateDefaultPathIfNeed();
+                }
+            } .start();
+        }
+    };
+
+    /**
+     * wait all volume mounted, when ipo startup
+     * @return
+     */
+    private void waitAllVolumeMounted() {
+        try {
+            Slog.d(TAG, "waitAllVolumeMounted when ipo startup");
+            int retryCount = 0;
+            while(retryCount < 10) {
+                boolean isNeedWait = false;
+                VolumeInfo[] volumes = getVolumes(0);
+                for (int i = 0; i < volumes.length; i++) {
+                    final VolumeInfo vol = volumes[i];
+                    if (vol.getType() == VolumeInfo.TYPE_PUBLIC
+                            || vol.getType() == VolumeInfo.TYPE_EMULATED) {
+                        if (vol.isVisibleForWrite(mCurrentUserId) &&
+                                vol.getState() != VolumeInfo.STATE_MOUNTED) {
+                            Slog.i(TAG, "volume is not mounted, wait...");
+                            isNeedWait = true;
+                            retryCount++;
+                            Thread.sleep(1000);
+                            break;
+                        }
+                    }
+                }
+                if (!isNeedWait) {
+                    Slog.i(TAG, "all visible volume is mounted");
+                    break;
+                }
+            }
+        } catch (Exception e) {
+        }
+    }
+
+    /**
+     * wait net log write tcpdump_xxx.cap finished before unmount volume
+     */
+    private void waitMTKNetlogStopped() {
+        Slog.i(TAG, "waitMTKNetlogStopped...");
+
+        int tryCount = 0;
+        final String netlog = "debug.mtklog.netlog.Running";
+        while (!SystemProperties.get(netlog, "0").equals("0")) {
+            if (tryCount == 60) {
+                Slog.i(TAG, "try count = 60, break");
+                break;
+            }
+            try {
+                Slog.i(TAG, netlog + "=" + SystemProperties.get(netlog));
+                Thread.sleep(500);
+                tryCount++;
+            } catch (Exception e) {
+            }
+        }
+        Slog.i(TAG, "waitMTKNetlogStopped done");
+    }
+
+//////////////////encrypt storage///////////////////////
+    public static final String ACTION_ENCRYPTION_TYPE_CHANGED =
+            "com.mediatek.intent.extra.ACTION_ENCRYPTION_TYPE_CHANGED";
+    private int mOldEncryptionType = -1;
+
+    private void sendEncryptionTypeIntent() {
+        mContext.sendBroadcastAsUser(new Intent(ACTION_ENCRYPTION_TYPE_CHANGED), UserHandle.ALL);
+    }
+
+    // for setting check if set primary storage Uuid is finished or not
+    public boolean isSetPrimaryStorageUuidFinished() {
+        synchronized (mLock) {
+            return this.mMoveCallback == null ? true : false;
         }
     }
 }

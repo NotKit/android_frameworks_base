@@ -91,7 +91,7 @@ interface IImsConfig {
      * @param listener, provided if caller needs to be notified for set result.
      * @return void
      */
-    oneway void setFeatureValue(int feature, int network, int value, ImsConfigListener listener);
+    void setFeatureValue(int feature, int network, int value, ImsConfigListener listener);
 
     /**
      * Gets the value for IMS volte provisioned.
@@ -100,6 +100,22 @@ interface IImsConfig {
      * @return void
      */
     boolean getVolteProvisioned();
+
+    /**
+     * Gets the value for IMS vilte provisioned.
+     * This should be the same as the operator provisioned value if applies.
+     *
+     * @return boolean
+     */
+    boolean getVtProvisioned();
+
+    /**
+     * Gets the value for IMS wfc provisioned.
+     * This should be the same as the operator provisioned value if applies.
+     *
+     * @return boolean
+     */
+    boolean getWfcProvisioned();
 
     /**
      *
@@ -120,4 +136,27 @@ interface IImsConfig {
      * @throws ImsException if calling the IMS service results in an error.
      */
      oneway void setVideoQuality(int quality, ImsConfigListener listener);
+
+    /**
+     * Sets the resource value for IMS capabilities
+     *
+     * @param feature defined in ImsConfig.FeatureConstants.
+     * @param feature capability defined in ImsConfig.FeatureValueConstants.
+     */
+    void setImsResCapability(int feature, int value);
+
+    /**
+     * Gets the resource value for a IMS feature.
+     * @param feature, defined in ImsConfig.FeatureConstants.
+     *
+     * @return the capability.
+     */
+    int getImsResCapability(int feature);
+
+    /**
+     * Sync WFC preferred mode to modem.
+     * @param WFC preferred mode.
+     * @return void.
+     */
+    void setWfcMode(int mode);
 }

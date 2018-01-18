@@ -35,7 +35,7 @@ class RenderState;
 
 // Debug
 #if DEBUG_LAYER_RENDERER
-    #define LAYER_RENDERER_LOGD(...) ALOGD(__VA_ARGS__)
+    #define LAYER_RENDERER_LOGD(...) MLOGD(DEBUG_LAYER_RENDERER, __VA_ARGS__)
 #else
     #define LAYER_RENDERER_LOGD(...)
 #endif

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -511,7 +516,8 @@ public class MediaSessionService extends SystemService implements Monitor {
                 MediaSessionRecord record = mPriorityStack.getDefaultRemoteSession(userId);
                 mRvc.updateRemoteController(record == null ? null : record.getControllerBinder());
             } catch (RemoteException e) {
-                Log.wtf(TAG, "Error sending default remote volume to sys ui.", e);
+                /// M: use Log.e instead Log.wtf to avoid cause reboot when systemui error
+                Log.e(TAG, "Error sending default remote volume to sys ui.", e);
             }
         }
     }
@@ -760,6 +766,21 @@ public class MediaSessionService extends SystemService implements Monitor {
                     Log.d(TAG, "dispatchMediaKeyEvent, pid=" + pid + ", uid=" + uid + ", event="
                             + keyEvent);
                 }
+                if (!isUserSetupComplete()) {
+                    // Global media key handling can have the side-effect of starting new
+                    // activities which is undesirable while setup is in progress.
+                    Slog.i(TAG, "Not dispatching media key event because user "
+                            + "setup is in progress.");
+                    return;
+                }
+                if (isGlobalPriorityActive() && uid != Process.SYSTEM_UID) {
+                    // Prevent dispatching key event through reflection while the global priority
+                    // session is active.
+                    Slog.i(TAG, "Only the system can dispatch media key event "
+                            + "to the global priority session.");
+                    return;
+                }
+
                 if (!isUserSetupComplete()) {
                     // Global media key handling can have the side-effect of starting new
                     // activities which is undesirable while setup is in progress.
@@ -1143,8 +1164,18 @@ public class MediaSessionService extends SystemService implements Monitor {
             @Override
             public void onSendFinished(PendingIntent pendingIntent, Intent intent, int resultCode,
                     String resultData, Bundle resultExtras) {
-                onReceiveResult(resultCode, null);
-            }
+                /// M: Avoid dead lock ALPS01998036, ActivityManagerService and MediaSessionService
+                /// 1. MediaSessionService will hold local lock and call AMS method getCurrentuser
+                /// which will request AMS class lock in dispatchMediaKeyEventLocked method.
+                /// 2. AMS dispatch pending intent to MediaSerssionService will hold lock AMS class
+                /// lock and callback to onSendFinished will request MediaSessionService local lock
+                /// in onReceiveResult.
+                ///
+                /// TO avoid the dead lock, we use ResultReceiver public method 'send' to delevier
+                /// result async.
+                // onReceiveResult(resultCode, null);
+                send(resultCode, null);
+                }
         };
 
         BroadcastReceiver mKeyEventDone = new BroadcastReceiver() {

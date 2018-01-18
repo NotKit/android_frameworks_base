@@ -394,6 +394,18 @@ void FontRenderer::cacheBitmap(const SkGlyph& glyph, CachedGlyphInfo* cachedGlyp
             break;
     }
 
+    switch(format) {
+        case SkMask::kA8_Format:
+        case SkMask::kBW_Format:
+            DUMP_ALPHA_TEXTURE(srcStride, glyph.fHeight, bitmapBuffer, "Glyph", true);
+            break;
+        case SkMask::kARGB32_Format:
+            DUMP_ALPHA_TEXTURE(srcStride, glyph.fHeight, bitmapBuffer, "Glyph", false);
+            break;
+        default:
+            break;
+    }
+
     cachedGlyph->mIsValid = true;
 
 #ifdef BUGREPORT_FONT_CACHE_USAGE
@@ -450,6 +462,20 @@ void checkTextureUpdateForCache(Caches& caches, std::vector<CacheTexture*>& cach
     for (uint32_t i = 0; i < cacheTextures.size(); i++) {
         CacheTexture* cacheTexture = cacheTextures[i];
         if (cacheTexture->isDirty() && cacheTexture->getPixelBuffer()) {
+            char prefix[64];
+            sprintf(prefix, "FontTexture_%d_%d", i, cacheTexture->getTextureId());
+            switch (cacheTexture->getFormat()) {
+                case GL_RGBA:
+                    DUMP_ALPHA_TEXTURE(cacheTexture->getWidth(), cacheTexture->getHeight(),
+                        cacheTexture->getPixelBuffer()->getMappedPointer(), prefix, false);
+                    break;
+                case GL_ALPHA:
+                default:
+                    DUMP_ALPHA_TEXTURE(cacheTexture->getWidth(), cacheTexture->getHeight(),
+                        cacheTexture->getPixelBuffer()->getMappedPointer(), prefix, true);
+                    break;
+            }
+
             if (cacheTexture->getTextureId() != lastTextureId) {
                 lastTextureId = cacheTexture->getTextureId();
                 caches.textureState().activateTexture(0);
@@ -573,6 +599,7 @@ void FontRenderer::setFont(const SkPaint* paint, const SkMatrix& matrix) {
 
 FontRenderer::DropShadow FontRenderer::renderDropShadow(const SkPaint* paint, const glyph_t *glyphs,
         int numGlyphs, float radius, const float* positions) {
+    ATRACE_CALL_L2();
     checkInit();
 
     DropShadow image;
@@ -664,6 +691,7 @@ void FontRenderer::precache(const SkPaint* paint, const glyph_t* glyphs, int num
 }
 
 void FontRenderer::endPrecaching() {
+    ATRACE_CALL_L1();
     checkTextureUpdate();
 }
 
@@ -703,7 +731,12 @@ bool FontRenderer::renderTextOnPath(const SkPaint* paint, const Rect* clip, cons
 void FontRenderer::blurImage(uint8_t** image, int32_t width, int32_t height, float radius) {
     uint32_t intRadius = Blur::convertRadiusToInt(radius);
 #ifdef ANDROID_ENABLE_RENDERSCRIPT
-    if (width * height * intRadius >= RS_MIN_INPUT_CUTOFF && radius <= 25.0f) {
+    if (((width * height * intRadius >= RS_MIN_INPUT_CUTOFF)
+        || (mRs != nullptr)) /// M: reuse RS if created
+        && (radius > 0.0f) && (radius <= 25.0f) /// M: RS can only accept 0-25 pixel bound
+        ) {
+        ATRACE_FORMAT_L2("RS blur %dx%dx%.4f", width, height, radius);
+
         uint8_t* outImage = (uint8_t*) memalign(RS_CPU_ALLOCATION_ALIGNMENT, width * height);
 
         if (mRs == nullptr) {
@@ -742,6 +775,7 @@ void FontRenderer::blurImage(uint8_t** image, int32_t width, int32_t height, flo
     }
 #endif
 
+    ATRACE_FORMAT_L2("SF blur %dx%dx%.4f", width, height, radius);
     std::unique_ptr<float[]> gaussian(new float[2 * intRadius + 1]);
     Blur::generateGaussianWeights(gaussian.get(), radius);
 

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -107,6 +112,12 @@ public final class Message implements Parcelable {
     // sometimes we store linked lists of these things
     /*package*/ Message next;
 
+    /// M: Add message protect mechanism
+    /**
+     * @hide
+     */
+    public boolean hasRecycle = false;
+
     private static final Object sPoolSync = new Object();
     private static Message sPool;
     private static int sPoolSize = 0;
@@ -127,6 +138,8 @@ public final class Message implements Parcelable {
                 m.next = null;
                 m.flags = 0; // clear in-use flag
                 sPoolSize--;
+                /// M: Add message protect mechanism
+                m.hasRecycle = false;
                 return m;
             }
         }
@@ -302,7 +315,7 @@ public final class Message implements Parcelable {
         target = null;
         callback = null;
         data = null;
-
+        hasRecycle = true;
         synchronized (sPoolSync) {
             if (sPoolSize < MAX_POOL_SIZE) {
                 next = sPool;
@@ -515,7 +528,16 @@ public final class Message implements Parcelable {
             b.append(" barrier=");
             b.append(arg1);
         }
-
+        /// M: ALPS00302022
+        if (callback != null) {
+            b.append(" callback=");
+            b.append(callback);
+    }
+        if (obj != null) {
+            b.append(" obj=");
+            b.append(obj);
+    }
+        /// M: ALPS00302022
         b.append(" }");
         return b.toString();
     }

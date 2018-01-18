@@ -24,6 +24,7 @@ import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.text.method.TextKeyListener;
 import android.util.AttributeSet;
+import android.util.Log ;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.animation.AnimationUtils;
@@ -44,6 +45,9 @@ import java.util.List;
  */
 public class KeyguardPasswordView extends KeyguardAbsKeyInputView
         implements KeyguardSecurityView, OnEditorActionListener, TextWatcher {
+
+    private static final String TAG = "KeyguardPasswordView";
+    private static final boolean DEBUG = true ;
 
     private final boolean mShowImeAtScreenOn;
     private final int mDisappearYTranslation;
@@ -79,7 +83,8 @@ public class KeyguardPasswordView extends KeyguardAbsKeyInputView
 
     @Override
     protected void resetState() {
-        mSecurityMessageDisplay.setMessage(R.string.kg_password_instructions, false);
+        /// M: [ALPS00594552] Indicate the user to input password.
+        mSecurityMessageDisplay.setMessage(R.string.kg_password_instructions, true);
         final boolean wasDisabled = mPasswordEntry.isEnabled();
         setPasswordEntryEnabled(true);
         setPasswordEntryInputEnabled(true);
@@ -95,6 +100,7 @@ public class KeyguardPasswordView extends KeyguardAbsKeyInputView
 
     @Override
     public boolean needsInput() {
+        Log.d(TAG, "needsInput() - returns true.");
         return true;
     }
 
@@ -108,7 +114,10 @@ public class KeyguardPasswordView extends KeyguardAbsKeyInputView
             public void run() {
                 if (isShown() && mPasswordEntry.isEnabled()) {
                     mPasswordEntry.requestFocus();
+                    Log.d(TAG, "reason = " + reason +
+                        ", mShowImeAtScreenOn = " + mShowImeAtScreenOn);
                     if (reason != KeyguardSecurityView.SCREEN_ON || mShowImeAtScreenOn) {
+                        Log.d(TAG, "onResume() - call showSoftInput()");
                         mImm.showSoftInput(mPasswordEntry, InputMethodManager.SHOW_IMPLICIT);
                     }
                 }

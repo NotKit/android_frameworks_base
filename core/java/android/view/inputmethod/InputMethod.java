@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007-2008 The Android Open Source Project
  * 
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not
@@ -190,6 +195,14 @@ public interface InputMethod {
      * until deliberated dismissed by the user in its UI.
      */
     public static final int SHOW_FORCED = 0x00002;
+
+    /**
+     * Flag for {@link #showSoftInput}: this show has been forced to
+     * happen by the user press the toggle IME key on the hard keyboard. @{
+     * @hide
+     */
+    public static final int SHOW_FORCED_FROM_KEY = 0x00004;
+    /* @} */
     
     /**
      * Request that any soft input part of the input method be shown to the user.

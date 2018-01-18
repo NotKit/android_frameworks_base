@@ -33,7 +33,7 @@ import android.view.SurfaceControl;
 import java.io.PrintWriter;
 
 public class DimLayer {
-    private static final String TAG = TAG_WITH_CLASS_NAME ? "DimLayer" : TAG_WM;
+    private String TAG = TAG_WITH_CLASS_NAME ? "DimLayer" : TAG_WM;
     private final WindowManagerService mService;
 
     /** Actual surface that dims */
@@ -87,6 +87,7 @@ public class DimLayer {
     private final String mName;
 
     DimLayer(WindowManagerService service, DimLayerUser user, int displayId, String name) {
+        TAG = (TAG_WITH_CLASS_NAME ? "" : TAG_WM + ".") + "DimLayer." + user.toShortString();
         mUser = user;
         mDisplayId = displayId;
         mService = service;
@@ -344,7 +345,9 @@ public class DimLayer {
                 // Don't exceed limits.
                 alpha = mTargetAlpha;
             }
-            if (DEBUG_DIM_LAYER) Slog.v(TAG, "stepAnimation: curTime=" + curTime + " alpha=" + alpha);
+            if (DEBUG_DIM_LAYER)
+                Slog.v(TAG, "stepAnimation: curTime=" + curTime + " alpha=" + alpha);
+
             setAlpha(alpha);
         }
 

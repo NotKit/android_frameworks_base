@@ -41,6 +41,11 @@ import com.android.systemui.statusbar.policy.BrightnessMirrorController;
 import com.android.systemui.tuner.TunerService;
 import com.android.systemui.tuner.TunerService.Tunable;
 
+/// M: add plugin in quicksetting @{
+import com.mediatek.systemui.ext.IQuickSettingsPlugin;
+import com.mediatek.systemui.PluginManager;
+/// add plugin in quicksetting @}
+
 import java.util.ArrayList;
 import java.util.Collection;
 
@@ -73,6 +78,8 @@ public class QSPanel extends LinearLayout implements Tunable, Callback {
 
     private BrightnessMirrorController mBrightnessMirrorController;
 
+    private IQuickSettingsPlugin mQuickSettingsPlugin;
+
     public QSPanel(Context context) {
         this(context, null);
     }
@@ -86,6 +93,9 @@ public class QSPanel extends LinearLayout implements Tunable, Callback {
         mBrightnessView = LayoutInflater.from(context).inflate(
                 R.layout.quick_settings_brightness_dialog, this, false);
         addView(mBrightnessView);
+
+        mQuickSettingsPlugin = PluginManager.getQuickSettingsPlugin(mContext);
+        mQuickSettingsPlugin.addOpViews(this);
 
         setupTileLayout();
 
@@ -252,6 +262,11 @@ public class QSPanel extends LinearLayout implements Tunable, Callback {
             } else {
                 mBrightnessController.unregisterCallbacks();
             }
+        }
+        if (listening) {
+            mQuickSettingsPlugin.registerCallbacks();
+        } else {
+            mQuickSettingsPlugin.unregisterCallbacks();
         }
     }
 
@@ -452,6 +467,7 @@ public class QSPanel extends LinearLayout implements Tunable, Callback {
     void setGridContentVisibility(boolean visible) {
         int newVis = visible ? VISIBLE : INVISIBLE;
         setVisibility(newVis);
+        mQuickSettingsPlugin.setViewsVisibility(newVis);
         if (mGridContentVisible != visible) {
             MetricsLogger.visibility(mContext, MetricsEvent.QS_PANEL, newVis);
         }

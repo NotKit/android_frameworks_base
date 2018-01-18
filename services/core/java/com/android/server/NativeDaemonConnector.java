@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -50,7 +55,9 @@ import java.util.LinkedList;
  * {@code libsysutils} FrameworkListener protocol.
  */
 final class NativeDaemonConnector implements Runnable, Handler.Callback, Watchdog.Monitor {
-    private final static boolean VDBG = false;
+    private static final boolean LOGD = true;
+
+    private final static boolean VDBG = true;
 
     private final String TAG;
 
@@ -451,8 +458,8 @@ final class NativeDaemonConnector implements Runnable, Handler.Callback, Watchdo
     public NativeDaemonEvent[] executeForList(long timeoutMs, String cmd, Object... args)
             throws NativeDaemonConnectorException {
         if (mWarnIfHeld != null && Thread.holdsLock(mWarnIfHeld)) {
-            Slog.wtf(TAG, "Calling thread " + Thread.currentThread().getName() + " is holding 0x"
-                    + Integer.toHexString(System.identityHashCode(mWarnIfHeld)), new Throwable());
+            loge("Calling thread " + Thread.currentThread().getName() + " is holding 0x"
+                    + Integer.toHexString(System.identityHashCode(mWarnIfHeld)));
         }
 
         final long startTime = SystemClock.elapsedRealtime();

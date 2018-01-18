@@ -81,4 +81,27 @@ oneway interface IConnectionService {
     void sendCallEvent(String callId, String event, in Bundle extras);
 
     void onExtrasChanged(String callId, in Bundle extras);
+
+    /// M: CC: HangupAll for FTA 31.4.4.2
+    void hangupAll(String callId);
+
+    /// M: CC: Interface for ECT
+    void explicitCallTransfer(String callId);
+
+    /// M: CC: Interface for blind/assured ECT
+    void blindAssuredEct(String callId, String number, int type);
+
+    /// M: For VoLTE @{
+    void inviteConferenceParticipants(String conferenceCallId, in List<String> numbers);
+    void createConference(
+            in PhoneAccountHandle connectionManagerPhoneAccount,
+            String conferenceCallId,
+            in ConnectionRequest request,
+            in List<String> numbers,
+            boolean isIncoming);
+    /// @}
+
+    /// M: CC: For MSMS/MSMA ordered user operations.
+    void handleOrderedOperation(
+        String callId, String currentOperation, String pendingOperation);
 }

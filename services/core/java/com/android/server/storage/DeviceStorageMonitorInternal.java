@@ -1,3 +1,8 @@
+/*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
 /**
  * Copyright (c) 2013, The Android Open Source Project
  *
@@ -20,5 +25,12 @@ public interface DeviceStorageMonitorInternal {
     boolean isMemoryLow();
     long getMemoryLowThreshold();
     void checkMemory();
+    /**
+     * M: callable from other things in the system process to check whether memory
+     * is crtical low.
+     *
+     * @return true is memory is crtical low
+     */
+    boolean isMemoryCriticalLow();
 }
 

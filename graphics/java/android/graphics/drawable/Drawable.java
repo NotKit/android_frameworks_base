@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -209,10 +214,10 @@ public abstract class Drawable {
 
         if (oldBounds.left != left || oldBounds.top != top ||
                 oldBounds.right != right || oldBounds.bottom != bottom) {
-            if (!oldBounds.isEmpty()) {
-                // first invalidate the previous bounds
-                invalidateSelf();
-            }
+//            if (!oldBounds.isEmpty()) {
+//                // first invalidate the previous bounds
+//                invalidateSelf();
+//            }
             mBounds.set(left, top, right, bottom);
             onBoundsChange(mBounds);
         }

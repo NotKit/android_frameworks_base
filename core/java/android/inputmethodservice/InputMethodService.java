@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007-2008 The Android Open Source Project
  * 
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not
@@ -79,6 +84,8 @@ import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
+
+import android.os.SystemProperties;
 
 /**
  * InputMethodService provides a standard implementation of an InputMethod,
@@ -234,7 +241,9 @@ import java.lang.annotation.RetentionPolicy;
  */
 public class InputMethodService extends AbstractInputMethodService {
     static final String TAG = "InputMethodService";
-    static final boolean DEBUG = false;
+
+    /** M: Changed for switch log on/off in the runtime. **/
+    static boolean DEBUG = false;
 
     /**
      * The back button will close the input window.
@@ -899,6 +908,14 @@ public class InputMethodService extends AbstractInputMethodService {
         int showFlags = mShowInputFlags;
         boolean showingInput = mShowInputRequested;
         CompletionInfo[] completions = mCurCompletions;
+        /// M: This block is to fix the google issue that the spell check
+        /// suggestions popup window is left on the screen
+        /// when ExtractEditText is hidden. @{
+        if (null != mExtractEditText) {
+            mExtractEditText.onWindowFocusChanged(false);
+            mExtractEditText.setVisibility(View.GONE);
+        }
+        /// @}
         initViews();
         mInputViewStarted = false;
         mCandidatesViewStarted = false;
@@ -1785,6 +1802,11 @@ public class InputMethodService extends AbstractInputMethodService {
         mInputStarted = true;
         mStartedInputConnection = ic;
         mInputEditorInfo = attribute;
+        /// M: this time App should know whether the IME is in fullscreen mode
+        ///    to adjust it's cursor and the spell check suggestions window. @{
+        //if (ic != null) ic.reportFullscreenMode(onEvaluateFullscreenMode());
+        /// @}
+        if (ic != null) ic.reportFullscreenMode(mIsFullscreen);
         initialize();
         if (DEBUG) Log.v(TAG, "CALL: onStartInput");
         onStartInput(attribute, restarting);
@@ -2625,8 +2647,21 @@ public class InputMethodService extends AbstractInputMethodService {
     /**
      * Performs a dump of the InputMethodService's internal state.  Override
      * to add your own information to the dump.
+     * M: Changed for switch log on/off in the runtime.
      */
     @Override protected void dump(FileDescriptor fd, PrintWriter fout, String[] args) {
+        /** M: Changed for switch log on/off in the runtime. @{ **/
+        if (args.length == 1) {
+            if ("enable".equals(args[0])) {
+                DEBUG = true;
+                return;
+            } else if ("disable".equals(args[0])) {
+                DEBUG = false;
+                return;
+            }
+        }
+        /** @} **/
+
         final Printer p = new PrintWriterPrinter(fout);
         p.println("Input method service state for " + this + ":");
         p.println("  mWindowCreated=" + mWindowCreated

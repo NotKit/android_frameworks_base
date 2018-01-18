@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright 2014, The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -176,5 +181,34 @@ public final class ParcelableConference implements Parcelable {
         destination.writeParcelable(mStatusHints, 0);
         destination.writeBundle(mExtras);
         destination.writeInt(mConnectionProperties);
+        /// M: For VoLTE @{
+        destination.writeParcelable(mDisconnectCause, 0);
+        /// @}
     }
+
+    /// M: For VoLTE @{
+    // only used for conference dial and VoLTE conference incoming.
+    private DisconnectCause mDisconnectCause = new DisconnectCause(DisconnectCause.UNKNOWN);
+
+    ParcelableConference(
+            PhoneAccountHandle phoneAccount,
+            int state,
+            int connectionCapabilities,
+            int connectionProperties,
+            List<String> connectionIds,
+            IVideoProvider videoProvider,
+            int videoState,
+            long connectTimeMillis,
+            StatusHints statusHints,
+            Bundle extras,
+            DisconnectCause disconnectCause) {
+        this(phoneAccount, state, connectionCapabilities, connectionProperties, connectionIds,
+                videoProvider, videoState, connectTimeMillis, statusHints, extras);
+        mDisconnectCause = disconnectCause;
+    }
+
+    public final DisconnectCause getDisconnectCause() {
+        return mDisconnectCause;
+    }
+    /// @}
 }

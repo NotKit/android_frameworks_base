@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +25,10 @@ import com.android.internal.os.SomeArgs;
 import com.android.internal.telecom.IVideoCallback;
 import com.android.internal.telecom.IVideoProvider;
 
+/// M: ALPS02136977. Prints debug logs at each differenct connectionService. (e.q. telephony).
+import com.mediatek.telecom.FormattedLog;
+import com.mediatek.telecom.TelecomManagerEx;
+
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.annotation.SystemApi;
@@ -33,6 +42,10 @@ import android.os.Message;
 import android.os.RemoteException;
 import android.util.ArraySet;
 import android.view.Surface;
+
+/// M: CC: Proprietary CRSS handling @{
+import android.text.TextUtils;
+/// @}
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -318,8 +331,49 @@ public abstract class Connection extends Conferenceable {
      */
     public static final int CAPABILITY_CAN_PULL_CALL = 0x01000000;
 
+    /**
+     * M: Can record voice
+     * @hide
+     * @internal
+     */
+    public static final int CAPABILITY_VOICE_RECORD = 0x02000000;
+
+    /// M: CC: Interface for ECT @{
+    /**
+     * M: Device support ECT(explicit call transfer).
+     * @hide
+     * @internal
+     */
+    public static final int CAPABILITY_ECT = 0x04000000;
+    /// @}
+
+    /// M: For VoLTE @{
+    /**
+     * Connection is using voice over LTE.
+     * @hide
+     * @internal
+     */
+    public static final int CAPABILITY_VOLTE = 0x08000000;
+
+    /**
+     * Indicate the call has capability to invite conference participant(s).
+     * (for VoLTE conference host).
+     * @hide
+     * @internal
+     */
+    public static final int CAPABILITY_INVITE_PARTICIPANTS = 0x10000000;
+    /// @}
+
+    /// M: CC: Interface for blind/assured ECT @{
+    /**
+     * M: Device support blind/assured ECT(explicit call transfer).
+     * @hide
+     */
+    public static final int CAPABILITY_BLIND_ASSURED_ECT = 0x20000000;
+    /// @}
+
     //**********************************************************************************************
-    // Next CAPABILITY value: 0x02000000
+    // Next CAPABILITY value: 0x40000000
     //**********************************************************************************************
 
     /**
@@ -379,6 +433,17 @@ public abstract class Connection extends Conferenceable {
     //**********************************************************************************************
     // Next PROPERTY value: 1<<7
     //**********************************************************************************************
+
+    /// M: MTK added customizations base
+    private static final int PROPERTY_CUSTOMIZATION_BASE = 1 << 16;
+
+    /// M: For Volte @{
+    /**
+     * Connection is using VOLTE.
+     * @hide
+     */
+    public static final int PROPERTY_VOLTE = PROPERTY_CUSTOMIZATION_BASE << 0;
+    /// @}
 
     /**
      * Connection extra key used to store the last forwarded number associated with the current
@@ -647,6 +712,33 @@ public abstract class Connection extends Conferenceable {
         if (can(capabilities, CAPABILITY_CAN_PULL_CALL)) {
             builder.append(isLong ? " CAPABILITY_CAN_PULL_CALL" : " pull");
         }
+        if ((capabilities & CAPABILITY_VOICE_RECORD) != 0) {
+            builder.append(" CAPABILITY_VOICE_RECORD");
+        }
+        /// M: CC: Interface for ECT @{
+        if ((capabilities & CAPABILITY_ECT) != 0) {
+            builder.append(" CAPABILITY_ECT");
+        }
+        /// @}
+        /// M: For VoLTE @{
+        if ((capabilities & CAPABILITY_VOLTE) != 0) {
+            builder.append(" CAPABILITY_VOLTE");
+        }
+        if ((capabilities & CAPABILITY_INVITE_PARTICIPANTS) != 0) {
+            builder.append(" CAPABILITY_INVITE_PARTICIPANTS");
+        }
+        if ((capabilities & CAPABILITY_SEPARATE_FROM_CONFERENCE) != 0) {
+            builder.append(" CAPABILITY_SEPARATE_FROM_CONFERENCE");
+        }
+        if ((capabilities & CAPABILITY_DISCONNECT_FROM_CONFERENCE) != 0) {
+            builder.append(" CAPABILITY_DISCONNECT_FROM_CONFERENCE");
+        }
+        /// @}
+        /// M: CC: Interface for blind/assured ECT @{
+        if ((capabilities & CAPABILITY_BLIND_ASSURED_ECT) != 0) {
+            builder.append(" CAPABILITY_BLIND_ASSURED_ECT");
+        }
+        /// @}
 
         builder.append("]");
         return builder.toString();
@@ -703,6 +795,12 @@ public abstract class Connection extends Conferenceable {
         if (can(properties, PROPERTY_HAS_CDMA_VOICE_PRIVACY)) {
             builder.append(isLong ? " PROPERTY_HAS_CDMA_VOICE_PRIVACY" : " priv");
         }
+
+        /// M: For VoLTE @{
+        if (can(properties, PROPERTY_VOLTE)) {
+            builder.append(" PROPERTY_VOLTE");
+        }
+        /// @}
 
         builder.append("]");
         return builder.toString();
@@ -823,11 +921,77 @@ public abstract class Connection extends Conferenceable {
          */
         public static final int SESSION_MODIFY_REQUEST_TIMED_OUT = 4;
 
+        /// M: MTK added session events. @{
+        /**
+         * M: Camera operation crash. This occurs after a set of operation of camera.
+         * This event means MAL has been crash and unrecoverable. This call should be
+         * downgrade and disable the upgrade icon.
+         * The {@link android.telecom.InCallService} can use this as a cue that the
+         * camera is not available and won't recover any more during current call lifecycle.
+         * Note: this has different meaning from {@link #SESSION_EVENT_CAMERA_FAILURE}
+         * @see #handleCallSessionEvent(int)
+         * @hide
+         */
+        public static final int SESSION_EVENT_ERROR_CAMERA_CRASHED = 8003;
+        /// @}
+
         /**
          * Session modify request rejected by remote user.
          * @see #receiveSessionModifyResponse(int, VideoProfile, VideoProfile)
          */
         public static final int SESSION_MODIFY_REQUEST_REJECTED_BY_REMOTE = 5;
+
+        /* M: ViLTE part start */
+        /**
+         * session modify for Canceling upgrade
+         * @hide
+         */
+        private static final int SESSION_MODIFY_MTK_BASE = 200;
+
+        /**
+         * session modify for Canceling upgrade fail
+         * @hide
+         */
+        public static final int SESSION_MODIFY_CANCEL_UPGRADE_FAIL = SESSION_MODIFY_MTK_BASE;
+        /**
+         * session modify for Canceling upgrade fail to execute downgrade
+         * @hide
+         */
+        public static final int SESSION_MODIFY_CANCEL_UPGRADE_FAIL_AUTO_DOWNGRADE =
+                SESSION_MODIFY_MTK_BASE+1;
+        /**
+         * session modify for Canceling upgrade fail because of reject upgrade
+         * @hide
+         */
+        public static final int SESSION_MODIFY_CANCEL_UPGRADE_FAIL_REMOTE_REJECT_UPGRADE =
+                SESSION_MODIFY_MTK_BASE+2;
+        /* M: ViLTE part end */
+
+        /// M: Added video call UI mode for partial FPS. @{
+        /**
+         * Foreground UI mode
+         * @hide
+         */
+        public static final int UI_MODE_FG = 0;
+
+        /**
+         * Background UI mode
+         * @hide
+         */
+        public static final int UI_MODE_BG = 1;
+
+        /**
+         * Full screen UI mode
+         * @hide
+         */
+        public static final int UI_MODE_FULL_SCREEN = 2;
+
+        /**
+         * Normal screen UI mode
+         * @hide
+         */
+        public static final int UI_MODE_NORMAL_SCREEN = 3;
+        /// @}
 
         private static final int MSG_ADD_VIDEO_CALLBACK = 1;
         private static final int MSG_SET_CAMERA = 2;
@@ -841,6 +1005,11 @@ public abstract class Connection extends Conferenceable {
         private static final int MSG_REQUEST_CONNECTION_DATA_USAGE = 10;
         private static final int MSG_SET_PAUSE_IMAGE = 11;
         private static final int MSG_REMOVE_VIDEO_CALLBACK = 12;
+
+        /* M: ViLTE part start */
+        private static final int MSG_MTK_BASE = 100;
+        private static final int MSG_SET_UI_MODE = MSG_MTK_BASE;
+        /* M: ViLTE part end */
 
         private static final String SESSION_EVENT_RX_PAUSE_STR = "RX_PAUSE";
         private static final String SESSION_EVENT_RX_RESUME_STR = "RX_RESUME";
@@ -891,6 +1060,9 @@ public abstract class Connection extends Conferenceable {
                             Log.i(this, "addVideoProvider - skipped; already present.");
                             break;
                         }
+                        /// M: add log for debugging.
+                        Log.w(this, "Connection addVideocallback put binder=:" + binder +
+                                "callback=" + callback);
                         mVideoCallbacks.put(binder, callback);
                         break;
                     }
@@ -902,6 +1074,9 @@ public abstract class Connection extends Conferenceable {
                             Log.i(this, "removeVideoProvider - skipped; not present.");
                             break;
                         }
+                        /// M: add log for debugging.
+                        Log.w(this, "Connection removeVideocallback binder=:" + binder +
+                                "callback=" + callback);
                         mVideoCallbacks.remove(binder);
                         break;
                     }
@@ -942,6 +1117,11 @@ public abstract class Connection extends Conferenceable {
                     case MSG_SET_PAUSE_IMAGE:
                         onSetPauseImage((Uri) msg.obj);
                         break;
+                    /* M: ViLTE part start */
+                    case MSG_SET_UI_MODE:
+                        onSetUIMode((int) msg.obj);
+                        break;
+                    /* M: ViLTE part end */
                     default:
                         break;
                 }
@@ -1006,6 +1186,12 @@ public abstract class Connection extends Conferenceable {
             public void setPauseImage(Uri uri) {
                 mMessageHandler.obtainMessage(MSG_SET_PAUSE_IMAGE, uri).sendToTarget();
             }
+
+            /* M: ViLTE part start */
+            public void setUIMode(int mode) {
+                mMessageHandler.obtainMessage(MSG_SET_UI_MODE, mode).sendToTarget();
+            }
+            /* M: ViLTE part end */
         }
 
         public VideoProvider() {
@@ -1167,6 +1353,19 @@ public abstract class Connection extends Conferenceable {
          */
         public abstract void onSetPauseImage(Uri uri);
 
+        /* M: ViLTE part start */
+        /**
+         * Provides the video telephony framework with the mode of inCall screen
+         * and framework need to update the surface related status depend on the screen mode.
+         *
+         * @param mode UI mode of current inCall screen.
+         *             mode = 0 : inCall screen is foreground
+         *             mode = 1 : inCall screen is background
+         * @hide
+         */
+        public void onSetUIMode(int mode){}
+        /* M: ViLTE part end */
+
         /**
          * Used to inform listening {@link InCallService} implementations when the
          * {@link VideoProvider} receives a session modification request.
@@ -1272,6 +1471,38 @@ public abstract class Connection extends Conferenceable {
             }
         }
 
+
+        /* M: ViLTE part start */
+        /**
+         * Used to inform listening {@link InCallService} implementations when the dimensions of the
+         * peer's video have changed.
+         * <p>
+         * This could occur if, for example, the peer rotates their device, changing the aspect
+         * ratio of the video, or if the user switches between the back and front cameras.
+         * <p>
+         * Received by the {@link InCallService} via
+         * {@link InCallService.VideoCall.Callback#onPeerDimensionsWithAngleChanged(int, int, int)}.
+         *
+         * Different from AOSP, additional parameter "rotation" is added.
+         *
+         * @param width  The updated peer video width.
+         * @param height The updated peer video height.
+         * @param rotation The updated peer video rotation.
+         * @hide
+         */
+        public void changePeerDimensionsWithAngle(int width, int height, int rotation) {
+            if (mVideoCallbacks != null) {
+                for (IVideoCallback callback : mVideoCallbacks.values()) {
+                    try {
+                        callback.changePeerDimensionsWithAngle(width, height, rotation);
+                    } catch (RemoteException ignored) {
+                        Log.w(this, "changePeerDimensionsWithAngle callback failed", ignored);
+                    }
+                }
+            }
+        }
+        /* M: ViLTE part end */
+
         /**
          * Used to inform listening {@link InCallService} implementations when the data usage of the
          * video associated with the current {@link Connection} has changed.
@@ -1328,6 +1559,8 @@ public abstract class Connection extends Conferenceable {
             if (mVideoCallbacks != null) {
                 for (IVideoCallback callback : mVideoCallbacks.values()) {
                     try {
+                        /// M: add log for debugging.
+                        Log.w(this, "changeCameraCapabilities callback=:" + callback);
                         callback.changeCameraCapabilities(cameraCapabilities);
                     } catch (RemoteException ignored) {
                         Log.w(this, "changeCameraCapabilities callback failed", ignored);
@@ -1438,6 +1671,9 @@ public abstract class Connection extends Conferenceable {
     private ConnectionService mConnectionService;
     private Bundle mExtras;
     private final Object mExtrasLock = new Object();
+
+    /// M: Add PhoneAccountHandle for ECC
+    private PhoneAccountHandle mAccountHandle;
 
     /**
      * Tracks the key set for the extras bundle provided on the last invocation of
@@ -2091,6 +2327,105 @@ public abstract class Connection extends Conferenceable {
         }
     }
 
+    /// M: CC: Modem reset related handling @{
+    /**
+     * Notify to telecomm if the connection is lost.
+     * @hide
+     */
+    public final void notifyConnectionLost() {
+        sendConnectionEvent(TelecomManagerEx.EVENT_CONNECTION_LOST, null);
+    }
+    /// @}
+
+    /// M: CC: Proprietary CRSS handling @{
+    /** @hide */
+    public final void notifyActionFailed(int action) {
+        Log.i(this, "notifyActionFailed action = " + action);
+        sendConnectionEvent(TelecomManagerEx.EVENT_OPERATION_FAIL,
+                TelecomManagerEx.createOperationFailBundle(action));
+    }
+
+    /** @hide */
+    public void notifySSNotificationToast(
+            int notiType, int type, int code, String number, int index) {
+        Log.i(this, "notifySSNotificationToast notiType = " + notiType + " type = " + type
+                + " code = " + code + " number = " + number + " index = " + index);
+        sendConnectionEvent(TelecomManagerEx.EVENT_SS_NOTIFICATION,
+                TelecomManagerEx.createSsNotificationBundle(notiType, type, code, number, index));
+    }
+
+    /** @hide */
+    public void notifyNumberUpdate(String number) {
+        Log.i(this, "notifyNumberUpdate number = " + number);
+        if (!TextUtils.isEmpty(number)) {
+            sendConnectionEvent(TelecomManagerEx.EVENT_NUMBER_UPDATED,
+                    TelecomManagerEx.createNumberUpdatedBundle(number));
+        }
+    }
+
+    /** @hide */
+    public void notifyIncomingInfoUpdate(int type, String alphaid, int cliValidity) {
+        Log.i(this, "notifyIncomingInfoUpdate type = "
+                + type + " alphaid = " + alphaid + " cliValidity = " + cliValidity);
+        sendConnectionEvent(TelecomManagerEx.EVENT_INCOMING_INFO_UPDATED,
+                TelecomManagerEx.createIncomingInfoUpdatedBundle(type, alphaid, cliValidity));
+    }
+    /// @}
+
+    /* M: CC part start */
+    /** @hide */
+    protected void fireOnCdmaCallAccepted() {
+        Log.d(this, "fireOnCdmaCallAccepted: %s", stateToString(mState));
+        sendConnectionEvent(TelecomManagerEx.EVENT_CDMA_CALL_ACCEPTED, null);
+    }
+    /* M: CC part end */
+
+    /// M: CC: Set PhoneAccountHandle for ECC @{
+    //[ALPS01794357]
+    /**
+     * @return The PhoneAccountHandle this connection really used.
+     * @hide
+     */
+    public PhoneAccountHandle getAccountHandle() { return mAccountHandle; }
+    /**
+     *  set the PhoneAccountHandle this connection really used.
+     * @hide
+     */
+    public void setAccountHandle(PhoneAccountHandle handle) {
+        mAccountHandle = handle;
+        sendConnectionEvent(TelecomManagerEx.EVENT_PHONE_ACCOUNT_CHANGED,
+                TelecomManagerEx.createPhoneAccountChangedBundle(handle));
+    }
+    /// @}
+
+    /// M: CC: For 3G VT only @{
+    /**
+     * Notify to telecomm of the VT call status info.
+     * @param status The VT status
+     * @hide
+     */
+    public final void notifyVtStatusInfo(int status) {
+        Log.d(this, "notifyVtStatusInfo %s" + status);
+        sendConnectionEvent(TelecomManagerEx.EVENT_VT_STATUS_UPDATED,
+                TelecomManagerEx.createVtStatudUpdatedBundle(status));
+    }
+    /// @}
+
+    /// M: For Volte @{
+    /**
+     * This function used to update some VoLTE related info of the connection.
+     * This will triger IConnectionServiceAdapter.updateExtras().
+     * see com.mediatek.telecom.TelecomManagerEx.EXTRA_VOLTE_MARKED_AS_EMERGENCY
+     *     com.mediatek.telecom.TelecomManagerEx.EXTRA_VOLTE_PAU_FIELD
+     * @param bundle
+     * @hide
+     */
+    public void setCallInfo(Bundle bundle) {
+        Log.d(this, "setCallInfo");
+        sendConnectionEvent(TelecomManagerEx.EVENT_UPDATE_VOLTE_EXTRA, bundle);
+    }
+    /// @}
+
     /**
      * Set some extras that can be associated with this {@code Connection}.
      * <p>
@@ -2389,6 +2724,30 @@ public abstract class Connection extends Conferenceable {
      */
     public void onExtrasChanged(Bundle extras) {}
 
+    /// M: CC: Interface for ECT @{
+    /**
+     * Handle explicit call transfer.
+     * @hide
+     */
+    public void onExplicitCallTransfer() {}
+    /// @}
+
+    /// M: CC: Interface for blind/assured ECT @{
+    /**
+     * Handle blind/assured explicit call transfer.
+     * @hide
+     */
+    public void onExplicitCallTransfer(String number, int type) {}
+    /// @}
+
+    /// M: CC: HangupAll for FTA 31.4.4.2 @{
+    /**
+     * To hang up all connections.
+     * @hide
+     */
+    public void onHangupAll() {}
+    /// @}
+
     static String toLogSafePhoneNumber(String number) {
         // For unknown number, log empty string.
         if (number == null) {
@@ -2423,12 +2782,34 @@ public abstract class Connection extends Conferenceable {
         if (mState != state) {
             Log.d(this, "setState: %s", stateToString(state));
             mState = state;
+
+            /// M: ALPS02136977. Prints debug logs at connectionService. (e.q. telephony). @{
+            FormattedLog.Builder builder = configDumpLogBuilder(new FormattedLog.Builder());
+            if (builder != null) {
+                FormattedLog formattedLog = builder.buildDumpInfo();
+                if (formattedLog != null) {
+                    Log.d(this, formattedLog.toString());
+                }
+            }
+            /// @}
+
             onStateChanged(state);
             for (Listener l : mListeners) {
                 l.onStateChanged(this, state);
             }
         }
     }
+
+    /// M: CC: Force updateState for Connection once its ConnectionService is set @{
+    /**
+     * Base class for forcing call state update after ConnectionService is set,
+     * to keep phoneCapabilities up-to-date.
+     * see {@link ConnectionService#addConnection}
+     * To be overrided by children classes.
+     * @hide
+     */
+    protected void fireOnCallState() {}
+    /// @}
 
     private static class FailureSignalingConnection extends Connection {
         private boolean mImmutable = false;
@@ -2614,4 +2995,72 @@ public abstract class Connection extends Conferenceable {
             l.onConnectionEvent(this, event, extras);
         }
     }
+
+    /// M: ALPS02136977. Prints debug logs at each connectionService. (e.q. telephony). @{
+    /**
+     * Configure the formatted dump log builder for basic information.
+     * format:
+     * [category][Module][Dump][call-number][localCallID]-[name:value],[name:value]-Msg. String
+     * Sub-class should override it.
+     *
+     * @param builder given a FormattedLog Builder
+     * @return FormattedLog.Builder
+     * @hide
+     */
+    protected FormattedLog.Builder configDumpLogBuilder(FormattedLog.Builder builder) {
+        if (builder == null) {
+            return null;
+        }
+
+        builder.setCategory("CC");
+        builder.setOpType(FormattedLog.OpType.DUMP);
+
+        /// M: ALPS02288178. mAddress might be null. @{
+        if (mAddress != null) {
+            builder.setCallNumber(mAddress.getSchemeSpecificPart());
+        }
+        /// @}
+
+        builder.setCallId(Integer.toString(System.identityHashCode(this)));
+        builder.setStatusInfo("isConfCall", "No");
+
+        builder.setStatusInfo("state", callStateToFormattedDumpString(mState));
+        if (getConference() == null) {
+            builder.setStatusInfo("isConfChildCall", "No");
+        } else {
+            builder.setStatusInfo("isConfChildCall", "Yes");
+        }
+        builder.setStatusInfo("capabilities",
+            capabilitiesToString(getConnectionCapabilities()));
+
+        return builder;
+    }
+
+    /**
+     * Translate from Connection.State to dump info state string.
+     *
+     * @param state Connection.State
+     * @return Formatted dump info state string
+     * @hide
+     */
+    static String callStateToFormattedDumpString(int state) {
+        switch (state) {
+            case STATE_INITIALIZING:
+            case STATE_NEW:
+                return "new";
+            case STATE_RINGING:
+                return "ringing";
+            case STATE_DIALING:
+                return "dialing";
+            case STATE_ACTIVE:
+                return "active";
+            case STATE_HOLDING:
+                return "onhold";
+            case STATE_DISCONNECTED:
+                return "disconnected";
+            default:
+                return "unknown";
+        }
+    }
+    /// @}
 }

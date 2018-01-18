@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -39,6 +44,18 @@ final class PackageSetting extends PackageSettingBase {
         super(name, realName, codePath, resourcePath, legacyNativeLibraryPathString,
                 primaryCpuAbiString, secondaryCpuAbiString, cpuAbiOverrideString,
                 pVersionCode, pkgFlags, privateFlags, parentPackageName, childPackageNames);
+    }
+
+    /// M: [FlagExt] Additional constructor for MTK flags
+    PackageSetting(String name, String realName, File codePath, File resourcePath,
+            String legacyNativeLibraryPathString, String primaryCpuAbiString,
+            String secondaryCpuAbiString, String cpuAbiOverrideString,
+            int pVersionCode, int pkgFlags, int privateFlags, int flagsEx,
+            String parentPackageName, List<String> childPackageNames) {
+        super(name, realName, codePath, resourcePath, legacyNativeLibraryPathString,
+                primaryCpuAbiString, secondaryCpuAbiString, cpuAbiOverrideString,
+                pVersionCode, pkgFlags, privateFlags, flagsEx,
+                parentPackageName, childPackageNames);
     }
 
     /**

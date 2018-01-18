@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -158,24 +163,29 @@ public class PreferenceGroupAdapter extends BaseAdapter
         // TODO: shouldn't always?
         group.sortPreferences();
 
-        final int groupSize = group.getPreferenceCount();
-        for (int i = 0; i < groupSize; i++) {
-            final Preference preference = group.getPreference(i);
-            
-            preferences.add(preference);
-            
-            if (!mHasReturnedViewTypeCount && preference.canRecycleLayout()) {
-                addPreferenceClassName(preference);
-            }
-            
-            if (preference instanceof PreferenceGroup) {
-                final PreferenceGroup preferenceAsGroup = (PreferenceGroup) preference;
-                if (preferenceAsGroup.isOnSameScreenAsChildren()) {
-                    flattenPreferenceGroup(preferences, preferenceAsGroup);
-                }
-            }
+        // M: preference group might be modified by other threads at the same time.
+        // Need to synchronize this for-loop to avoid from the thread interference
+        // issue. For details, please refer to ALPS01474347.
+        synchronized (group) {
+            final int groupSize = group.getPreferenceCount();
+            for (int i = 0; i < groupSize; i++) {
+                final Preference preference = group.getPreference(i);
 
-            preference.setOnPreferenceChangeInternalListener(this);
+                preferences.add(preference);
+
+                if (!mHasReturnedViewTypeCount && preference.canRecycleLayout()) {
+                    addPreferenceClassName(preference);
+                }
+
+                if (preference instanceof PreferenceGroup) {
+                    final PreferenceGroup preferenceAsGroup = (PreferenceGroup) preference;
+                    if (preferenceAsGroup.isOnSameScreenAsChildren()) {
+                        flattenPreferenceGroup(preferences, preferenceAsGroup);
+                    }
+                }
+
+                preference.setOnPreferenceChangeInternalListener(this);
+            }
         }
     }
 

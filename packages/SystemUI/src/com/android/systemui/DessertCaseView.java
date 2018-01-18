@@ -338,11 +338,17 @@ public class DessertCaseView extends FrameLayout {
         return new AnimatorListenerAdapter() {
             @Override
             public void onAnimationStart(Animator animator) {
+                /// M: [ALPS01271500] Check if this view is currently attached to a window.
+                if (!v.isAttachedToWindow()) return;
+
                 v.setLayerType(View.LAYER_TYPE_HARDWARE, null);
                 v.buildLayer();
             }
             @Override
             public void onAnimationEnd(Animator animator) {
+                /// M: [ALPS01271500] Check if this view is currently attached to a window.
+                if (!v.isAttachedToWindow()) return;
+
                 v.setLayerType(View.LAYER_TYPE_NONE, null);
             }
         };

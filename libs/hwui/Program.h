@@ -38,7 +38,7 @@ namespace uirenderer {
 
 // Debug
 #if DEBUG_PROGRAMS
-    #define PROGRAM_LOGD(...) ALOGD(__VA_ARGS__)
+    #define PROGRAM_LOGD(...) MLOGD(DEBUG_PROGRAMS, __VA_ARGS__)
 #else
     #define PROGRAM_LOGD(...)
 #endif
@@ -266,6 +266,47 @@ struct ProgramDescription {
     }
 
     /**
+     * M: [ProgramBinaryAtlas] Set program by program id.
+     */
+    void set(programid key) {
+        reset();
+        if (key & PROGRAM_KEY_TEXTURE) hasTexture = true;
+        if (key & PROGRAM_KEY_A8_TEXTURE) hasAlpha8Texture = true;
+        if (key & PROGRAM_KEY_BITMAP) hasBitmap = true;
+        if (key & PROGRAM_KEY_BITMAP_NPOT) isBitmapNpot = true;
+        if (isBitmapNpot) {
+            if (key & (getEnumForWrap(GL_REPEAT) << PROGRAM_BITMAP_WRAPS_SHIFT)) bitmapWrapS = GL_REPEAT;
+            else if (key & (getEnumForWrap(GL_MIRRORED_REPEAT) << PROGRAM_BITMAP_WRAPS_SHIFT)) bitmapWrapS = GL_MIRRORED_REPEAT;
+            if (key & (getEnumForWrap(GL_REPEAT) << PROGRAM_BITMAP_WRAPT_SHIFT)) bitmapWrapT = GL_REPEAT;
+            else if (key & (getEnumForWrap(GL_MIRRORED_REPEAT) << PROGRAM_BITMAP_WRAPT_SHIFT)) bitmapWrapT = GL_MIRRORED_REPEAT;
+        }
+        if (key & PROGRAM_KEY_GRADIENT) hasGradient = true;
+        if (key & (programid(kGradientCircular) << PROGRAM_GRADIENT_TYPE_SHIFT)) gradientType = kGradientCircular;
+        else if (key & (programid(kGradientSweep) << PROGRAM_GRADIENT_TYPE_SHIFT)) gradientType = kGradientSweep;
+        if (key & PROGRAM_KEY_BITMAP_FIRST) isBitmapFirst = true;
+        if (hasBitmap && hasGradient) {
+            shadersMode = (SkXfermode::Mode)((key >> PROGRAM_XFERMODE_SHADER_SHIFT) & PROGRAM_MAX_XFERMODE);
+        }
+        if (key & PROGRAM_KEY_COLOR_MATRIX) colorOp = ColorFilterMode::Matrix;
+        else if (key & PROGRAM_KEY_COLOR_BLEND) colorOp = ColorFilterMode::Blend;
+        if (colorOp == ColorFilterMode::Blend) {
+            colorMode = (SkXfermode::Mode)((key >> PROGRAM_XFERMODE_COLOR_OP_SHIFT) & PROGRAM_MAX_XFERMODE);
+        }
+
+        framebufferMode = (SkXfermode::Mode)((key >> PROGRAM_XFERMODE_FRAMEBUFFER_SHIFT) & PROGRAM_MAX_XFERMODE);
+        if (key & PROGRAM_KEY_SWAP_SRC_DST) swapSrcDst = true;
+        if (key & programid(0x1) << PROGRAM_MODULATE_SHIFT) modulate = true;
+        if (key & programid(0x1) << PROGRAM_HAS_VERTEX_ALPHA_SHIFT) hasVertexAlpha = true;
+        if (key & programid(0x1) << PROGRAM_USE_SHADOW_ALPHA_INTERP_SHIFT) useShadowAlphaInterp = true;
+        if (key & programid(0x1) << PROGRAM_HAS_EXTERNAL_TEXTURE_SHIFT) hasExternalTexture = true;
+        if (key & programid(0x1) << PROGRAM_HAS_TEXTURE_TRANSFORM_SHIFT) hasTextureTransform = true;
+        if (key & programid(0x1) << PROGRAM_IS_SIMPLE_GRADIENT) isSimpleGradient = true;
+        if (key & programid(0x1) << PROGRAM_HAS_COLORS) hasColors = true;
+        if (key & programid(0x1) << PROGRAM_HAS_DEBUG_HIGHLIGHT) hasDebugHighlight = true;
+        if (key & programid(0x1) << PROGRAM_HAS_ROUND_RECT_CLIP) hasRoundRectClip = true;
+    }
+
+    /**
      * Logs the specified message followed by the key identifying this program.
      */
     void log(const char* message) const {
@@ -301,6 +342,11 @@ public:
         kBindingPosition,
         kBindingTexCoords
     };
+
+    /**
+     * M: [ProgramBinaryAtlas] Creates a new program with the specified binary
+     */
+    Program(const ProgramDescription& description, void* binary, GLint length, GLenum format);
 
     /**
      * Creates a new program with the specified vertex and fragment

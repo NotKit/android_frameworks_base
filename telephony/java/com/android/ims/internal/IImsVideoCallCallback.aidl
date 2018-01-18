@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,7 +26,7 @@ import android.telecom.VideoProfile;
 /**
  * Internal remote interface for IMS's video call provider.
  *
- * At least initially, this aidl mirrors telecomm's {@link VideoCallCallback}. We created a
+ * At least initially, this aidl mirrors telecom's {@link VideoCallCallback}. We created a
  * separate aidl interface for invoking callbacks in Telephony from the IMS Service to without
  * accessing internal interfaces. See {@link IImsVideoCallProvider} for additional detail.
  *
@@ -39,6 +44,11 @@ oneway interface IImsVideoCallCallback {
     void handleCallSessionEvent(int event);
 
     void changePeerDimensions(int width, int height);
+
+    /* M: ViLTE part start */
+    /* Different from AOSP, additional parameter "rotation" is added. */
+    void changePeerDimensionsWithAngle(int width, int height, int rotation);
+    /* M: ViLTE part end */
 
     void changeCallDataUsage(long dataUsage);
 

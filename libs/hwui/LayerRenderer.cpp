@@ -246,8 +246,15 @@ Layer* LayerRenderer::createRenderLayer(RenderState& renderState, uint32_t width
         }
     }
 
+    LAYER_RENDERER_LOGD("createRenderLayer %p, %dx%d, fbo %d, texture %d, alpha %d",
+            layer, layer->getWidth(), layer->getHeight(),
+            layer->getFbo(), layer->getTextureId(), layer->getAlpha());
+
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
             layer->getTextureId(), 0);
+
+    LAYER_RENDERER_LOGD("Layer %p finished uploading texture %d to fbo %d",
+            layer, layer->getTextureId(), layer->getFbo());
 
     renderState.bindFramebuffer(previousFbo);
 
@@ -274,6 +281,10 @@ Layer* LayerRenderer::createTextureLayer(RenderState& renderState) {
     LAYER_RENDERER_LOGD("Creating new texture layer");
 
     Layer* layer = new Layer(Layer::Type::Texture, renderState, 0, 0);
+    /// M: stop to tracking texture layer. @{
+    layer->stopTrackingObject();
+    layer->getTexture().stopTrackingObject();
+    /// @}
     layer->setCacheable(false);
     layer->layer.set(0.0f, 0.0f, 0.0f, 0.0f);
     layer->texCoords.set(0.0f, 1.0f, 1.0f, 0.0f);
@@ -289,6 +300,9 @@ Layer* LayerRenderer::createTextureLayer(RenderState& renderState) {
 void LayerRenderer::updateTextureLayer(Layer* layer, uint32_t width, uint32_t height,
         bool isOpaque, bool forceFilter, GLenum renderTarget, const float* textureTransform) {
     if (layer) {
+        LAYER_RENDERER_LOGD("Updating texture layer %p, %dx%d, fbo %d, texture %d, renderTarget 0x%x, alpha %d",
+                layer, width, height, layer->getFbo(), layer->getTextureId(), renderTarget, layer->getAlpha());
+
         layer->setBlend(!isOpaque);
         layer->setForceFilter(forceFilter);
         layer->setSize(width, height);
@@ -309,8 +323,9 @@ void LayerRenderer::updateTextureLayer(Layer* layer, uint32_t width, uint32_t he
 void LayerRenderer::destroyLayer(Layer* layer) {
     if (layer) {
         ATRACE_FORMAT("Destroy %ux%u HW Layer", layer->getWidth(), layer->getHeight());
-        LAYER_RENDERER_LOGD("Recycling layer, %dx%d fbo = %d",
-                layer->getWidth(), layer->getHeight(), layer->getFbo());
+        LAYER_RENDERER_LOGD("Destroying or caching layer %p, %dx%d, fbo %d, texture %d, alpha %d",
+                layer, layer->getWidth(), layer->getHeight(),
+                layer->getFbo(), layer->getTextureId(), layer->getAlpha());
 
         if (!Caches::getInstance().layerCache.put(layer)) {
             LAYER_RENDERER_LOGD("  Destroyed!");
@@ -318,7 +333,7 @@ void LayerRenderer::destroyLayer(Layer* layer) {
         } else {
             LAYER_RENDERER_LOGD("  Cached!");
 #if DEBUG_LAYER_RENDERER
-            Caches::getInstance().layerCache.dump();
+        if (g_HWUI_DEBUG_LAYER_RENDERER) Caches::getInstance().layerCache.dump();
 #endif
             layer->removeFbo();
             layer->region.clear();

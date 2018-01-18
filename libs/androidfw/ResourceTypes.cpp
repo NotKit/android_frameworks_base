@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2008 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -62,6 +67,7 @@ namespace android {
 #define IDMAP_CURRENT_VERSION   0x00000001
 
 #define APP_PACKAGE_ID      0x7f
+#define SYS_MTK_PACKAGE_ID  0x08 /// M: 0x08 is mediatek-res.apk resource ID
 #define SYS_PACKAGE_ID      0x01
 
 static const bool kDebugStringPoolNoisy = false;
@@ -452,6 +458,12 @@ void ResStringPool::setToEmpty()
 status_t ResStringPool::setTo(const void* data, size_t size, bool copyData)
 {
     if (!data || !size) {
+        /// M: 2013-12-25 ALPS01284925 Corrupt XML Log enhancement  @{
+        if(!data)
+            ALOGW("ResStringPool: data is NULL\n");
+        if(!size)
+            ALOGW("ResStringPool: size is NULL\n");
+        /// @}
         return (mError=BAD_TYPE);
     }
 
@@ -462,6 +474,8 @@ status_t ResStringPool::setTo(const void* data, size_t size, bool copyData)
     if (copyData || notDeviceEndian) {
         mOwnedData = malloc(size);
         if (mOwnedData == NULL) {
+            /// M: 2013-12-25 ALPS01284925 Corrupt XML Log enhancement  @{
+            ALOGW("ResStringPool: malloc failed, size = %zu \n",size);
             return (mError=NO_MEMORY);
         }
         memcpy(mOwnedData, data, size);
@@ -1454,6 +1468,10 @@ ssize_t ResXMLParser::indexOfStyle() const
 ResXMLParser::event_code_t ResXMLParser::nextNode()
 {
     if (mEventCode < 0) {
+        /// M: 2013-12-25 ALPS01284925 Corrupt XML Log enhancement  @{
+        if (mEventCode == BAD_DOCUMENT)
+            ALOGW("ResXMLTree.nextNode: BAD_DOCUMENT for mEventCode\n");
+        /// @}
         return mEventCode;
     }
 
@@ -1471,6 +1489,8 @@ ResXMLParser::event_code_t ResXMLParser::nextNode()
 
         if (mTree.validateNode(next) != NO_ERROR) {
             mCurNode = NULL;
+            /// M: 2013-12-25 ALPS01284925 Corrupt XML Log enhancement  @{
+            ALOGW("ResXMLTree.nextNode: BAD_DOCUMENT for validateNode\n");
             return (mEventCode=BAD_DOCUMENT);
         }
 
@@ -1570,12 +1590,20 @@ status_t ResXMLTree::setTo(const void* data, size_t size, bool copyData)
     mEventCode = START_DOCUMENT;
 
     if (!data || !size) {
+        /// M: 2013-12-25 ALPS01284925 Corrupt XML Log enhancement  @{
+        if(!data)
+            ALOGW("ResXMLTree: data is NULL\n");
+        if(!size)
+            ALOGW("ResXMLTree: size is NULL\n");
+        /// @}
         return (mError=BAD_TYPE);
     }
 
     if (copyData) {
         mOwnedData = malloc(size);
         if (mOwnedData == NULL) {
+            /// M: 2013-12-25 ALPS01284925 Corrupt XML Log enhancement  @{
+            ALOGW("ResXMLTree: malloc failed, size = %zu \n",size);
             return (mError=NO_MEMORY);
         }
         memcpy(mOwnedData, data, size);
@@ -1608,6 +1636,8 @@ status_t ResXMLTree::setTo(const void* data, size_t size, bool copyData)
            ((const uint8_t*)chunk) < (mDataEnd-dtohl(chunk->size))) {
         status_t err = validate_chunk(chunk, sizeof(ResChunk_header), mDataEnd, "XML");
         if (err != NO_ERROR) {
+            /// M: 2013-12-25 ALPS01284925 Corrupt XML Log enhancement  @{
+            ALOGW("ResXMLTree: validate_chunk failed\n");
             mError = err;
             goto done;
         }
@@ -1626,11 +1656,15 @@ status_t ResXMLTree::setTo(const void* data, size_t size, bool copyData)
         } else if (type >= RES_XML_FIRST_CHUNK_TYPE
                    && type <= RES_XML_LAST_CHUNK_TYPE) {
             if (validateNode((const ResXMLTree_node*)chunk) != NO_ERROR) {
+                /// M: 2013-12-25 ALPS01284925 Corrupt XML Log enhancement  @{
+                ALOGW("ResXMLTree: validateNode failed\n");
                 mError = BAD_TYPE;
                 goto done;
             }
             mCurNode = (const ResXMLTree_node*)lastChunk;
             if (nextNode() == BAD_DOCUMENT) {
+                /// M: 2013-12-25 ALPS01284925 Corrupt XML Log enhancement  @{
+                ALOGW("ResXMLTree: BAD_DOCUMENT\n");
                 mError = BAD_TYPE;
                 goto done;
             }
@@ -1655,6 +1689,10 @@ status_t ResXMLTree::setTo(const void* data, size_t size, bool copyData)
     }
 
     mError = mStrings.getError();
+    /// M: 2013-12-25 ALPS01284925 Corrupt XML Log enhancement  @{
+    if (mError != NO_ERROR)
+        ALOGW("ResXMLTree: mStrings.getError() is %d\n",mError);
+    /// @}
 
 done:
     restart();
@@ -1711,6 +1749,8 @@ status_t ResXMLTree::validateNode(const ResXMLTree_node* node) const
             ALOGW("Bad XML start block: node header size 0x%x, size 0x%x\n",
                 (unsigned int)headerSize, (unsigned int)size);
         }
+        /// M: 2013-12-25 ALPS01284925 Corrupt XML Log enhancement  @{
+        ALOGW("ResXMLTree.validateNode failed and return BAD_TYPE\n");
         return BAD_TYPE;
     }
 
@@ -5189,7 +5229,7 @@ bool ResTable::stringToValue(Res_value* outValue, String16* outString,
                 }
 
                 uint32_t packageId = Res_GETPACKAGE(rid) + 1;
-                if (packageId != APP_PACKAGE_ID && packageId != SYS_PACKAGE_ID) {
+                if (packageId != APP_PACKAGE_ID && packageId != SYS_PACKAGE_ID && packageId != SYS_MTK_PACKAGE_ID) {
                     outValue->dataType = Res_value::TYPE_DYNAMIC_REFERENCE;
                 }
                 outValue->data = rid;
@@ -5210,7 +5250,7 @@ bool ResTable::stringToValue(Res_value* outValue, String16* outString,
                         outValue->data = rid;
                         outValue->dataType = Res_value::TYPE_DYNAMIC_REFERENCE;
                         return true;
-                    } else if (packageId == APP_PACKAGE_ID || packageId == SYS_PACKAGE_ID) {
+                    } else if (packageId == APP_PACKAGE_ID || packageId == SYS_PACKAGE_ID || packageId == SYS_MTK_PACKAGE_ID) {
                         // We accept packageId's generated as 0x01 in order to support
                         // building the android system resources
                         outValue->data = rid;
@@ -5356,7 +5396,10 @@ bool ResTable::stringToValue(Res_value* outValue, String16* outString,
             }
 
             uint32_t packageId = Res_GETPACKAGE(rid) + 1;
-            if (packageId != APP_PACKAGE_ID && packageId != SYS_PACKAGE_ID) {
+            if (packageId != APP_PACKAGE_ID && packageId != SYS_PACKAGE_ID
+                /// M:ALPS02944115 filter mtk frameworks id filter @{
+                && packageId != SYS_MTK_PACKAGE_ID) {
+                /// @}
                 outValue->dataType = Res_value::TYPE_DYNAMIC_ATTRIBUTE;
             }
             outValue->data = rid;
@@ -5371,7 +5414,10 @@ bool ResTable::stringToValue(Res_value* outValue, String16* outString,
                     outValue->data = rid;
                     outValue->dataType = Res_value::TYPE_DYNAMIC_ATTRIBUTE;
                     return true;
-                } else if (packageId == APP_PACKAGE_ID || packageId == SYS_PACKAGE_ID) {
+                } else if (packageId == APP_PACKAGE_ID || packageId == SYS_PACKAGE_ID
+                    /// M:ALPS02944115 filter mtk frameworks id filter @{
+                    || packageId == SYS_MTK_PACKAGE_ID) {
+                    ///@}
                     // We accept packageId's generated as 0x01 in order to support
                     // building the android system resources
                     outValue->data = rid;
@@ -5832,7 +5878,10 @@ void ResTable::forEachConfiguration(bool ignoreMipmap, bool ignoreAndroidPackage
         if (ignoreAndroidPackage && android == packageGroup->name) {
             continue;
         }
-        if (!includeSystemConfigs && packageGroup->isSystemAsset) {
+        if (!includeSystemConfigs && (packageGroup->isSystemAsset
+        /// M: ALPS02788893, GetNonSystemLocales should ignore mediatek resource @{
+                || packageGroup->id == SYS_MTK_PACKAGE_ID)) {
+        /// }
             continue;
         }
         const size_t typeCount = packageGroup->types.size();
@@ -6011,7 +6060,7 @@ status_t ResTable::getEntry(
             continue;
         }
 
-        // Aggregate all the flags for each package that defines this entry.
+       // Aggregate all the flags for each package that defines this entry.
         if (typeSpec->typeSpecFlags != NULL) {
             specFlags |= dtohl(typeSpec->typeSpecFlags[realEntryIndex]);
         } else {
@@ -6428,6 +6477,7 @@ DynamicRefTable::DynamicRefTable(uint8_t packageId, bool appAsLib)
     // Reserved package ids
     mLookupTable[APP_PACKAGE_ID] = APP_PACKAGE_ID;
     mLookupTable[SYS_PACKAGE_ID] = SYS_PACKAGE_ID;
+    mLookupTable[SYS_MTK_PACKAGE_ID] = SYS_MTK_PACKAGE_ID;
 }
 
 status_t DynamicRefTable::load(const ResTable_lib_header* const header)

@@ -1069,7 +1069,8 @@ final class UserController {
 
     void timeoutUserSwitch(UserState uss, int oldUserId, int newUserId) {
         synchronized (mService) {
-            Slog.wtf(TAG, "User switch timeout: from " + oldUserId + " to " + newUserId
+            /// M: Change Slog.wtf to Slog.w to avoid having WTF easily after adding new user
+            Slog.w(TAG, "User switch timeout: from " + oldUserId + " to " + newUserId
                     + ". Observers that didn't send results: " + mCurWaitingUserSwitchCallbacks);
             sendContinueUserSwitchLocked(uss, oldUserId, newUserId);
         }

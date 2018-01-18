@@ -26,6 +26,8 @@
 #include <vector>
 #include <unordered_map>
 
+#include "mediatek/MTKDisplayListRecorder.h"
+
 struct SkRect;
 
 namespace android {
@@ -53,7 +55,7 @@ class Rect;
  * This class is also the authoritative source for traversing RenderNodes, both for standard op
  * traversal within a DisplayList, and for out of order RenderNode traversal for Z and projection.
  */
-class FrameBuilder : public CanvasStateClient {
+class FrameBuilder : public CanvasStateClient, public DisplayListRecorderClient {
 public:
     struct LightGeometry {
         Vector3 center;
@@ -62,7 +64,7 @@ public:
 
     FrameBuilder(const SkRect& clip,
             uint32_t viewportWidth, uint32_t viewportHeight,
-            const LightGeometry& lightGeometry, Caches& caches);
+            const LightGeometry& lightGeometry, Caches& caches, DisplayListRecorderHost* host = nullptr);
 
     FrameBuilder(const LayerUpdateQueue& layerUpdateQueue,
             const LightGeometry& lightGeometry, Caches& caches);
@@ -244,7 +246,7 @@ private:
     */
     LsaVector<size_t> mLayerStack;
 
-    CanvasState mCanvasState;
+    CanvasStateBuilding mCanvasState;
 
     Caches& mCaches;
 

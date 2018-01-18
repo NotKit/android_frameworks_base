@@ -23,7 +23,7 @@
 
     <!-- Configure mobile network MTU. Carrier specific value is set here.
     -->
-    <integer name="config_mobile_mtu">1440</integer>
+    <integer name="config_mobile_mtu">1428</integer>
 
     <!-- Flag specifying whether VoLTE should be available for carrier: independent of
          carrier provisioning. If false: hard disabled. If true: then depends on carrier

@@ -28,9 +28,14 @@ import android.os.Bundle;
 import android.os.UserHandle;
 import android.os.UserManager;
 import android.provider.Settings.Global;
+import android.telephony.SubscriptionManager;
 import android.text.TextUtils;
 import android.util.Log;
 import android.util.Pair;
+
+import com.android.internal.util.ArrayUtils;
+import com.mediatek.settingslib.UtilsExt;
+import com.mediatek.settingslib.ext.IDrawerExt;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -113,6 +118,15 @@ public class TileUtils {
 
     private static final String SETTING_PKG = "com.android.settings";
 
+    /// M: Drawer plugin support
+    private static IDrawerExt sDrawerExt;
+
+    /// M: Extra package white list for add item to Settings @{
+    private static final String[] EXTRA_PACKAGE_WHITE_LIST = {
+            "com.mediatek.duraspeed",
+    };
+    /// M: @}
+
     public static List<DashboardCategory> getCategories(Context context,
             HashMap<Pair<String, String>, Tile> cache) {
         final long startTime = System.currentTimeMillis();
@@ -166,7 +180,9 @@ public class TileUtils {
             return null;
         }
         for (ResolveInfo resolved : results) {
-            if (!resolved.system) {
+            /// M: Extra package white list for add item to Settings
+            if (!resolved.system && !ArrayUtils.contains(EXTRA_PACKAGE_WHITE_LIST,
+                    resolved.activityInfo.packageName)) {
                 // Do not allow any app to add to settings, only system ones.
                 continue;
             }
@@ -197,7 +213,9 @@ public class TileUtils {
         List<ResolveInfo> results = pm.queryIntentActivitiesAsUser(intent,
                 PackageManager.GET_META_DATA, user.getIdentifier());
         for (ResolveInfo resolved : results) {
-            if (!resolved.system) {
+            /// M: Extra package white list for add item to Settings
+            if (!resolved.system && !ArrayUtils.contains(EXTRA_PACKAGE_WHITE_LIST,
+                    resolved.activityInfo.packageName)) {
                 // Do not allow any app to add to settings, only system ones.
                 continue;
             }
@@ -212,6 +230,10 @@ public class TileUtils {
                 continue;
             } else {
                 categoryKey = metaData.getString(EXTRA_CATEGORY_KEY);
+                /// M: set default category when extra data not set category
+                if (categoryKey == null) {
+                    categoryKey = defaultCategory;
+                }
             }
             Pair<String, String> key = new Pair<String, String>(activityInfo.packageName,
                     activityInfo.name);
@@ -225,6 +247,17 @@ public class TileUtils {
                 tile.metaData = activityInfo.metaData;
                 updateTileData(context, tile, activityInfo, activityInfo.applicationInfo,
                         pm);
+                /// M: Drawer plugin support @{
+                if (sDrawerExt == null) {
+                    sDrawerExt = UtilsExt.getDrawerPlugin(context);
+                }
+                if (activityInfo.name.endsWith("PrivacySettingsActivity")) {
+                    sDrawerExt.setFactoryResetTitle(tile);
+                } else if (activityInfo.name.endsWith("SimSettingsActivity")) {
+                    tile.title = sDrawerExt.customizeSimDisplayString(tile.title.toString(),
+                            SubscriptionManager.INVALID_SUBSCRIPTION_ID);
+                }
+                /// M: @}
                 if (DEBUG) Log.d(LOG_TAG, "Adding tile " + tile.title);
 
                 addedCache.put(key, tile);
@@ -250,7 +283,9 @@ public class TileUtils {
 
     private static boolean updateTileData(Context context, Tile tile,
             ActivityInfo activityInfo, ApplicationInfo applicationInfo, PackageManager pm) {
-        if (applicationInfo.isSystemApp()) {
+        /// M: Extra package white list for add item to Settings
+        if (applicationInfo.isSystemApp() || ArrayUtils.contains(EXTRA_PACKAGE_WHITE_LIST,
+                activityInfo.packageName)) {
             int icon = 0;
             CharSequence title = null;
             String summary = null;

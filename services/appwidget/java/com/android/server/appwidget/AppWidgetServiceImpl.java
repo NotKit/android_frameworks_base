@@ -68,6 +68,7 @@ import android.os.RemoteException;
 import android.os.SystemClock;
 import android.os.UserHandle;
 import android.os.UserManager;
+import android.os.SystemProperties;
 import android.os.storage.StorageManager;
 import android.text.TextUtils;
 import android.util.ArraySet;
@@ -130,7 +131,7 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
         OnCrossProfileWidgetProvidersChangeListener {
     private static final String TAG = "AppWidgetServiceImpl";
 
-    private static boolean DEBUG = false;
+    private static boolean DEBUG = true;
 
     private static final String OLD_KEYGUARD_HOST_PACKAGE = "android";
     private static final String NEW_KEYGUARD_HOST_PACKAGE = "com.android.keyguard";
@@ -1061,6 +1062,7 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
 
             widget.provider = provider;
             widget.options = (options != null) ? cloneIfLocalBinder(options) : new Bundle();
+            widget.options.setDefusable(true);
 
             // We need to provide a default value for the widget category if it is not specified
             if (!widget.options.containsKey(AppWidgetManager.OPTION_APPWIDGET_HOST_CATEGORY)) {
@@ -1412,7 +1414,8 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
             if (widget == null) {
                 return;
             }
-
+            widget.options.setDefusable(true);
+            options.setDefusable(true);
             // Merge the options.
             widget.options.putAll(options);
 
@@ -2985,6 +2988,7 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
                                 : Integer.parseInt(restoredIdString, 16);
 
                         Bundle options = new Bundle();
+                        options.setDefusable(true);
                         String minWidthString = parser.getAttributeValue(null, "min_width");
                         if (minWidthString != null) {
                             options.putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH,
@@ -3379,6 +3383,45 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
                 }
             }
         }
+    }
+
+        @Override
+    public List<ComponentName> getAppWidgetOfHost(String pkg, int uid) {
+        if(isRunningBoosterSupport())
+        {
+            final int N = mHosts.size();
+            final List<ComponentName> hostProviders = new ArrayList<>();
+            Slog.i(TAG, "total hosts " + N);
+            for (int i = 0; i < N; i++) {
+                Host host = mHosts.get(i);
+                Slog.i(TAG, "pkg =" + pkg + "host.id.packageName = " + host.id.packageName);
+                if (UserHandle.getUserId(host.id.uid) == uid && pkg.equals(host.id.packageName))
+                {
+                    if (DEBUG)
+                    {
+                        Slog.i(TAG, "host " + host.id + " resolved to uid " + uid);
+                    }
+                    final int M = host.widgets.size();
+                    Slog.i(TAG, "total widgets " + M);
+                    for (int j = 0; j < M; j++) {
+                        if (host.widgets.get(j).provider == null) continue;
+                        Slog.i(TAG, "host.widgets.get(" + j + ").provider.id.componentName");
+                        ComponentName providerName = host.widgets.get(j).provider.id.componentName;
+                        hostProviders.add(host.widgets.get(j).provider.id.componentName);
+                    }
+                    break;
+                }
+            }
+            return hostProviders;
+        }
+        else
+        {
+            return Collections.emptyList();
+        }
+    }
+
+    private boolean isRunningBoosterSupport() {
+        return SystemProperties.get("persist.runningbooster.support").equals("1");
     }
 
     private boolean isProfileWithLockedParent(int userId) {
@@ -3969,6 +4012,9 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
         }
 
         public void disconnect() {
+            if (DEBUG) {
+                Slog.i(TAG, "disconnect" );
+            }
             try {
                 mConnectionCb.onServiceDisconnected();
             } catch (RemoteException re) {
@@ -4550,6 +4596,7 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
 
         private Bundle parseWidgetIdOptions(XmlPullParser parser) {
             Bundle options = new Bundle();
+            options.setDefusable(true);
             String minWidthString = parser.getAttributeValue(null, "min_width");
             if (minWidthString != null) {
                 options.putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH,

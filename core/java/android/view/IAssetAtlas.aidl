@@ -17,6 +17,7 @@
 package android.view;
 
 import android.view.GraphicBuffer;
+import android.os.ParcelFileDescriptor;
 
 /**
  * Programming interface to the system assets atlas. This atlas, when

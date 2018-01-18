@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -631,6 +636,15 @@ public class ActivityInfo extends ComponentInfo
      * constant starts at the high bits.
      */
     public static final int CONFIG_FONT_SCALE = 0x40000000;
+
+    /**
+     * M: Theme feature
+     * Bit in {@link #configChanges} that indicates that the activity
+     * can itself handle changes to the skin. Set from the
+     * {@link android.R.attr#configChanges} attribute.
+     * @hide
+     */
+    public static final int CONFIG_SKIN = 0x80000000;
 
     /** @hide
      * Unfortunately the constants for config changes in native code are

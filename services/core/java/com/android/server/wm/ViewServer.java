@@ -25,6 +25,7 @@ import android.util.Slog;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.InetAddress;
+import java.util.ArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.io.IOException;
@@ -74,6 +75,8 @@ class ViewServer implements Runnable {
     private final int mPort;
 
     private ExecutorService mThreadPool;
+    /// M: to avoid memory leaks
+    private ArrayList<Socket> mSockets = new ArrayList<Socket>();
 
     /**
      * Creates a new ViewServer associated with the specified window manager on the
@@ -100,16 +103,19 @@ class ViewServer implements Runnable {
      * @see WindowManagerService#startViewServer(int)
      */
     boolean start() throws IOException {
-        if (mThread != null) {
-            return false;
+        synchronized(this) {
+            if (mThread != null) {
+                return false;
+            }
+
+            mServer = new ServerSocket(
+                    mPort, VIEW_SERVER_MAX_CONNECTIONS, InetAddress.getLocalHost());
+            mThread = new Thread(this, "Remote View Server [port=" + mPort + "]");
+            mThreadPool = Executors.newFixedThreadPool(VIEW_SERVER_MAX_CONNECTIONS);
+            mThread.start();
+
+            return true;
         }
-
-        mServer = new ServerSocket(mPort, VIEW_SERVER_MAX_CONNECTIONS, InetAddress.getLocalHost());
-        mThread = new Thread(this, "Remote View Server [port=" + mPort + "]");
-        mThreadPool = Executors.newFixedThreadPool(VIEW_SERVER_MAX_CONNECTIONS);
-        mThread.start();
-
-        return true;
     }
 
     /**
@@ -123,27 +129,41 @@ class ViewServer implements Runnable {
      * @see WindowManagerService#stopViewServer()
      */
     boolean stop() {
-        if (mThread != null) {
+        synchronized(this) {
+            if (mThread != null) {
 
-            mThread.interrupt();
-            if (mThreadPool != null) {
+                mThread.interrupt();
+                if (mThreadPool != null) {
+                    try {
+                        mThreadPool.shutdownNow();
+                    } catch (SecurityException e) {
+                        Slog.w(LOG_TAG, "Could not stop all view server threads");
+                    } finally {
+                        synchronized(mSockets) {
+                            for (int i=0; i<mSockets.size(); i++) {
+                                try {
+                                    mSockets.get(i).close();
+                                } catch (IOException e) {
+                                    Slog.w(LOG_TAG, "Could not close mSockets");
+                                }
+                            }
+                            mSockets.clear();
+                        }
+                    }
+                }
+                mThreadPool = null;
+                mThread = null;
+
                 try {
-                    mThreadPool.shutdownNow();
-                } catch (SecurityException e) {
-                    Slog.w(LOG_TAG, "Could not stop all view server threads");
+                    mServer.close();
+                    mServer = null;
+                    return true;
+                } catch (IOException e) {
+                    Slog.w(LOG_TAG, "Could not close the view server");
                 }
             }
-            mThreadPool = null;
-            mThread = null;
-            try {
-                mServer.close();
-                mServer = null;
-                return true;
-            } catch (IOException e) {
-                Slog.w(LOG_TAG, "Could not close the view server");
-            }
+            return false;
         }
-        return false;
     }
 
     /**
@@ -163,11 +183,15 @@ class ViewServer implements Runnable {
      * Main server loop.
      */
     public void run() {
-        while (Thread.currentThread() == mThread) {
+        /// M: Check if null object.
+        while (Thread.currentThread() == mThread && mServer != null) {
             // Any uncaught exception will crash the system process
             try {
                 Socket client = mServer.accept();
                 if (mThreadPool != null) {
+                    synchronized(mSockets) {
+                        mSockets.add(client);
+                    }
                     mThreadPool.submit(new ViewServerWorker(client));
                 } else {
                     try {
@@ -270,6 +294,9 @@ class ViewServer implements Runnable {
                 if (mClient != null) {
                     try {
                         mClient.close();
+                        synchronized(mSockets) {
+                            mSockets.remove(mClient);
+                        }
                     } catch (IOException e) {
                         e.printStackTrace();
                     }

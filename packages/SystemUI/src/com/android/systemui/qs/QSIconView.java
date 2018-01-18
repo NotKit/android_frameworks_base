@@ -120,4 +120,18 @@ public class QSIconView extends ViewGroup {
     protected final void layout(View child, int left, int top) {
         child.layout(left, top, left + child.getMeasuredWidth(), top + child.getMeasuredHeight());
     }
+
+    ///M: Get the property for operator quick settings customize.@{
+    protected View getQSIcon() {
+        return mIcon;
+    }
+
+    protected int getIconSizePx() {
+        return mIconSizePx;
+    }
+
+    protected int getTilePaddingBelowIconPx() {
+        return mTilePaddingBelowIconPx;
+    }
+    /// @}
 }

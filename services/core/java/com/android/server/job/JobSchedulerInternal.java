@@ -30,4 +30,9 @@ public interface JobSchedulerInternal {
      * Returns a list of pending jobs scheduled by the system service.
      */
     List<JobInfo> getSystemScheduledPendingJobs();
+
+    /**
+     * Cancel jobs scheduled by process with uid.
+     */
+    void cancelJobsForUid(int uid);
 }

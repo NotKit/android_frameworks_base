@@ -119,7 +119,7 @@ public class ApplicationsState {
 
     final HandlerThread mThread;
     final BackgroundHandler mBackgroundHandler;
-    final MainHandler mMainHandler = new MainHandler(Looper.getMainLooper());
+    MainHandler mMainHandler = new MainHandler(Looper.getMainLooper());
 
     private ApplicationsState(Application app) {
         mContext = app;
@@ -678,6 +678,12 @@ public class ApplicationsState {
             }
         }
     }
+
+    /// M: add for ApplicationsStateTest @{
+    public MainHandler getMainHandler(Looper looper) {
+        return new MainHandler(looper);
+    }
+    /// @}
 
     class MainHandler extends Handler {
         static final int MSG_REBUILD_COMPLETE = 1;

@@ -30,10 +30,13 @@ import android.graphics.Rect;
 import android.graphics.drawable.ColorDrawable;
 import android.os.RemoteException;
 import android.util.DisplayMetrics;
+import android.util.Log;
 import android.view.Gravity;
+import android.view.IWindowManager;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.view.WindowManagerGlobal;
 import android.view.accessibility.AccessibilityManager;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.Button;
@@ -53,6 +56,9 @@ public class ScreenPinningRequest implements View.OnClickListener {
 
     private RequestWindowView mRequestWindow;
 
+    // M: Screen unpin for physical key
+    private IWindowManager mWindowManagerService;
+
     // Id of task to be pinned or locked.
     private int taskId;
 
@@ -62,6 +68,8 @@ public class ScreenPinningRequest implements View.OnClickListener {
                 mContext.getSystemService(Context.ACCESSIBILITY_SERVICE);
         mWindowManager = (WindowManager)
                 mContext.getSystemService(Context.WINDOW_SERVICE);
+        // M: Screen unpin for physical key
+        mWindowManagerService = WindowManagerGlobal.getWindowManagerService();
     }
 
     public void clearPrompt() {
@@ -229,6 +237,21 @@ public class ScreenPinningRequest implements View.OnClickListener {
                 ((Button) mLayout.findViewById(R.id.screen_pinning_cancel_button))
                         .setVisibility(View.INVISIBLE);
             }
+
+            /*int description = mAccessibilityService.isEnabled()
+                    ? R.string.screen_pinning_description_accessible
+                    : R.string.screen_pinning_description;
+            // M: Screen unpin for physical key @{
+            try {
+                if (!mWindowManagerService.hasNavigationBar()) {
+                    Log.d("ScreenPinningRequest",
+                                    "No navigationbar, show unpin description as physical key");
+                    description = R.string.screen_pinning_description_physical_key;
+                }
+            } catch (RemoteException e) {
+                Log.e("ScreenPinningRequest", "RemoteException occured");
+            }
+            // /@}*/
 
             ((TextView) mLayout.findViewById(R.id.screen_pinning_description))
                     .setText(R.string.screen_pinning_description);

@@ -1,6 +1,7 @@
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
+LOCAL_CFLAGS += -DMTK_IMAGE_ENABLE_PQ_FOR_JPEG
 LOCAL_CFLAGS += -DHAVE_CONFIG_H -DKHTML_NO_EXCEPTIONS -DGKWQ_NO_JAVA
 LOCAL_CFLAGS += -DNO_SUPPORT_JS_BINDING -DQT_NO_WHEELEVENT -DKHTML_NO_XBL
 LOCAL_CFLAGS += -U__APPLE__
@@ -35,6 +36,8 @@ LOCAL_SRC_FILES:= \
     com_google_android_gles_jni_GLImpl.cpp.arm \
     android_app_Activity.cpp \
     android_app_ApplicationLoaders.cpp \
+    com_mediatek_perfservice_PerfServiceWrapper.cpp \
+    com_mediatek_aal_AalUtils.cpp \
     android_app_NativeActivity.cpp \
     android_app_admin_SecurityLog.cpp \
     android_opengl_EGL14.cpp \
@@ -207,6 +210,7 @@ LOCAL_C_INCLUDES += \
     external/tremor/Tremor \
     external/harfbuzz_ng/src \
     libcore/include \
+    $(MTK_ROOT)/external/sqlite_custom \
     $(call include-path-for, audio-utils) \
     frameworks/minikin/include \
     external/freetype/include
@@ -261,6 +265,33 @@ LOCAL_SHARED_LIBRARIES := \
     libnativeloader \
     libmemunreachable \
 
+ifneq ($(strip $(TARGET_BUILD_VARIANT)), eng)
+	LOCAL_CFLAGS += -DMTK_USER_BUILD
+endif
+
+ifeq ($(strip $(MTK_GMO_RAM_OPTIMIZE)), yes)
+	LOCAL_CFLAGS += -DMTK_HWUI_RAM_OPTIMIZE
+endif
+
+# For MTK Sink feature
+ifeq ($(strip $(MTK_WFD_SINK_SUPPORT)),yes)
+LOCAL_CFLAGS += -DMTK_WFD_SINK_SUPPORT
+
+# For MTK Sink UIBC feature
+ifeq ($(strip $(MTK_WFD_SINK_UIBC_SUPPORT)),yes)
+LOCAL_CFLAGS += -DMTK_WFD_SINK_UIBC_SUPPORT
+endif
+endif
+
+ifeq ($(MTK_MIRAVISION_IMAGE_DC_SUPPORT),yes)
+  LOCAL_CFLAGS += -DMTK_IMAGE_DC_SUPPORT
+endif
+
+#!++
+    LOCAL_C_INCLUDES += $(MTK_PATH_SOURCE)/hardware/mtkcam/include
+    LOCAL_SHARED_LIBRARIES += libmtkcam_fwkutils
+#!--
+
 LOCAL_SHARED_LIBRARIES += \
     libhwui \
     libdl
@@ -271,6 +302,22 @@ LOCAL_C_INCLUDES += bionic/libc/private
 
 # AndroidRuntime.h depends on nativehelper/jni.h
 LOCAL_EXPORT_C_INCLUDE_DIRS := libnativehelper/include
+
+LOCAL_CFLAGS += -DMTK_SKIA_MULTI_THREAD_JPEG_REGION
+
+
+ifeq ($(MTK_AUDIO),yes)
+LOCAL_C_INCLUDES+= \
+   $(TOP)/$(MTK_PATH_SOURCE)/hardware/audio/common/include
+endif
+
+# App-based AAL @{
+ifeq ($(strip $(MTK_AAL_SUPPORT)), yes)
+  LOCAL_C_INCLUDES += $(TOP)/$(MTK_PATH_SOURCE)/hardware/aal/include
+  LOCAL_SHARED_LIBRARIES += libaal
+  LOCAL_CFLAGS += -DMTK_AAL_SUPPORT
+endif
+# App-based AAL @}
 
 LOCAL_MODULE:= libandroid_runtime
 
@@ -287,6 +334,9 @@ LOCAL_CLANG_CFLAGS += -Wno-c++11-extensions
 #             moment.
 LOCAL_CLANG := false
 
-include $(BUILD_SHARED_LIBRARY)
+# For MTK CPUSET
+LOCAL_C_INCLUDES += $(MTK_PATH_SOURCE)/hardware/perfservice/perfservicenative
+
+include $(MTK_SHARED_LIBRARY)
 
 include $(call all-makefiles-under,$(LOCAL_PATH))

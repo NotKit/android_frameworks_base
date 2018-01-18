@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -78,6 +83,8 @@ import java.lang.annotation.RetentionPolicy;
  * broadcasting and receiving intents, etc.
  */
 public abstract class Context {
+	
+	 public static final String LED_SERVICE="custom_led";//guohuajun add
     /**
      * File creation mode: the default mode, where the created file can only
      * be accessed by the calling application (or all applications sharing the
@@ -2898,6 +2905,20 @@ public abstract class Context {
     public abstract String getSystemServiceName(Class<?> serviceClass);
 
     /**
+     * @hide
+     * M: comment @{ add AGPS service
+     */
+    public static final String MTK_AGPS_SERVICE = "mtk-agps";
+    /// @}
+
+    /// M: comment @{ add PerfService service
+    /**
+     * @hide
+     */
+    public static final String MTK_PERF_SERVICE = "mtk-perfservice";
+    /// @}
+
+    /**
      * Use with {@link #getSystemService} to retrieve a
      * {@link android.os.PowerManager} for controlling power management,
      * including "wake locks," which let you keep the device on while
@@ -3032,6 +3053,17 @@ public abstract class Context {
      * @see android.app.SearchManager
      */
     public static final String SEARCH_SERVICE = "search";
+
+    /**
+     * M: Use with {@link #getSystemService} to retrieve a {@link
+     * com.mediatek.search.SearchEngineManager} for handling searches.
+     *
+     * @see #getSystemService
+     * @see com.mediatek.search.SearchEngineManager
+     * @hide
+     * @internal
+     */
+    public static final String SEARCH_ENGINE_SERVICE = "search_engine";
 
     /**
      * Use with {@link #getSystemService} to retrieve a {@link
@@ -3213,7 +3245,51 @@ public abstract class Context {
     public static final String FINGERPRINT_SERVICE = "fingerprint";
 
     /**
-     * Use with {@link #getSystemService} to retrieve a
+     * M: Use with {@link #getSystemService} to retrieve a Mobile Service
+     * for handling mobile security.
+     * @hide
+     * @internal
+     */
+    public static final String MOBILE_SERVICE = "mobile";
+
+    /**
+     * M: Use with ServiceManager.getService to retrieve a HDMI Service
+     * for handling management of HDMI.
+     *
+     * @hide
+     * @internal
+     */
+    public static final String HDMI_SERVICE = "mtkhdmi";
+
+    /**
+     * M: Use with ServiceManager.getService to retrieve a APPDETECTION Service
+     * for handling management of APPDETECTION.
+     *
+     * @hide
+     * @internal
+     */
+    public static final String APPDETECTION_SERVICE = "appdetection";
+
+    /**
+     * M: Use with Servicemanager.getService to retrieve a
+     * {@link com.mediatek.rns.RnsService} for handling
+     * management of radio network selection.
+     *
+     * @see com.mediatek.rns.RnsService
+     * @hide
+     */
+    public static final String RNS_SERVICE = "rns";
+    /**
+     * M: Use with Servicemanager.getService to retrieve a
+     * {@link com.mediatek.usp.UspService} for handling
+     * phone customization based on operator.
+     *
+     * @see com.mediatek.usp
+     * @hide
+     */
+    public static final String USP_SERVICE = "uniservice-pack";
+
+    /**
      * {@link android.media.MediaRouter} for controlling and managing
      * routing of media.
      *
@@ -3240,6 +3316,18 @@ public abstract class Context {
      * @see android.telephony.TelephonyManager
      */
     public static final String TELEPHONY_SERVICE = "phone";
+
+    /**
+     * Use with {@link #getSystemService} to retrieve a
+     * {@link android.telephony.TelephonyManagerEx} for handling management the
+     * telephony features of the device.
+     *
+     * @see #getSystemService
+     * @see android.telephony.TelephonyManagerEx
+     * @hide
+     * @internal
+     */
+    public static final String TELEPHONY_SERVICE_EX = "phoneEx";
 
     /**
      * Use with {@link #getSystemService} to retrieve a
@@ -3527,6 +3615,13 @@ public abstract class Context {
      */
     public static final String CONSUMER_IR_SERVICE = "consumer_ir";
 
+    /// M: ANR mechanism for Message Monitor Service
+    /**
+     * @hide
+     * @internal
+     */
+    public static final String MESSAGE_MONITOR_SERVICE = "msgmonitorservice";
+
     /**
      * {@link android.app.trust.TrustManager} for managing trust agents.
      * @see #getSystemService
@@ -3571,6 +3666,7 @@ public abstract class Context {
      * @see android.app.job.JobScheduler
      */
     public static final String JOB_SCHEDULER_SERVICE = "jobscheduler";
+
 
     /**
      * Use with {@link #getSystemService} to retrieve a {@link
@@ -3654,6 +3750,16 @@ public abstract class Context {
      * @hide
      */
     public static final String GATEKEEPER_SERVICE = "android.service.gatekeeper.IGateKeeperService";
+
+    /**
+     * M: Use with Servicemanager.getService to retrieve a
+     * {@link com.mediatek.datashaping.DataShapingService} for handling
+     * management of lte data shaping.
+     *
+     * @see com.mediatek.datashaping.DataShapingService
+     * @hide
+     */
+    public static final String DATA_SHAPING_SERVICE = "data_shaping";
 
     /**
      * Determine whether the given permission is allowed for a particular
@@ -4327,4 +4433,10 @@ public abstract class Context {
     public boolean isCredentialEncryptedStorage() {
         return isCredentialProtectedStorage();
     }
+
+    /**
+     * Running Booster service
+     * @hide
+     */
+    public static final String RUNNING_BOOSTER_SERVICE = "running_booster";
 }

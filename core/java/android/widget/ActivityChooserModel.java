@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,15 +26,21 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.database.DataSetObservable;
 import android.os.AsyncTask;
+import android.os.Build;
+import android.os.Debug;
 import android.text.TextUtils;
 import android.util.Log;
 import android.util.Xml;
 
 import com.android.internal.content.PackageMonitor;
+
+import com.mediatek.common.MPlugin;
+import com.mediatek.common.media.IRCSePriorityExt;
 
 import org.xmlpull.v1.XmlPullParser;
 import org.xmlpull.v1.XmlPullParserException;
@@ -163,6 +174,7 @@ public class ActivityChooserModel extends DataSetObservable {
      * Tag used for logging.
      */
     private static final String LOG_TAG = ActivityChooserModel.class.getSimpleName();
+    private static final boolean DBG = "eng".equals(Build.TYPE);
 
     /**
      * The root tag in the history file.
@@ -266,6 +278,8 @@ public class ActivityChooserModel extends DataSetObservable {
      */
     private Intent mIntent;
 
+    private IRCSePriorityExt mRCSePriorityExt = null;
+
     /**
      * The sorter for ordering activities based on intent and past choices.
      */
@@ -365,6 +379,12 @@ public class ActivityChooserModel extends DataSetObservable {
             mHistoryFileName = historyFileName;
         }
         mPackageMonitor.register(mContext, null, true);
+        //Modified : RCS-e plug-in for higher priority on share list
+        mRCSePriorityExt = MPlugin.createInstance(
+                    IRCSePriorityExt.class.getName(), mContext);
+        if (DBG) {
+            Log.i(LOG_TAG, "RCSe Plugin initiated " + mRCSePriorityExt);
+        }
     }
 
     /**
@@ -378,6 +398,11 @@ public class ActivityChooserModel extends DataSetObservable {
      */
     public void setIntent(Intent intent) {
         synchronized (mInstanceLock) {
+            if (DBG) {
+                Log.d(LOG_TAG, "setIntent, intent = " + intent +
+                        ", backtrace = " + Debug.getCallers(5) + ", this = " + this);
+            }
+
             if (mIntent == intent) {
                 return;
             }
@@ -469,7 +494,13 @@ public class ActivityChooserModel extends DataSetObservable {
      */
     public Intent chooseActivity(int index) {
         synchronized (mInstanceLock) {
-            if (mIntent == null) {
+            // M: If APP sets an invalid intent to clear the activity chooser
+            // appearance, mActivities will become empty, too. Due to race
+            // condition, it is possible the post-handling of onClick happens
+            // after APP sets an invalid intent. Because no activity in the
+            // mActivities list, index will be -1 here. Should return directly
+            // to avoid out of bound exception. Please see ALPS01377543 for details.
+            if (mIntent == null || index < 0) {
                 return null;
             }
 
@@ -489,7 +520,17 @@ public class ActivityChooserModel extends DataSetObservable {
                 Intent choiceIntentCopy = new Intent(choiceIntent);
                 final boolean handled = mActivityChoserModelPolicy.onChooseActivity(this,
                         choiceIntentCopy);
+
+                if (DBG) {
+                    Log.d(LOG_TAG, "Callback to onChooseActivity " + mActivityChoserModelPolicy +
+                            ", handled = " + handled + ", this = " + this);
+                }
+
                 if (handled) {
+                    /// M: need to store history record
+                    HistoricalRecord historicalRecord = new HistoricalRecord(chosenName,
+                            System.currentTimeMillis(), DEFAULT_HISTORICAL_RECORD_WEIGHT);
+                    addHisoricalRecord(historicalRecord);
                     return null;
                 }
             }
@@ -509,6 +550,11 @@ public class ActivityChooserModel extends DataSetObservable {
      */
     public void setOnChooseActivityListener(OnChooseActivityListener listener) {
         synchronized (mInstanceLock) {
+            if (DBG) {
+                Log.d(LOG_TAG, "setOnChooseActivityListener, listener = " + listener +
+                        ", backtrace = " + Debug.getCallers(5) + ", this = " + this);
+            }
+
             mActivityChoserModelPolicy = listener;
         }
     }
@@ -675,6 +721,10 @@ public class ActivityChooserModel extends DataSetObservable {
         stateChanged |= readHistoricalDataIfNeeded();
         pruneExcessiveHistoricalRecordsIfNeeded();
         if (stateChanged) {
+            if (DBG) {
+                dumpActivities();
+            }
+
             sortActivitiesIfNeeded();
             notifyChanged();
         }
@@ -719,6 +769,11 @@ public class ActivityChooserModel extends DataSetObservable {
                     mActivities.add(new ActivityResolveInfo(resolveInfo));
                 }
             }
+
+            if (DBG) {
+                Log.d(LOG_TAG, "loadActivitiesIfNeeded, activities updated, mIntent = " + mIntent);
+            }
+
             return true;
         }
         return false;
@@ -971,6 +1026,31 @@ public class ActivityChooserModel extends DataSetObservable {
             }
 
             Collections.sort(activities);
+            //Modified : RCS-e plug-in for higher priority on share list
+            if (mRCSePriorityExt != null) {
+                // Resort the share list and add RCSe on top
+                if (DBG) {
+                    Log.i(LOG_TAG, "Inside mRCSePriorityExt: Entry ");
+                }
+                int rcseIndex = -1;
+                ArrayList<String> packageList = new ArrayList<String>();
+                for (int i = 0; i < activityCount; i++) {
+                    ActivityResolveInfo actResolveInfo = activities.get(i);
+                    ApplicationInfo applicationInfo =
+                        actResolveInfo.resolveInfo.activityInfo.applicationInfo;
+                    packageList.add(applicationInfo.packageName);
+                }
+                rcseIndex = mRCSePriorityExt.sortTheListForRCSe(packageList);
+                if (rcseIndex != -1) {
+                    ActivityResolveInfo rcseActResolveInfo = activities
+                            .get(rcseIndex);
+                    activities.remove(rcseIndex);
+                    activities.add(0, rcseActResolveInfo);
+                }
+                if (DBG) {
+                    Log.i(LOG_TAG, "Inside mRCSePriorityExt: Exit with Index " + rcseIndex);
+                }
+            }
 
             if (DEBUG) {
                 for (int i = 0; i < activityCount; i++) {
@@ -1126,6 +1206,24 @@ public class ActivityChooserModel extends DataSetObservable {
         @Override
         public void onSomePackagesChanged() {
             mReloadActivities = true;
+        }
+    }
+
+    /**
+     * M: For debug. Dump activities associated with the current intent.
+     */
+    private void dumpActivities() {
+        if (DBG) {
+            Log.d(LOG_TAG, "dumpActivities starts.");
+
+            List<ActivityResolveInfo> activities = mActivities;
+            final int activityCount = activities.size();
+            for (int i = 0; i < activityCount; i++) {
+                ActivityResolveInfo currentActivity = activities.get(i);
+                Log.d(LOG_TAG, "  i = " + i + ", activity = " + currentActivity);
+            }
+
+            Log.d(LOG_TAG, "dumpActivities ends.");
         }
     }
 }

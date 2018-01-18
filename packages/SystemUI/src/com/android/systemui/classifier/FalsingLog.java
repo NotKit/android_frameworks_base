@@ -161,6 +161,7 @@ public class FalsingLog {
             Log.e(TAG, "Unable to write log, build must be debuggable.");
         }
 
-        Log.wtf(TAG, tag + " " + s + "; " + fileMessage);
+        /// M: Change log.wtf to log.e, because wtf may raise exception in some eng/userdebug load.
+        Log.e(TAG, tag + " " + s + "; " + fileMessage);
     }
 }

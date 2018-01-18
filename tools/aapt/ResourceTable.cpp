@@ -1,3 +1,8 @@
+/*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
 //
 // Copyright 2006 The Android Open Source Project
 //
@@ -1752,6 +1757,7 @@ ResourceTable::ResourceTable(Bundle* bundle, const String16& assetsPackage, Reso
     : mAssetsPackage(assetsPackage)
     , mPackageType(type)
     , mTypeIdOffset(0)
+    , mIsmtkCur(bundle->getmtkCur()), mIsmtkCurNum(bundle->getmtkCurNum()) ///M: add mediatek-res.apk and 3rd-party resource package.
     , mNumLocal(0)
     , mBundle(bundle)
 {
@@ -1764,6 +1770,9 @@ ResourceTable::ResourceTable(Bundle* bundle, const String16& assetsPackage, Reso
 
         case System:
             packageId = 0x01;
+            if (mIsmtkCur){
+                packageId = mIsmtkCurNum;
+            }
             break;
 
         case SharedLibrary:

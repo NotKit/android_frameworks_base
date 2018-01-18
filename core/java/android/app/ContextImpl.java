@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -59,6 +64,7 @@ import android.os.Looper;
 import android.os.Process;
 import android.os.RemoteException;
 import android.os.ServiceManager;
+import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.os.storage.IMountService;
 import android.system.ErrnoException;
@@ -74,6 +80,9 @@ import android.view.DisplayAdjustments;
 import com.android.internal.annotations.GuardedBy;
 import com.android.internal.util.Preconditions;
 
+import com.mediatek.aee.ExceptionLog;
+
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -81,6 +90,10 @@ import java.io.FileOutputStream;
 import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
 import java.util.Objects;
 
 class ReceiverRestrictedContext extends ContextWrapper {
@@ -187,7 +200,6 @@ class ContextImpl extends Context {
 
     // The system service cache for the system services that are cached per-ContextImpl.
     final Object[] mServiceCache = SystemServiceRegistry.createServiceCache();
-
     static ContextImpl getImpl(Context context) {
         Context nextContext;
         while ((context instanceof ContextWrapper) &&
@@ -1936,8 +1948,13 @@ class ContextImpl extends Context {
 
             if (res != null) {
                 if (!res.exists() && android.os.Process.myUid() == android.os.Process.SYSTEM_UID) {
-                    Log.wtf(TAG, "Data directory doesn't exist for package " + getPackageName(),
+                    /// M: ALPS02821061 and ALPS02819381
+                    ///    Suppress WTF due to data/android directory doesn't exist sometimes
+                    ///    should be expected. Frameworks and apps should take care of the
+                    ///    scenario. @{
+                    Log.e(TAG, "Data directory doesn't exist for package " + getPackageName(),
                             new Throwable());
+                    /// @}
                 }
                 return res;
             } else {
@@ -2260,5 +2277,347 @@ class ContextImpl extends Context {
         protected int resolveUserIdFromAuthority(String auth) {
             return ContentProvider.getUserIdFromAuthority(auth, mUser.getIdentifier());
         }
+
+        /// M: Mediatek added functions start
+        /// M: for ContentProvider Leak Detect, include Cursor and ParcelFileDescriptor @{
+        private final class QueryHistoryRecord {
+            public String mUri;
+            public Throwable mStackTrace;
+
+            QueryHistoryRecord(String uri, Throwable stackTrace) {
+                mUri = uri;
+                mStackTrace = stackTrace;
+            }
+        }
+
+        private final class QueryHistory {
+            private final boolean mProviderLeakDetect
+                                        = Log.isLoggable("ProviderLeakDetecter", Log.VERBOSE);
+
+            // Hashmap to keep cursor query uri
+            private Map<Integer, QueryHistoryRecord> mCursorMap =
+                                                     new HashMap<Integer, QueryHistoryRecord>();
+            private Map<String, Integer> mUriMap = new HashMap<String, Integer>();
+
+            // Hashmap to keep ParcelFileDescriptor query uri
+            private Map<Integer, QueryHistoryRecord> mPfdMap =
+                                                     new HashMap<Integer, QueryHistoryRecord>();
+            private Map<String, Integer> mUriPfdMap = new HashMap<String, Integer>();
+            /// M: for Bluetooth threshold
+            public static final int BLUETOOTH_THRESHOLD = 250;
+
+            /**
+             * M: Read uid from resmon monitored uid list file,
+             *    only report red screen warning for these uid.
+             * @return true if pid in the resmon monitored list.
+             */
+            @SuppressWarnings("illegalcatch")
+            private boolean checkAeeWarningList() {
+                int uid = android.os.Process.myUid();
+                InputStream inStream = null;
+
+                try {
+                    inStream = new FileInputStream("/data/system/resmon-uid.txt");
+
+                    if (inStream != null) {
+                        InputStreamReader inputReader = new InputStreamReader(inStream);
+                        BufferedReader buffReader = new BufferedReader(inputReader);
+
+                        String line = buffReader.readLine();
+                        while (line != null) {
+                            if (uid == Integer.valueOf(line)) {
+                                return true;
+                            }
+                            line = buffReader.readLine();
+                        }
+                    }
+                    return false;
+                } catch (IOException e) {
+                    return false;
+                } finally {
+                    if (inStream != null) {
+                        try {
+                            inStream.close();
+                        } catch (IOException e) {
+                        }
+                    }
+                }
+            }
+
+            /**
+             * add this query to queryHisitory.
+             * @param uri their uri of this query
+             * @param stackTrace the stackTrace of this query
+             * @param cursorHashCode the hashcode of the CursorWrapperInner Object
+             * @hide
+             */
+            @SuppressWarnings("illegalcatch")
+            public boolean add(String uri, Throwable stackTrace, int cursorHashCode) {
+                boolean reportException = false;
+
+                synchronized (mCursorMap) {
+                    if (mUriMap.get(uri) == null) {
+                        mUriMap.put(uri, 1);
+                    } else {
+                        mUriMap.put(uri, mUriMap.get(uri) + 1);
+                    }
+                    // when uri>5, print log information
+                    if (mProviderLeakDetect && mUriMap.get(uri) >= 5) {
+                        Log.e(QUERY_TAG,
+                              "PossibleCursorLeak:" + uri + ",QueryCounter:" + mUriMap.get(uri),
+                              stackTrace);
+                    }
+
+                    if (mCursorMap.get(cursorHashCode) == null) {
+                        QueryHistoryRecord qhr = new QueryHistoryRecord(uri, stackTrace);
+                        mCursorMap.put(cursorHashCode, qhr);
+                    }
+
+                    if (mProviderLeakDetect) {
+                        Log.v(QUERY_TAG,
+                              "Cursor Open:" + cursorHashCode +
+                              " Total Opened Cursor Count:" + mCursorMap.size() + ".");
+                    }
+
+                    // Email app may use more than 50 cursors at the same time
+                    if (mCursorMap.size() == 70 || mCursorMap.size() == 80) {
+                        Log.v(QUERY_TAG, "Total Opened Cursor Count:" + mCursorMap.size() + ".");
+                        dump();
+                        reportException = true;
+                    }
+                }
+
+                // For cursor leak aee warning
+                if (reportException) {
+                    // Only show red screen warning for resmon monitored applications
+                    if (checkAeeWarningList()) {
+                        ExceptionLog exceptionLog = null;
+                        try {
+                            if (SystemProperties.get("ro.have_aee_feature").equals("1")) {
+                                exceptionLog = new ExceptionLog();
+                            }
+                            if (exceptionLog != null) {
+                                exceptionLog.systemreport(
+                                    exceptionLog.AEE_WARNING_JNI,
+                                    "CursorLeakDetecter",
+                                    "Total Opened Cursor Count:" + mCursorMap.size() + ".",
+                                    "/data/cursorleak/traces.txt");
+                            }
+                        } catch (Exception e) {
+                            // AEE disabled or failed to allocate AEE object
+                            // No need to show message
+                        }
+                    }
+                }
+
+                return true;
+            }
+
+            /**
+             * Revome from queryHistory by cursorHashCode.
+             * @param cursorHashCode the hashcode of cursorWrpperInner boject
+             * @hide
+             */
+            public void remove(int cursorHashCode) {
+                synchronized (mCursorMap) {
+                    QueryHistoryRecord qhr = mCursorMap.get(cursorHashCode);
+                    if (qhr == null || mUriMap.get(qhr.mUri) == null) {
+                        Log.e(QUERY_TAG, "bad request for cursor:" + cursorHashCode + ".");
+                        return;
+                    } else if (mUriMap.get(qhr.mUri) == 1) {
+                        mUriMap.remove(qhr.mUri);
+                        mCursorMap.remove(cursorHashCode);
+                    } else if (mUriMap.get(qhr.mUri) > 1) {
+                        mUriMap.put(qhr.mUri, mUriMap.get(qhr.mUri) - 1);
+                        mCursorMap.remove(cursorHashCode);
+                    }
+
+                    if (mProviderLeakDetect) {
+                        Log.v(QUERY_TAG,
+                              "Cursor Close:" + cursorHashCode +
+                              " Total Opened Cursor Count:" + mCursorMap.size() + ".");
+                    }
+                }
+            }
+
+            /**
+             * Add this query to queryHisitory.
+             * @param uri their uri of this query
+             * @param stackTrace the stackTrace of this query
+             * @param hashCode the hashcode of the ParcelFileDescriptorInner Object
+             * @hide
+             */
+            @SuppressWarnings("illegalcatch")
+            public boolean addPfd(String uri, Throwable stackTrace, int hashCode) {
+                boolean reportException = false;
+
+                synchronized (mPfdMap) {
+                    if (mUriPfdMap.get(uri) == null) {
+                        mUriPfdMap.put(uri, 1);
+                    } else {
+                        mUriPfdMap.put(uri, mUriPfdMap.get(uri) + 1);
+                    }
+                    // when uri>5, print log information
+                    if (mProviderLeakDetect && mUriPfdMap.get(uri) >= 5) {
+                        Log.e(QUERY_TAG,
+                              "Possible PFD Leak:" + uri + ",QueryCounter:" + mUriPfdMap.get(uri),
+                              stackTrace);
+                    }
+
+                    if (mPfdMap.get(hashCode) == null) {
+                        QueryHistoryRecord qhr = new QueryHistoryRecord(uri, stackTrace);
+                        mPfdMap.put(hashCode, qhr);
+                    }
+
+                    if (mProviderLeakDetect) {
+                        Log.v(QUERY_TAG,
+                              "PFD Open:" + hashCode +
+                              " Total Opened PFD Count:" + mPfdMap.size() + ".");
+                    }
+
+                    // Email has no upper limit and Bluetooth has 500 limit
+                    // Change threshold to 250.
+                    if (mPfdMap.size() == BLUETOOTH_THRESHOLD) {
+                        Log.v(QUERY_TAG, "Total Opened PFD Count:" + mPfdMap.size() + ".");
+                        dump();
+                        reportException = true;
+                    }
+                }
+
+                // For cursor leak aee warning
+                if (reportException) {
+                    // Only show red screen warning for resmon monitored applications
+                    if (checkAeeWarningList()) {
+                        ExceptionLog exceptionLog = null;
+                        try {
+                            if (SystemProperties.get("ro.have_aee_feature").equals("1")) {
+                                exceptionLog = new ExceptionLog();
+                            }
+                            if (exceptionLog != null) {
+                                exceptionLog.systemreport(
+                                    exceptionLog.AEE_WARNING_JNI,
+                                    "PFDLeakDetecter",
+                                    "Total Opened PFD Count:" + mPfdMap.size() + ".",
+                                    "/data/cursorleak/traces.txt");
+                            }
+                        } catch (Exception e) {
+                            // AEE disabled or failed to allocate AEE object
+                            // No need to show message
+                        }
+                    }
+                }
+
+                return true;
+            }
+
+            /**
+             * Revome from queryHistory by cursorHashCode.
+             * @param hashCode the hashcode of ParcelFileDescriptorInner boject
+             * @hide
+             */
+            public void removePfd(int hashCode) {
+                synchronized (mPfdMap) {
+                    QueryHistoryRecord qhr = mPfdMap.get(hashCode);
+                    if (qhr == null || mUriPfdMap.get(qhr.mUri) == null) {
+                        Log.e(QUERY_TAG, "bad request for pfd:" + hashCode + ".");
+                        return;
+                    } else if (mUriPfdMap.get(qhr.mUri) == 1) {
+                        mUriPfdMap.remove(qhr.mUri);
+                        mPfdMap.remove(hashCode);
+                    } else if (mUriPfdMap.get(qhr.mUri) > 1) {
+                        mUriPfdMap.put(qhr.mUri, mUriPfdMap.get(qhr.mUri) - 1);
+                        mPfdMap.remove(hashCode);
+                    }
+
+                    if (mProviderLeakDetect) {
+                        Log.v(QUERY_TAG,
+                              "PFD Close:" + hashCode +
+                              " Total Opened PFD Count:" + mCursorMap.size() + ".");
+                    }
+                }
+            }
+
+            /**
+             * Log query information.
+             * @hide
+             */
+            public void dump() {
+                // Dump opened Cursor
+                Log.v(QUERY_TAG, "Total Opened Cursor Count:" + mCursorMap.size() + ".");
+                Iterator iterator = mCursorMap.entrySet().iterator();
+                while (iterator.hasNext()) {
+                    Map.Entry entry = (Map.Entry) iterator.next();
+                    QueryHistoryRecord qhr = (QueryHistoryRecord) entry.getValue();
+                    Log.v(QUERY_TAG, "CursorQueryHistory:" + qhr.mUri, qhr.mStackTrace);
+                }
+
+                // Dump opened ParcelFileDescriptor
+                Log.v(QUERY_TAG, "Total Opened PFD Count:" + mPfdMap.size() + ".");
+                iterator = mPfdMap.entrySet().iterator();
+                while (iterator.hasNext()) {
+                    Map.Entry entry = (Map.Entry) iterator.next();
+                    QueryHistoryRecord qhr = (QueryHistoryRecord) entry.getValue();
+                    Log.v(QUERY_TAG, "PFDQueryHistory:" + qhr.mUri, qhr.mStackTrace);
+                }
+            }
+        }
+
+        /**
+         * Add this query to queryHisitory.
+         * @param uri the uri of this query
+         * @param stackTrace the stackTrace of this query
+         * @param hashCode the hashcode of the CursorWrapperInner/ParcelFileDescriptorInner Object
+         * @param type either QUERY_HISTORY_CURSOR or QUERY_HISTORY_PFD
+         * @return add result
+         * @hide
+         */
+        @Override
+        public boolean addToQueryHistory(String uri, Throwable stackTrace, int hashCode, int type) {
+            try {
+                if (type == ContentResolver.QUERY_HISTORY_CURSOR) {
+                    return mQueryHistory.add(uri, stackTrace, hashCode);
+                } else if (type == ContentResolver.QUERY_HISTORY_PFD) {
+                    return mQueryHistory.addPfd(uri, stackTrace, hashCode);
+                }
+            } catch (Exception e) {
+                Log.e(QUERY_TAG, "AddToQueryHistory", e);
+            }
+            return true;
+        }
+
+        /**
+         * Revome from queryHistory by hashCode.
+         * @param hashCode the hashcode of the CursorWrapperInner/ParcelFileDescriptorInner Object
+         * @param type either QUERY_HISTORY_CURSOR or QUERY_HISTORY_PFD
+         * @hide
+         */
+        @Override
+        public void removeFromQueryHistory(int hashCode, int type) {
+            try {
+                if (type == ContentResolver.QUERY_HISTORY_CURSOR) {
+                    mQueryHistory.remove(hashCode);
+                } else if (type == ContentResolver.QUERY_HISTORY_PFD) {
+                    mQueryHistory.removePfd(hashCode);
+                }
+            } catch (Exception e) {
+                Log.e(QUERY_TAG, "RemoveFromQueryHistory", e);
+            }
+        }
+
+        /**
+         * for Cursor leak detect.
+         * @hide
+         */
+        public void dumpQueryHistory() {
+            mQueryHistory.dump();
+        }
+
+        private QueryHistory mQueryHistory = new QueryHistory();
+
+        public static final String QUERY_TAG = "ProviderLeakDetecter";
+        /// M: @}
+
+        /// M: Mediatek added functions end
     }
 }
+

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -130,6 +135,8 @@ public class ChooseTypeAndAccountActivity extends Activity
     private boolean mDisallowAddAccounts;
     private boolean mDontShowPicker;
 
+    private boolean mIsCanceled = false;
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         if (Log.isLoggable(TAG, Log.VERBOSE)) {
@@ -159,6 +166,7 @@ public class ChooseTypeAndAccountActivity extends Activity
         final Intent intent = getIntent();
 
         if (savedInstanceState != null) {
+            mIsCanceled = false;
             mPendingRequest = savedInstanceState.getInt(KEY_INSTANCE_STATE_PENDING_REQUEST);
             mExistingAccounts =
                     savedInstanceState.getParcelableArray(KEY_INSTANCE_STATE_EXISTING_ACCOUNTS);
@@ -207,7 +215,7 @@ public class ChooseTypeAndAccountActivity extends Activity
         // and return the result directly. Eg:
         // Single account -> select it directly
         // No account -> launch add account activity directly
-        if (mPendingRequest == REQUEST_NULL) {
+        if (mPendingRequest == REQUEST_NULL && mIsCanceled == false) {
             // If there are no relevant accounts and only one relevant account type go directly to
             // add account. Otherwise let the user choose.
             if (mAccounts.isEmpty()) {
@@ -293,7 +301,8 @@ public class ChooseTypeAndAccountActivity extends Activity
         if (resultCode == RESULT_CANCELED) {
             // if canceling out of addAccount and the original state caused us to skip this,
             // finish this activity
-            if (mAccounts.isEmpty()) {
+            if (mAccounts == null || mAccounts.isEmpty()) {
+                mIsCanceled = true;
                 setResult(Activity.RESULT_CANCELED);
                 finish();
             }

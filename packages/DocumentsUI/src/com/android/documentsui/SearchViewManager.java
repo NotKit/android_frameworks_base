@@ -148,6 +148,10 @@ final class SearchViewManager implements
      * @return True if it cancels search. False if it does not operate search currently.
      */
     boolean cancelSearch() {
+		///M :If action bar is null, no possiblity of search
+		if(mActionBar == null) { 		   
+			return false;
+		}
         if (isExpanded() || isSearching()) {
             // If the query string is not empty search view won't get iconified
             mSearchView.setQuery("", false);

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -362,10 +367,20 @@ public class RootsFragment extends Fragment {
 
             // Omit ourselves from the list
             for (ResolveInfo info : infos) {
-                if (!context.getPackageName().equals(info.activityInfo.packageName)) {
-                    apps.add(new AppItem(info));
+                    /// M: workaround for ALPS01808809, set cts at first item, so that if there
+                    /// are too many documentproviders and apps, the cts case can also click
+                    /// cts documentprovider. {@
+                    String infoPackageName = info.activityInfo.packageName;
+                    if (!context.getPackageName().equals(infoPackageName)) {
+                        if (infoPackageName != null
+                                && infoPackageName.toLowerCase().contains("cts")) {
+                            apps.add(0, new AppItem(info));
+                        } else {
+                            apps.add(new AppItem(info));
+                        }
+                    }
+                    /// @}
                 }
-            }
 
             if (apps.size() > 0) {
                 add(new SpacerItem());

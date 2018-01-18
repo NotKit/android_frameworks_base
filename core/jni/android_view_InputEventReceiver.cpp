@@ -35,9 +35,17 @@
 
 #include "core_jni_helpers.h"
 
+/// M: [Enable input client logs] @{
+#include <cutils/properties.h>
+
+static bool gInputLogEnabled = false;
+#undef ALOGD
+#define ALOGD(...) if (gInputLogEnabled) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
+/// @}
+
 namespace android {
 
-static const bool kDebugDispatchCycle = false;
+static const bool kDebugDispatchCycle = true;
 
 static struct {
     jclass clazz;
@@ -92,6 +100,15 @@ NativeInputEventReceiver::NativeInputEventReceiver(JNIEnv* env,
         mReceiverWeakGlobal(env->NewGlobalRef(receiverWeak)),
         mInputConsumer(inputChannel), mMessageQueue(messageQueue),
         mBatchedInputEventPending(false), mFdEvents(0) {
+
+    /// M: [Enable input client logs] @{
+    char prop[PROPERTY_VALUE_MAX];
+    property_get("debug.inputclient.enable", prop, "0");
+    if (atoi(prop)) {
+        gInputLogEnabled = true;
+    }
+    /// @}
+
     if (kDebugDispatchCycle) {
         ALOGD("channel '%s' ~ Initializing input event receiver.", getInputChannelName());
     }

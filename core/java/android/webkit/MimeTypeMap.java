@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -111,6 +116,20 @@ public class MimeTypeMap {
      */
     public String getExtensionFromMimeType(String mimeType) {
         return MimeUtils.guessExtensionFromMimeType(mimeType);
+    }
+
+    /**
+     * M: add public interface
+     * @hide
+     *
+     * @param mimeType MIME type provided by the server.
+     * @param url URL of the data being loaded.
+     * @param contentDisposition Content-disposition header given by the server.
+     * @return The MIME type that should be used for this data.
+     */
+    public String remapGenericMimeTypePublic(String mimeType, String url,
+        String contentDisposition) {
+        return remapGenericMimeType(mimeType, url, contentDisposition);
     }
 
     /**

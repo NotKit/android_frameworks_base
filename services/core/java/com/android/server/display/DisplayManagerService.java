@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2012 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -112,7 +117,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 public final class DisplayManagerService extends SystemService {
     private static final String TAG = "DisplayManagerService";
-    private static final boolean DEBUG = false;
+    private static final boolean DEBUG = true;
 
     // When this system property is set to 0, WFD is forcibly disabled on boot.
     // When this system property is set to 1, WFD is forcibly enabled on boot.
@@ -386,7 +391,12 @@ public final class DisplayManagerService extends SystemService {
         synchronized (mSyncRoot) {
             LogicalDisplay display = mLogicalDisplays.get(displayId);
             if (display != null) {
-                DisplayInfo info = display.getDisplayInfoLocked();
+                /// M: Do not change display info object, return a new one
+                DisplayInfo displayInfo = display.getDisplayInfoLocked();
+                DisplayInfo info = new DisplayInfo();
+                info.copyFrom(displayInfo);
+
+
                 if (info.hasAccess(callingUid)) {
                     return info;
                 }
@@ -650,7 +660,9 @@ public final class DisplayManagerService extends SystemService {
     private void registerWifiDisplayAdapterLocked() {
         if (mContext.getResources().getBoolean(
                 com.android.internal.R.bool.config_enableWifiDisplay)
-                || SystemProperties.getInt(FORCE_WIFI_DISPLAY_ENABLE, -1) == 1) {
+                || SystemProperties.getInt(FORCE_WIFI_DISPLAY_ENABLE, -1) == 1
+                /* M: add for wifidisplay */
+                || SystemProperties.get("ro.mtk_wfd_support").equals("1")) {
             mWifiDisplayAdapter = new WifiDisplayAdapter(
                     mSyncRoot, mContext, mHandler, mDisplayAdapterListener,
                     mPersistentDataStore);
@@ -763,6 +775,12 @@ public final class DisplayManagerService extends SystemService {
         final int count = mDisplayDevices.size();
         for (int i = 0; i < count; i++) {
             DisplayDevice device = mDisplayDevices.get(i);
+            if (i == 0) {
+                /// M: log for default display only
+                Slog.d(TAG, "Update global display state (" +
+                    Display.stateToString(mGlobalDisplayState) + ", " +
+                    mGlobalDisplayBrightness + ") for " + device.getDisplayDeviceInfoLocked());
+            }
             Runnable runnable = updateDisplayStateLocked(device);
             if (runnable != null) {
                 workQueue.add(runnable);
@@ -1088,6 +1106,60 @@ public final class DisplayManagerService extends SystemService {
 
             pw.println();
             mPersistentDataStore.dump(pw);
+        }
+    }
+
+    private boolean isSinkEnabledInternal() {
+        if (SystemProperties.get("ro.mtk_wfd_sink_support").equals("1")) {
+            boolean enabled = false;
+            synchronized (mSyncRoot) {
+                if (mWifiDisplayAdapter != null) {
+                    enabled = mWifiDisplayAdapter.getIfSinkEnabledLocked();
+                }
+            }
+            return enabled;
+        } else {
+            return false;
+        }
+    }
+
+    private void enableSinkInternal(boolean enable) {
+        if (SystemProperties.get("ro.mtk_wfd_sink_support").equals("1")) {
+            synchronized (mSyncRoot) {
+                if (mWifiDisplayAdapter != null) {
+                    mWifiDisplayAdapter.requestEnableSinkLocked(enable);
+                }
+            }
+        }
+    }
+
+    private void waitWifiDisplayConnectionInternal(Surface surface) {
+        if (SystemProperties.get("ro.mtk_wfd_sink_support").equals("1")) {
+            synchronized (mSyncRoot) {
+                if (mWifiDisplayAdapter != null) {
+                    mWifiDisplayAdapter.requestWaitConnectionLocked(surface);
+                }
+            }
+        }
+    }
+
+    private void suspendWifiDisplayInternal(boolean suspend, Surface surface) {
+        if (SystemProperties.get("ro.mtk_wfd_sink_support").equals("1")) {
+            synchronized (mSyncRoot) {
+                if (mWifiDisplayAdapter != null) {
+                    mWifiDisplayAdapter.requestSuspendDisplayLocked(suspend, surface);
+                }
+            }
+        }
+    }
+
+    private void sendUibcInputEventInternal(String input) {
+        if (SystemProperties.get("ro.mtk_wfd_sink_uibc_support").equals("1")) {
+            synchronized (mSyncRoot) {
+                if (mWifiDisplayAdapter != null) {
+                    mWifiDisplayAdapter.sendUibcInputEventLocked(input);
+                }
+            }
         }
     }
 
@@ -1548,6 +1620,56 @@ public final class DisplayManagerService extends SystemService {
                     android.Manifest.permission.CAPTURE_SECURE_VIDEO_OUTPUT)
                     == PackageManager.PERMISSION_GRANTED;
         }
+
+        @Override // Binder call
+        public boolean isSinkEnabled() {
+            final long token = Binder.clearCallingIdentity();
+            try {
+                return isSinkEnabledInternal();
+            } finally {
+                Binder.restoreCallingIdentity(token);
+            }
+        }
+
+        @Override // Binder call
+        public void enableSink(boolean enable) {
+            final long token = Binder.clearCallingIdentity();
+            try {
+                enableSinkInternal(enable);
+            } finally {
+                Binder.restoreCallingIdentity(token);
+            }
+        }
+
+        @Override // Binder call
+        public void waitWifiDisplayConnection(Surface surface) {
+            final long token = Binder.clearCallingIdentity();
+            try {
+                waitWifiDisplayConnectionInternal(surface);
+            } finally {
+                Binder.restoreCallingIdentity(token);
+            }
+        }
+
+        @Override // Binder call
+        public void suspendWifiDisplay(boolean suspend, Surface surface) {
+            final long token = Binder.clearCallingIdentity();
+            try {
+                suspendWifiDisplayInternal(suspend, surface);
+            } finally {
+                Binder.restoreCallingIdentity(token);
+            }
+        }
+
+        @Override // Binder call
+        public void sendUibcInputEvent(String input) {
+            final long token = Binder.clearCallingIdentity();
+            try {
+                sendUibcInputEventInternal(input);
+            } finally {
+                Binder.restoreCallingIdentity(token);
+            }
+        }
     }
 
     private final class LocalService extends DisplayManagerInternal {
@@ -1585,6 +1707,11 @@ public final class DisplayManagerService extends SystemService {
         @Override
         public boolean isProximitySensorAvailable() {
             return mDisplayPowerController.isProximitySensorAvailable();
+        }
+
+        @Override
+        public void setIPOScreenOnDelay(int msec) {
+            mDisplayPowerController.setIPOScreenOnDelay(msec);
         }
 
         @Override

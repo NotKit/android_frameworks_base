@@ -98,8 +98,10 @@
 // Turn on to enable debugging shadow
 #define DEBUG_SHADOW 0
 
+#include "mediatek/MTKDebug.h"
+
 #if DEBUG_INIT
-    #define INIT_LOGD(...) ALOGD(__VA_ARGS__)
+    #define INIT_LOGD(...) MLOGD(DEBUG_INIT, __VA_ARGS__)
 #else
     #define INIT_LOGD(...)
 #endif

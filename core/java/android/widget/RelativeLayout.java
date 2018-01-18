@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,7 +35,9 @@ import android.content.Context;
 import android.content.res.TypedArray;
 import android.graphics.Rect;
 import android.os.Build;
+import android.os.SystemProperties;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.util.Pools.SynchronizedPool;
 import android.util.SparseArray;
 import android.view.Gravity;
@@ -40,6 +47,7 @@ import android.view.ViewGroup;
 import android.view.ViewHierarchyEncoder;
 import android.view.accessibility.AccessibilityEvent;
 import android.widget.RemoteViews.RemoteView;
+
 
 import static android.os.Build.VERSION_CODES.JELLY_BEAN_MR1;
 
@@ -82,6 +90,18 @@ import static android.os.Build.VERSION_CODES.JELLY_BEAN_MR1;
  */
 @RemoteView
 public class RelativeLayout extends ViewGroup {
+    /// M: Log tag.
+    private static final String DEBUG_LOG_TAG = "Layout";
+    private static final boolean DBG = "eng".equals(Build.TYPE);
+    /// M: System property used to enable or disable log debugging.
+    private static final String DEBUG_LAYOUT_PROPERTY = "debug.layout.log";
+    /// M: Flag for indicating enable or disable log debugging.
+    private static boolean sDebugLayout = false;
+    /// M: System property used to enable or disable log debugging.
+    private static final String DEBUG_RULE_PROPERTY = "debug.layout.log.rule";
+    /// M: Flag for indicating enable or disable log debugging.
+    private static boolean sDebugRule = false;
+
     public static final int TRUE = -1;
 
     /**
@@ -209,7 +229,7 @@ public class RelativeLayout extends ViewGroup {
     private int mIgnoreGravity;
 
     private SortedSet<View> mTopToBottomLeftToRightSet = null;
-    
+
     private boolean mDirtyHierarchy;
     private View[] mSortedHorizontalChildren;
     private View[] mSortedVerticalChildren;
@@ -248,6 +268,7 @@ public class RelativeLayout extends ViewGroup {
         super(context, attrs, defStyleAttr, defStyleRes);
         initFromAttributes(context, attrs, defStyleAttr, defStyleRes);
         queryCompatibilityModes(context);
+        initRelativeLayout();
     }
 
     private void initFromAttributes(
@@ -445,37 +466,97 @@ public class RelativeLayout extends ViewGroup {
         // an offset equals to "DEFAULT_WIDTH - width".
         final int layoutDirection = getLayoutDirection();
         if (isLayoutRtl() && myWidth == -1) {
+            if (DBG && sDebugLayout) {
+                Log.d(DEBUG_LOG_TAG, "[RelativeLayout] + Pass.1 (RtL), this=" + this);
+            }
             myWidth = DEFAULT_WIDTH;
+            if (DBG && sDebugLayout) {
+                Log.d(DEBUG_LOG_TAG, "[RelativeLayout] - Pass.1, this=" + this
+                        + ", myWidth=" + myWidth + ", myHeight=" + myHeight);
+            }
         }
 
         View[] views = mSortedHorizontalChildren;
         int count = views.length;
 
+        if (DBG && sDebugLayout) {
+            Log.d(DEBUG_LOG_TAG, "[RelativeLayout] + Pass.2 (Horizontal measure), this=" + this);
+
+        }
+
         for (int i = 0; i < count; i++) {
             View child = views[i];
             if (child.getVisibility() != GONE) {
+                if (DBG && sDebugLayout) {
+                    Log.d(DEBUG_LOG_TAG, "[RelativeLayout] + Child in Pass2: " + i
+                            + ", child=" + child + ", this=" + this);
+                }
                 LayoutParams params = (LayoutParams) child.getLayoutParams();
                 int[] rules = params.getRules(layoutDirection);
 
+                if (DBG && sDebugRule) {
+                    Log.d(DEBUG_LOG_TAG, "[RelativeLayout] + Child_horizontal: i = " + i + ", "
+                            + "params(L,R,T,B) = " + params.mLeft + "," + params.mRight + ","
+                            + params.mTop + "," + params.mBottom + ", "
+                            + "params(width,height) = " + params.width + " , " + params.height
+                            + ", " + "child = " + child + ", this = " + this);
+                }
                 applyHorizontalSizeRules(params, myWidth, rules);
+                if (DBG && sDebugRule) {
+                    Log.d(DEBUG_LOG_TAG, "[RelativeLayout] - Child_horizontal: i = " + i + ", "
+                            + "params(L,R,T,B) = " + params.mLeft + "," + params.mRight + ","
+                            + params.mTop + "," + params.mBottom + ", " + "child = " + child
+                            + ", this = " + this);
+                }
                 measureChildHorizontal(child, params, myWidth, myHeight);
 
                 if (positionChildHorizontal(child, params, myWidth, isWrapContentWidth)) {
                     offsetHorizontalAxis = true;
                 }
+                if (DBG && sDebugLayout) {
+                    Log.d(DEBUG_LOG_TAG, "[RelativeLayout] - Child in Pass2: " + i
+                            + ", child=" + child + ", this=" + this);
+                }
             }
+        }
+
+        if (DBG && sDebugLayout) {
+            Log.d(DEBUG_LOG_TAG, "[RelativeLayout] - Pass.2, this=" + this);
+
         }
 
         views = mSortedVerticalChildren;
         count = views.length;
         final int targetSdkVersion = getContext().getApplicationInfo().targetSdkVersion;
 
+        if (DBG && sDebugLayout) {
+           Log.d(DEBUG_LOG_TAG, "[RelativeLayout] + Pass.3 (Vertical measure), this=" + this);
+
+        }
+
         for (int i = 0; i < count; i++) {
             final View child = views[i];
             if (child.getVisibility() != GONE) {
+                if (DBG && sDebugLayout) {
+                    Log.d(DEBUG_LOG_TAG, "[RelativeLayout] + Child in Pass3: " + i
+                            + ", child=" + child + ", this=" + this);
+                }
                 final LayoutParams params = (LayoutParams) child.getLayoutParams();
 
+                if (DBG && sDebugRule) {
+                    Log.d(DEBUG_LOG_TAG, "[RelativeLayout] + Child_vertical: i = " + i + ", "
+                            + "params(L,R,T,B) = " + params.mLeft + "," + params.mRight + ","
+                            + params.mTop + "," + params.mBottom + ", "
+                            + "params(width,height) = " + params.width + " , " + params.height
+                            + ", " + "child = " + child + ", this = " + this);
+                }
                 applyVerticalSizeRules(params, myHeight, child.getBaseline());
+                if (DBG && sDebugRule) {
+                    Log.d(DEBUG_LOG_TAG, "[RelativeLayout] - Child_vertical: i = " + i + ", "
+                            + "params(L,R,T,B) = " + params.mLeft + "," + params.mRight + ","
+                            + params.mTop + "," + params.mBottom + ", " + "child = " + child
+                            + ", this = " + this);
+                }
                 measureChild(child, params, myWidth, myHeight);
                 if (positionChildVertical(child, params, myHeight, isWrapContentHeight)) {
                     offsetVerticalAxis = true;
@@ -514,7 +595,18 @@ public class RelativeLayout extends ViewGroup {
                     right = Math.max(right, params.mRight + params.rightMargin);
                     bottom = Math.max(bottom, params.mBottom + params.bottomMargin);
                 }
+                if (DBG && sDebugLayout) {
+                    Log.d(DEBUG_LOG_TAG, "[RelativeLayout] - Child in Pass3: " + i
+                            + ", child=" + child + ", this=" + this);
+                }
             }
+        }
+
+        if (DBG && sDebugLayout) {
+            Log.d(DEBUG_LOG_TAG, "[RelativeLayout] - Pass.3, this=" + this + ", "
+                    + "width = " + width + ", height = " + height + ", " + "left=" + left
+                    + ", right=" + right + ", top=" + top + ", bottom=" + bottom);
+
         }
 
         // Use the top-start-most laid out view as the baseline. RTL offsets are
@@ -535,6 +627,9 @@ public class RelativeLayout extends ViewGroup {
         mBaselineView = baselineView;
 
         if (isWrapContentWidth) {
+            if (DBG && sDebugLayout) {
+               Log.d(DEBUG_LOG_TAG, "[RelativeLayout] + Pass.5 (WrapContentWidth), this=" + this);
+            }
             // Width already has left padding in it since it was calculated by looking at
             // the right of each child view
             width += mPaddingRight;
@@ -562,9 +657,19 @@ public class RelativeLayout extends ViewGroup {
                     }
                 }
             }
+
+            if (DBG && sDebugLayout) {
+                Log.d(DEBUG_LOG_TAG, "[RelativeLayout] - Pass.5, this=" + this + ", width=" + width
+                        + ", height=" + height);
+
+            }
         }
 
         if (isWrapContentHeight) {
+            if (DBG && sDebugLayout) {
+                Log.d(DEBUG_LOG_TAG, "[RelativeLayout] + Pass.6 (WrapContentHeight), this="
+                        + this);
+            }
             // Height already has top padding in it since it was calculated by looking at
             // the bottom of each child view
             height += mPaddingBottom;
@@ -591,6 +696,11 @@ public class RelativeLayout extends ViewGroup {
                         }
                     }
                 }
+            }
+
+            if (DBG && sDebugLayout) {
+                Log.d(DEBUG_LOG_TAG, "[RelativeLayout] - Pass.6, this=" + this
+                        + ", width=" + width + ", height=" + height);
             }
         }
 
@@ -1242,6 +1352,8 @@ public class RelativeLayout extends ViewGroup {
         private boolean mRulesChanged = false;
         private boolean mIsRtlCompatibilityMode = false;
 
+        private String mRuleStr = "";
+
         /**
          * When true, uses the parent as the anchor if the anchor doesn't exist or if
          * the anchor's visibility is GONE.
@@ -1269,72 +1381,143 @@ public class RelativeLayout extends ViewGroup {
                 switch (attr) {
                     case com.android.internal.R.styleable.RelativeLayout_Layout_layout_alignWithParentIfMissing:
                         alignWithParent = a.getBoolean(attr, false);
+                        if (alignWithParent) {
+                            mRuleStr += "AlignWithParent=True, ";
+                        }
                         break;
                     case com.android.internal.R.styleable.RelativeLayout_Layout_layout_toLeftOf:
                         rules[LEFT_OF] = a.getResourceId(attr, 0);
+                        if (rules[LEFT_OF] != 0) {
+                            mRuleStr += ", LEFT_OF=" + Integer.toHexString(rules[LEFT_OF]);
+                        }
                         break;
                     case com.android.internal.R.styleable.RelativeLayout_Layout_layout_toRightOf:
                         rules[RIGHT_OF] = a.getResourceId(attr, 0);
+                        if (rules[RIGHT_OF] != 0) {
+                            mRuleStr += ", RIGHT_OF=" + Integer.toHexString(rules[RIGHT_OF]);
+                        }
                         break;
                     case com.android.internal.R.styleable.RelativeLayout_Layout_layout_above:
                         rules[ABOVE] = a.getResourceId(attr, 0);
+                        if (rules[ABOVE] != 0) {
+                            mRuleStr += ", ABOVE=" + Integer.toHexString(rules[ABOVE]);
+                        }
                         break;
                     case com.android.internal.R.styleable.RelativeLayout_Layout_layout_below:
                         rules[BELOW] = a.getResourceId(attr, 0);
+                        if (rules[BELOW] != 0) {
+                            mRuleStr += ", BELOW=" + Integer.toHexString(rules[BELOW]);
+                        }
                         break;
                     case com.android.internal.R.styleable.RelativeLayout_Layout_layout_alignBaseline:
                         rules[ALIGN_BASELINE] = a.getResourceId(attr, 0);
+                        if (rules[ALIGN_BASELINE] != 0) {
+                            mRuleStr += ", ALIGN_BASELINE="
+                                    + Integer.toHexString(rules[ALIGN_BASELINE]);
+                        }
                         break;
                     case com.android.internal.R.styleable.RelativeLayout_Layout_layout_alignLeft:
                         rules[ALIGN_LEFT] = a.getResourceId(attr, 0);
+                        if (rules[ALIGN_LEFT] != 0) {
+                            mRuleStr += ", ALIGN_LEFT=" + Integer.toHexString(rules[ALIGN_LEFT]);
+                        }
                         break;
                     case com.android.internal.R.styleable.RelativeLayout_Layout_layout_alignTop:
                         rules[ALIGN_TOP] = a.getResourceId(attr, 0);
+                        if (rules[ALIGN_TOP] != 0) {
+                            mRuleStr += ", ALIGN_TOP=" + Integer.toHexString(rules[ALIGN_TOP]);
+                        }
                         break;
                     case com.android.internal.R.styleable.RelativeLayout_Layout_layout_alignRight:
                         rules[ALIGN_RIGHT] = a.getResourceId(attr, 0);
+                        if (rules[ALIGN_RIGHT] != 0) {
+                            mRuleStr += ", ALIGN_RIGHT=" + Integer.toHexString(rules[ALIGN_RIGHT]);
+                        }
                         break;
                     case com.android.internal.R.styleable.RelativeLayout_Layout_layout_alignBottom:
                         rules[ALIGN_BOTTOM] = a.getResourceId(attr, 0);
+                        if (rules[ALIGN_BOTTOM] != 0) {
+                            mRuleStr += ", ALIGN_BOTTOM="
+                                    + Integer.toHexString(rules[ALIGN_BOTTOM]);
+                        }
                         break;
                     case com.android.internal.R.styleable.RelativeLayout_Layout_layout_alignParentLeft:
                         rules[ALIGN_PARENT_LEFT] = a.getBoolean(attr, false) ? TRUE : 0;
+                        if (rules[ALIGN_PARENT_LEFT] != 0) {
+                            mRuleStr += ", ALIGN_PARENT_LEFT=True";
+                        }
                         break;
                     case com.android.internal.R.styleable.RelativeLayout_Layout_layout_alignParentTop:
                         rules[ALIGN_PARENT_TOP] = a.getBoolean(attr, false) ? TRUE : 0;
+                        if (rules[ALIGN_PARENT_TOP] != 0) {
+                            mRuleStr += ", ALIGN_PARENT_TOP=True";
+                        }
                         break;
                     case com.android.internal.R.styleable.RelativeLayout_Layout_layout_alignParentRight:
                         rules[ALIGN_PARENT_RIGHT] = a.getBoolean(attr, false) ? TRUE : 0;
+                        if (rules[ALIGN_PARENT_RIGHT] != 0) {
+                            mRuleStr += ", ALIGN_PARENT_RIGHT=True";
+                        }
                         break;
                     case com.android.internal.R.styleable.RelativeLayout_Layout_layout_alignParentBottom:
                         rules[ALIGN_PARENT_BOTTOM] = a.getBoolean(attr, false) ? TRUE : 0;
+                        if (rules[ALIGN_PARENT_BOTTOM] != 0) {
+                            mRuleStr += ", ALIGN_PARENT_BOTTOM=True";
+                        }
                         break;
                     case com.android.internal.R.styleable.RelativeLayout_Layout_layout_centerInParent:
                         rules[CENTER_IN_PARENT] = a.getBoolean(attr, false) ? TRUE : 0;
+                        if (rules[CENTER_IN_PARENT] != 0) {
+                            mRuleStr += ", CENTER_IN_PARENT=True";
+                        }
                         break;
                     case com.android.internal.R.styleable.RelativeLayout_Layout_layout_centerHorizontal:
                         rules[CENTER_HORIZONTAL] = a.getBoolean(attr, false) ? TRUE : 0;
+                        if (rules[CENTER_HORIZONTAL] != 0) {
+                            mRuleStr += ", CENTER_HORIZONTAL=True";
+                        }
                         break;
                     case com.android.internal.R.styleable.RelativeLayout_Layout_layout_centerVertical:
                         rules[CENTER_VERTICAL] = a.getBoolean(attr, false) ? TRUE : 0;
+                        if (rules[CENTER_VERTICAL] != 0) {
+                            mRuleStr += ", CENTER_VERTICAL=True";
+                        }
                        break;
                     case com.android.internal.R.styleable.RelativeLayout_Layout_layout_toStartOf:
                         rules[START_OF] = a.getResourceId(attr, 0);
+                        if (rules[START_OF] != 0) {
+                            mRuleStr += ", START_OF=" + Integer.toHexString(rules[START_OF]);
+                        }
                         break;
                     case com.android.internal.R.styleable.RelativeLayout_Layout_layout_toEndOf:
                         rules[END_OF] = a.getResourceId(attr, 0);
+                        if (rules[END_OF] != 0) {
+                            mRuleStr += ", END_OF=" + Integer.toHexString(rules[END_OF]);
+                        }
                         break;
                     case com.android.internal.R.styleable.RelativeLayout_Layout_layout_alignStart:
                         rules[ALIGN_START] = a.getResourceId(attr, 0);
+                        if (rules[ALIGN_START] != 0) {
+                            mRuleStr += ", ALIGN_START=" + Integer.toHexString(rules[ALIGN_START]);
+                        }
                         break;
                     case com.android.internal.R.styleable.RelativeLayout_Layout_layout_alignEnd:
                         rules[ALIGN_END] = a.getResourceId(attr, 0);
+                        if (rules[ALIGN_END] != 0) {
+                            mRuleStr += ", ALIGN_END=" + Integer.toHexString(rules[ALIGN_END]);
+                        }
                         break;
                     case com.android.internal.R.styleable.RelativeLayout_Layout_layout_alignParentStart:
                         rules[ALIGN_PARENT_START] = a.getBoolean(attr, false) ? TRUE : 0;
+                        if (rules[ALIGN_PARENT_START] != 0) {
+                            mRuleStr += ", ALIGN_PARENT_START=True";
+                        }
                         break;
                     case com.android.internal.R.styleable.RelativeLayout_Layout_layout_alignParentEnd:
                         rules[ALIGN_PARENT_END] = a.getBoolean(attr, false) ? TRUE : 0;
+                        if (rules[ALIGN_PARENT_END] != 0) {
+                            mRuleStr += ", ALIGN_PARENT_END=True";
+                        }
                         break;
                 }
             }
@@ -1382,8 +1565,10 @@ public class RelativeLayout extends ViewGroup {
 
         @Override
         public String debug(String output) {
-            return output + "ViewGroup.LayoutParams={ width=" + sizeToString(width) +
-                    ", height=" + sizeToString(height) + " }";
+            return output + "RelativeLayout.LayoutParams={ width=" + sizeToString(width)
+                    + ", height=" + sizeToString(height) + ", leftMargin=" + leftMargin
+                    + ", rightMargin=" + rightMargin + ", topMargin=" + topMargin
+                    + ", bottomMargin=" + bottomMargin + mRuleStr + " }";
         }
 
         /**
@@ -1889,5 +2074,13 @@ public class RelativeLayout extends ViewGroup {
              * END POOL IMPLEMENTATION
              */
         }
+    }
+
+    /*
+     * M: Initialize layout debugging.
+     */
+    private void initRelativeLayout() {
+        sDebugLayout = SystemProperties.getBoolean(DEBUG_LAYOUT_PROPERTY, false);
+        sDebugRule = SystemProperties.getBoolean(DEBUG_RULE_PROPERTY, false);
     }
 }

@@ -125,6 +125,7 @@ public class RecentsTaskLoadPlan {
         Resources res = mContext.getResources();
         ArrayList<Task> allTasks = new ArrayList<>();
         if (mRawTasks == null) {
+            // if (DEBUG) Log.d(TAG, "preloadPlan mRawTasks == null");
             preloadRawTasks(includeFrontMostExcludedTask);
         }
 
@@ -141,6 +142,7 @@ public class RecentsTaskLoadPlan {
         }
         long newLastStackActiveTime = -1;
         int taskCount = mRawTasks.size();
+        // if (DEBUG) Log.d(TAG, "preloadPlan taskCount = " + taskCount);
         for (int i = 0; i < taskCount; i++) {
             ActivityManager.RecentTaskInfo t = mRawTasks.get(i);
 

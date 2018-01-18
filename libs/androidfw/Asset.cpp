@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -626,12 +631,18 @@ const void* _FileAsset::getBuffer(bool wordAligned)
         map = new FileMap;
         if (!map->create(NULL, fileno(mFp), mStart, mLength, true)) {
             delete map;
+            /// M: 2013-12-25 ALPS01284925 Corrupt XML Log enhancement  @{
+            ALOGW(" getBuffer: map->create fail\n");
             return NULL;
         }
 
         ALOGV(" getBuffer: mapped\n");
 
         mMap = map;
+        /// M: 2013-12-25 ALPS01284925 Corrupt XML Log enhancement  @{
+        if(mMap == NULL)
+            ALOGW(" getBuffer: mMap == NULL\n");
+        /// @}
         if (!wordAligned) {
             return  mMap->getDataPtr();
         }
@@ -669,6 +680,10 @@ const void* _FileAsset::ensureAlignment(FileMap* map)
         // boundary.
         ALOGV("Returning aligned FileAsset %p (%s).", this,
                 getAssetSource());
+        /// M: 2013-12-25 ALPS01284925 Corrupt XML Log enhancement  @{
+        if(data == NULL)
+            ALOGW(" ensureAlignment: returning data=NULL\n");
+        /// @}
         return data;
     }
     // If not aligned on a word boundary, then we need to copy it into
@@ -865,6 +880,9 @@ void _CompressedAsset::close(void)
  */
 const void* _CompressedAsset::getBuffer(bool)
 {
+    /// M: ALPS01993812, Avoid race condition when getBuffer
+    AutoMutex _l(mLock);
+
     unsigned char* buf = NULL;
 
     if (mBuf != NULL)

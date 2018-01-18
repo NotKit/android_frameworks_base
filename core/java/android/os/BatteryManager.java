@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2008 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -37,6 +42,14 @@ public class BatteryManager {
     
     /**
      * Extra for {@link android.content.Intent#ACTION_BATTERY_CHANGED}:
+     * integer containing the current status constant.
+     * @hide
+     * @internal
+     */
+    public static final String EXTRA_STATUS_SMARTBOOK = "status_2nd";
+
+    /**
+     * Extra for {@link android.content.Intent#ACTION_BATTERY_CHANGED}:
      * integer containing the current health constant.
      */
     public static final String EXTRA_HEALTH = "health";
@@ -49,11 +62,28 @@ public class BatteryManager {
     
     /**
      * Extra for {@link android.content.Intent#ACTION_BATTERY_CHANGED}:
+     * boolean indicating whether a battery is present.
+     * @hide
+     * @internal
+     */
+    public static final String EXTRA_PRESENT_SMARTBOOK = "present_2nd";
+
+    /**
+     * Extra for {@link android.content.Intent#ACTION_BATTERY_CHANGED}:
      * integer field containing the current battery level, from 0 to
      * {@link #EXTRA_SCALE}.
      */
     public static final String EXTRA_LEVEL = "level";
     
+    /**
+     * Extra for {@link android.content.Intent#ACTION_BATTERY_CHANGED}:
+     * integer field containing the current battery level, from 0 to
+     * {@link #EXTRA_SCALE}.
+     * @hide
+     * @internal
+     */
+    public static final String EXTRA_LEVEL_SMARTBOOK = "level_2nd";
+
     /**
      * Extra for {@link android.content.Intent#ACTION_BATTERY_CHANGED}:
      * integer containing the maximum battery level.
@@ -128,6 +158,13 @@ public class BatteryManager {
     public static final int BATTERY_STATUS_DISCHARGING = 3;
     public static final int BATTERY_STATUS_NOT_CHARGING = 4;
     public static final int BATTERY_STATUS_FULL = 5;
+    /**
+     * Extra for {@link android.content.Intent#ACTION_BATTERY_CHANGED}:
+     * values for "status" field
+     * {@link #BATTERY_STATUS_CMD_DISCHARGING}.
+     */
+    /**{@hide}*/
+    public static final int BATTERY_STATUS_CMD_DISCHARGING = 6;
 
     // values for "health" field in the ACTION_BATTERY_CHANGED Intent
     public static final int BATTERY_HEALTH_UNKNOWN = 1;

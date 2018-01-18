@@ -54,7 +54,15 @@ import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
+import java.util.concurrent.Semaphore;
 import java.util.Set;
+
+import com.mediatek.am.AMEventHookAction;
+import com.mediatek.am.AMEventHookData;
+import com.mediatek.am.AMEventHookResult;
+import com.mediatek.anrmanager.ANRManager;
+import com.mediatek.server.am.AMEventHook;
 
 import static com.android.server.Watchdog.NATIVE_STACKS_OF_INTEREST;
 import static com.android.server.am.ActivityManagerDebugConfig.DEBUG_ANR;
@@ -347,6 +355,7 @@ class AppErrors {
             AppErrorDialog.Data data = new AppErrorDialog.Data();
             data.result = result;
             data.proc = r;
+            data.exceptionMsg = longMsg;
 
             // If we can't identify the process or it's already exceeded its crash quota,
             // quit right away without showing a crash dialog.
@@ -382,8 +391,11 @@ class AppErrors {
                     } catch (IllegalArgumentException e) {
                         // Hmm, that didn't work, app might have crashed before creating a
                         // recents entry. Let's see if we have a safe-to-restart intent.
-                        final Set<String> cats = task.intent.getCategories();
-                        if (cats != null && cats.contains(Intent.CATEGORY_LAUNCHER)) {
+                        /// M: ALPS02824889, Handle NullPointerException @{
+                        if (task.intent != null && task.intent.getCategories() != null
+                            && task.intent.getCategories().contains(
+                                Intent.CATEGORY_LAUNCHER)) {
+                        /// M: ALPS02824889, Handle NullPointerException @}
                             mService.startActivityInPackage(task.mCallingUid,
                                     task.mCallingPackage, task.intent,
                                     null, null, null, 0, 0,
@@ -705,7 +717,22 @@ class AppErrors {
             final boolean crashSilenced = mAppsNotReportingCrashes != null &&
                     mAppsNotReportingCrashes.contains(proc.info.packageName);
             if ((mService.canShowErrorDialogs() || showBackground) && !crashSilenced) {
-                proc.crashDialog = new AppErrorDialog(mContext, mService, data);
+                /// M: AMEventHook event @{
+                AMEventHookData.BeforeShowAppErrorDialog eventData = null;
+                AMEventHookResult eventResult = null;
+                eventData = AMEventHookData.BeforeShowAppErrorDialog.createInstance();
+                List<MtkAppErrorDialog> dialogList = new ArrayList<MtkAppErrorDialog>();
+                eventData.set(data, dialogList, mContext, mService, data.proc.processName,
+                        data.proc.info.packageName, data.proc.uid);
+                eventResult = mAMEventHook.hook(AMEventHook.Event.AM_BeforeShowAppErrorDialog,
+                        eventData);
+                if (AMEventHookResult.hasAction(eventResult,
+                    AMEventHookAction.AM_ReplaceDialog)) {
+                    proc.crashDialog = dialogList.get(0);
+                } else {
+                    proc.crashDialog = new AppErrorDialog(mContext, mService, data);
+                }
+                /// M: AMEventHook event @}
             } else {
                 // The device is asleep, so just pretend that the user
                 // saw a crash dialog and hit "force quit".
@@ -729,6 +756,14 @@ class AppErrors {
 
     final void appNotResponding(ProcessRecord app, ActivityRecord activity,
             ActivityRecord parent, boolean aboveSystem, final String annotation) {
+
+        /// M: ANR debug mechanism for skip ANR @{
+        if (mService.mANRManager.isANRFlowSkipped(app.pid, app.processName, annotation,
+                mService.mShuttingDown, app.notResponding, app.crashing) == true) {
+            return;
+        }
+        /// M: ANR debug mechanism for skip ANR @}
+
         ArrayList<Integer> firstPids = new ArrayList<Integer>(5);
         SparseArray<Boolean> lastPids = new SparseArray<Boolean>(20);
 
@@ -751,120 +786,253 @@ class AppErrors {
             mService.updateCpuStatsNow();
         }
 
+        /// M: ANR dump manager @{
+        /// M: ANR debug mechanism for FTrace
+        mService.mANRManager.enableTraceLog(false);
+        /// M: ANR debug mechanism for binder monitor
+        mService.mANRManager.enableBinderLog(false);
+        ANRManager.AnrDumpRecord anrDumpRecord = null;
+        StringBuilder info = new StringBuilder();
+        /// M: ANR mechanism for Message History/Queue for system server @{
+        if (mService.mANRManager.ENABLE_ALL_ANR_MECHANISM
+                == mService.mANRManager.enableANRDebuggingMechanism()) {
+            try {
+                if (app.pid == Process.myPid()) {
+                    app.thread.dumpAllMessageHistory();
+                } else {
+                    app.thread.dumpMessageHistory();
+                }
+            } catch (Exception e) {
+                Slog.e(TAG, "Error happens when dumping message history", e);
+            }
+        }
+
         // Unless configured otherwise, swallow ANRs in background processes & kill the process.
         boolean showBackground = Settings.Secure.getInt(mContext.getContentResolver(),
                 Settings.Secure.ANR_SHOW_BACKGROUND, 0) != 0;
 
-        boolean isSilentANR;
+        boolean isSilentANR = false;
 
-        synchronized (mService) {
-            // PowerManager.reboot() can block for a long time, so ignore ANRs while shutting down.
-            if (mService.mShuttingDown) {
-                Slog.i(TAG, "During shutdown skipping ANR: " + app + " " + annotation);
-                return;
-            } else if (app.notResponding) {
-                Slog.i(TAG, "Skipping duplicate ANR: " + app + " " + annotation);
-                return;
-            } else if (app.crashing) {
-                Slog.i(TAG, "Crashing app skipping ANR: " + app + " " + annotation);
-                return;
+        /// M: ANR mechanism for Message History/Queue for system server @}
+        if (mService.mANRManager.DISABLE_ALL_ANR_MECHANISM
+                != mService.mANRManager.enableANRDebuggingMechanism())
+        {
+            /// M: ANR debug mechanism for binder monitor @{
+            ANRManager.BinderDumpThread binderDumpThread =
+                    mService.mANRManager.new BinderDumpThread(app.pid);
+            binderDumpThread.start();
+            /// M: ANR debug mechanism for binder monitor @}
+
+            if (!mService.mAnrDumpMgr.mDumpList.containsKey(app)) {
+                anrDumpRecord = mService.mANRManager.new AnrDumpRecord(
+                        app.pid, app.crashing, app.processName, app.toString(),
+                        activity != null ? activity.shortComponentName : null,
+                        parent != null ? (parent.app != null ? parent.app.pid : -1) : -1,
+                        parent != null ? parent.shortComponentName : null,
+                        annotation, anrTime);
+                if (ANRManager.ENABLE_ALL_ANR_MECHANISM ==
+                            ANRManager.enableANRDebuggingMechanism()) {
+                    /// M: CPU measurement @{
+                    mService.mANRManager.updateProcessStats();
+                    String cpuInfo;
+                    cpuInfo = mService.mANRManager.getAndroidTime() +
+                            mService.mANRManager.getProcessState() + "\n";
+                    if (anrDumpRecord != null) {
+                        anrDumpRecord.mCpuInfo = cpuInfo;
+                    }
+                    Slog.i(TAG, cpuInfo.toString());
+                    /// CPU measurement @}
+                }
+                mService.mAnrDumpMgr.startAsyncDump(anrDumpRecord);
+            }
+            synchronized (mService) {
+                Slog.i(TAG, "appNotResponding-got this lock: " + app + " " + annotation);
+
+                // PowerManager.reboot() can block for a long time,
+                // so ignore ANRs while shutting down.
+                if (mService.mShuttingDown) {
+                    /// M: ANR debug mechanism for FTrace
+                    mService.mANRManager.enableTraceLog(true);
+                    /// M: ANR debug mechanism for binder monitor
+                    mService.mANRManager.enableBinderLog(true);
+                    mService.mAnrDumpMgr.cancelDump(anrDumpRecord);
+                    Slog.i(TAG, "During shutdown skipping ANR: " + app + " " + annotation);
+                    return;
+                } else if (app.notResponding) {
+                    /// M: ANR debug mechanism for FTrace
+                    mService.mANRManager.enableTraceLog(true);
+                    /// M: ANR debug mechanism for binder monitor
+                    mService.mANRManager.enableBinderLog(true);
+                    mService.mAnrDumpMgr.cancelDump(anrDumpRecord);
+                    Slog.i(TAG, "Skipping duplicate ANR: " + app + " " + annotation);
+                    return;
+                } else if (app.crashing) {
+                    /// M: ANR debug mechanism for FTrace
+                    mService.mANRManager.enableTraceLog(true);
+                    /// M: ANR debug mechanism for binder monitor
+                    mService.mANRManager.enableBinderLog(true);
+                    mService.mAnrDumpMgr.cancelDump(anrDumpRecord);
+                    Slog.i(TAG, "Crashing app skipping ANR: " + app + " " + annotation);
+                    return;
+                }
+
+                // In case we come through here for the same app before completing
+                // this one, mark as anring now so we will bail out.
+                app.notResponding = true;
+
+                // Log the ANR to the event log.
+                EventLog.writeEvent(EventLogTags.AM_ANR, app.userId, app.pid,
+                        app.processName, app.info.flags, annotation);
+                // Don't dump other PIDs if it's a background ANR
+                isSilentANR = !showBackground && !app.isInterestingToUserLocked() &&
+                        app.pid != MY_PID;
             }
 
-            // In case we come through here for the same app before completing
-            // this one, mark as anring now so we will bail out.
-            app.notResponding = true;
-
-            // Log the ANR to the event log.
-            EventLog.writeEvent(EventLogTags.AM_ANR, app.userId, app.pid,
-                    app.processName, app.info.flags, annotation);
-
-            // Dump thread traces as quickly as we can, starting with "interesting" processes.
-            firstPids.add(app.pid);
-
-            // Don't dump other PIDs if it's a background ANR
-            isSilentANR = !showBackground && !app.isInterestingToUserLocked() && app.pid != MY_PID;
-            if (!isSilentANR) {
-                int parentPid = app.pid;
-                if (parent != null && parent.app != null && parent.app.pid > 0) {
-                    parentPid = parent.app.pid;
+            if (anrDumpRecord != null) {
+                synchronized (anrDumpRecord) {
+                    mService.mAnrDumpMgr.dumpAnrDebugInfo(anrDumpRecord, false);
                 }
-                if (parentPid != app.pid) firstPids.add(parentPid);
+            }
+            mService.mAnrDumpMgr.removeDumpRecord(anrDumpRecord);
 
-                if (MY_PID != app.pid && MY_PID != parentPid) firstPids.add(MY_PID);
+            /// M: NE coredump detector @{
+            Boolean isCoredumping = mService.mANRManager.isProcDoCoredump(app.pid);
+            /// @}
 
-                for (int i = mService.mLruProcesses.size() - 1; i >= 0; i--) {
-                    ProcessRecord r = mService.mLruProcesses.get(i);
-                    if (r != null && r.thread != null) {
-                        int pid = r.pid;
-                        if (pid > 0 && pid != app.pid && pid != parentPid && pid != MY_PID) {
-                            if (r.persistent) {
-                                firstPids.add(pid);
-                                if (DEBUG_ANR) Slog.i(TAG, "Adding persistent proc: " + r);
-                            } else {
-                                lastPids.put(pid, Boolean.TRUE);
-                                if (DEBUG_ANR) Slog.i(TAG, "Adding ANR proc: " + r);
+            /// M: Add message history/queue to _exp_main.txt @{
+            anrDumpRecord.mCpuInfo = anrDumpRecord.mCpuInfo +
+                mService.mANRManager.mMessageMap.get(app.pid);
+            /// M: Add message history/queue to _exp_main.txt @}
+
+            /// M: NE coredump detector
+            if (!isCoredumping)
+                mService.addErrorToDropBox("anr", app, app.processName, activity, parent,
+                        annotation, anrDumpRecord != null ? anrDumpRecord.mCpuInfo : "",
+                        null, null);
+        } else {
+            Slog.i(TAG, "ANR_DEBUGGING_MECHANISM is disabled");
+            synchronized (mService) {
+                // PowerManager.reboot() can block for a long time,
+                // so ignore ANRs while shutting down.
+                if (mService.mShuttingDown) {
+                    Slog.i(TAG, "During shutdown skipping ANR: " + app + " " + annotation);
+                    return;
+                } else if (app.notResponding) {
+                    Slog.i(TAG, "Skipping duplicate ANR: " + app + " " + annotation);
+                    return;
+                } else if (app.crashing) {
+                    Slog.i(TAG, "Crashing app skipping ANR: " + app + " " + annotation);
+                    return;
+                }
+
+                // In case we come through here for the same app before completing
+                // this one, mark as anring now so we will bail out.
+                app.notResponding = true;
+
+                // Log the ANR to the event log.
+                EventLog.writeEvent(EventLogTags.AM_ANR, app.userId, app.pid,
+                        app.processName, app.info.flags, annotation);
+
+                // Dump thread traces as quickly as we can, starting with "interesting" processes.
+                firstPids.add(app.pid);
+
+                // Don't dump other PIDs if it's a background ANR
+                isSilentANR = !showBackground && !app.isInterestingToUserLocked() &&
+                        app.pid != MY_PID;
+                if (!isSilentANR) {
+                    int parentPid = app.pid;
+                    if (parent != null && parent.app != null && parent.app.pid > 0) {
+                        parentPid = parent.app.pid;
+                    }
+                    if (parentPid != app.pid) firstPids.add(parentPid);
+
+                    if (MY_PID != app.pid && MY_PID != parentPid) firstPids.add(MY_PID);
+
+                    for (int i = mService.mLruProcesses.size() - 1; i >= 0; i--) {
+                        ProcessRecord r = mService.mLruProcesses.get(i);
+                        if (r != null && r.thread != null) {
+                            int pid = r.pid;
+                            if (pid > 0 && pid != app.pid && pid != parentPid && pid != MY_PID) {
+                                if (r.persistent) {
+                                    firstPids.add(pid);
+                                    if (DEBUG_ANR) Slog.i(TAG, "Adding persistent proc: " + r);
+                                } else {
+                                    lastPids.put(pid, Boolean.TRUE);
+                                    if (DEBUG_ANR) Slog.i(TAG, "Adding ANR proc: " + r);
+                                }
                             }
                         }
                     }
                 }
             }
-        }
 
-        // Log the ANR to the main log.
-        StringBuilder info = new StringBuilder();
-        info.setLength(0);
-        info.append("ANR in ").append(app.processName);
-        if (activity != null && activity.shortComponentName != null) {
-            info.append(" (").append(activity.shortComponentName).append(")");
-        }
-        info.append("\n");
-        info.append("PID: ").append(app.pid).append("\n");
-        if (annotation != null) {
-            info.append("Reason: ").append(annotation).append("\n");
-        }
-        if (parent != null && parent != activity) {
-            info.append("Parent: ").append(parent.shortComponentName).append("\n");
-        }
-
-        ProcessCpuTracker processCpuTracker = new ProcessCpuTracker(true);
-
-        String[] nativeProcs = NATIVE_STACKS_OF_INTEREST;
-        // don't dump native PIDs for background ANRs
-        File tracesFile = null;
-        if (isSilentANR) {
-            tracesFile = mService.dumpStackTraces(true, firstPids, null, lastPids,
-                null);
-        } else {
-            tracesFile = mService.dumpStackTraces(true, firstPids, processCpuTracker, lastPids,
-                nativeProcs);
-        }
-
-        String cpuInfo = null;
-        if (ActivityManagerService.MONITOR_CPU_USAGE) {
-            mService.updateCpuStatsNow();
-            synchronized (mService.mProcessCpuTracker) {
-                cpuInfo = mService.mProcessCpuTracker.printCurrentState(anrTime);
+            // Log the ANR to the main log.
+            //StringBuilder info = new StringBuilder();
+            info.setLength(0);
+            info.append("ANR in ").append(app.processName);
+            if (activity != null && activity.shortComponentName != null) {
+                info.append(" (").append(activity.shortComponentName).append(")");
             }
-            info.append(processCpuTracker.printCurrentLoad());
-            info.append(cpuInfo);
+            info.append("\n");
+            info.append("PID: ").append(app.pid).append("\n");
+            if (annotation != null) {
+                info.append("Reason: ").append(annotation).append("\n");
+            }
+            if (parent != null && parent != activity) {
+                info.append("Parent: ").append(parent.shortComponentName).append("\n");
+            }
+
+
+            ProcessCpuTracker processCpuTracker = new ProcessCpuTracker(true);
+
+            String[] nativeProcs = NATIVE_STACKS_OF_INTEREST;
+            // don't dump native PIDs for background ANRs
+            File tracesFile = null;
+            if (isSilentANR) {
+                tracesFile = mService.dumpStackTraces(true, firstPids, null, lastPids,
+                    null);
+            } else {
+                tracesFile = mService.dumpStackTraces(true, firstPids, processCpuTracker, lastPids,
+                    nativeProcs);
+            }
+
+            String cpuInfo = null;
+            if (ActivityManagerService.MONITOR_CPU_USAGE) {
+                mService.updateCpuStatsNow();
+                synchronized (mService.mProcessCpuTracker) {
+                    cpuInfo = mService.mProcessCpuTracker.printCurrentState(anrTime);
+                }
+                info.append(processCpuTracker.printCurrentLoad());
+                info.append(cpuInfo);
+            }
+
+            info.append(processCpuTracker.printCurrentState(anrTime));
+
+            Slog.e(TAG, info.toString());
+            if (tracesFile == null) {
+                // There is no trace file, so dump (only) the alleged culprit's threads to the log
+                Process.sendSignal(app.pid, Process.SIGNAL_QUIT);
+            }
+
+            mService.addErrorToDropBox("anr", app, app.processName, activity, parent, annotation,
+                    cpuInfo, tracesFile, null);
         }
-
-        info.append(processCpuTracker.printCurrentState(anrTime));
-
-        Slog.e(TAG, info.toString());
-        if (tracesFile == null) {
-            // There is no trace file, so dump (only) the alleged culprit's threads to the log
-            Process.sendSignal(app.pid, Process.SIGNAL_QUIT);
-        }
-
-        mService.addErrorToDropBox("anr", app, app.processName, activity, parent, annotation,
-                cpuInfo, tracesFile, null);
+        /// M: ANR dump manager @}
 
         if (mService.mController != null) {
             try {
                 // 0 == show dialog, 1 = keep waiting, -1 = kill process immediately
-                int res = mService.mController.appNotResponding(
+                int res;
+                if (mService.mANRManager.DISABLE_ALL_ANR_MECHANISM
+                        != mService.mANRManager.enableANRDebuggingMechanism()) {
+                    res = mService.mController.appNotResponding(
+                        app.processName, app.pid, anrDumpRecord != null ?
+                            anrDumpRecord.mInfo.toString() : "");
+                } else {
+                    res = mService.mController.appNotResponding(
                         app.processName, app.pid, info.toString());
+                }
+
                 if (res != 0) {
                     if (res < 0 && app.pid != MY_PID) {
                         app.kill("anr", true);
@@ -890,10 +1058,18 @@ class AppErrors {
             }
 
             // Set the app's notResponding state, and look up the errorReportReceiver
-            makeAppNotRespondingLocked(app,
-                    activity != null ? activity.shortComponentName : null,
-                    annotation != null ? "ANR " + annotation : "ANR",
-                    info.toString());
+            if (mService.mANRManager.DISABLE_ALL_ANR_MECHANISM
+                    != mService.mANRManager.enableANRDebuggingMechanism()) {
+                makeAppNotRespondingLocked(app,
+                        activity != null ? activity.shortComponentName : null,
+                        annotation != null ? "ANR " + annotation : "ANR",
+                        anrDumpRecord != null ? anrDumpRecord.mInfo.toString() : "");
+            } else {
+                makeAppNotRespondingLocked(app,
+                        activity != null ? activity.shortComponentName : null,
+                        annotation != null ? "ANR " + annotation : "ANR",
+                        info.toString());
+            }
 
             // Bring up the infamous App Not Responding dialog
             Message msg = Message.obtain();
@@ -943,7 +1119,11 @@ class AppErrors {
 
             boolean showBackground = Settings.Secure.getInt(mContext.getContentResolver(),
                     Settings.Secure.ANR_SHOW_BACKGROUND, 0) != 0;
-            if (mService.canShowErrorDialogs() || showBackground) {
+            /// M: ANR mechanism: Prevent process is killed if screen is off @{
+            if (mService.canShowErrorDialogs() || showBackground ||
+                (mService.mANRManager.DISABLE_ALL_ANR_MECHANISM
+                != mService.mANRManager.enableANRDebuggingMechanism())) {
+            /// @}
                 d = new AppNotRespondingDialog(mService,
                         mContext, proc, (ActivityRecord)data.get("activity"),
                         msg.arg1 != 0);
@@ -978,4 +1158,7 @@ class AppErrors {
         final String stack;
     }
 
+    /// M: AMEventHook event @{
+    private AMEventHook mAMEventHook = AMEventHook.createInstance();
+    /// M: AMEventHook event @}
 }

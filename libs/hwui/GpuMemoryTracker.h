@@ -50,9 +50,12 @@ public:
     static int getInstanceCount(GpuObjectType type);
     static int getTotalSize(GpuObjectType type);
     static void onFrameCompleted();
+    /// M: move stopTrackingObject method from private to public to stop tracking
+    /// texture layer
+    void stopTrackingObject();
 
 protected:
-    GpuMemoryTracker(GpuObjectType type) : mType(type) {
+    GpuMemoryTracker(GpuObjectType type) : mType(type), mRemoved(false) {
         ASSERT_GPU_THREAD();
         startTrackingObject();
     }
@@ -66,10 +69,10 @@ protected:
 
 private:
     void startTrackingObject();
-    void stopTrackingObject();
-
     int mSize = 0;
     GpuObjectType mType;
+    /// M: Prevent to invoke stopTrackingObject method twice
+    bool mRemoved;
 };
 
 } // namespace uirenderer

@@ -144,12 +144,32 @@ public class SubscriptionInfo implements Parcelable {
         return this.mIccId;
     }
 
+    // MTK-START
+    /**
+     * Sets the ICC ID
+     * @hide
+     */
+    public void setIccId(String iccId) {
+        this.mIccId = iccId;
+    }
+    // MTK-END
+
     /**
      * @return the slot index of this Subscription's SIM card.
      */
     public int getSimSlotIndex() {
         return this.mSimSlotIndex;
     }
+
+    // MTK-START
+    /**
+     * Sets the slot index of this Subscription's SIM card.
+     * @hide
+     */
+    public void setSimSlotIndex(int slotId) {
+        this.mSimSlotIndex = slotId;
+    }
+    // MTK-END
 
     /**
      * @return the name displayed to the user that identifies this subscription
@@ -190,6 +210,16 @@ public class SubscriptionInfo implements Parcelable {
         return this.mNameSource;
     }
 
+    // MTK-START
+    /**
+     * Sets the source of the name, eg NAME_SOURCE_UNDEFINED, NAME_SOURCE_DEFAULT_SOURCE,
+     * NAME_SOURCE_SIM_SOURCE or NAME_SOURCE_USER_INPUT.
+     * @hide
+     */
+    public void setNameSource(int nameSource) {
+        this.mNameSource = nameSource;
+    }
+    // MTK-END
     /**
      * Creates and returns an icon {@code Bitmap} to represent this {@code SubscriptionInfo} in a user
      * interface.
@@ -199,37 +229,83 @@ public class SubscriptionInfo implements Parcelable {
      * @return A bitmap icon for this {@code SubscriptionInfo}.
      */
     public Bitmap createIconBitmap(Context context) {
+        return createIconBitmap(context, -1, true);
+    }
+
+    // MTK-START
+    /**
+     * We need to set the icon color for disabled account @{
+     * @param context
+     * @param color the new color for the icon.
+     * @return
+     * @hide
+     */
+    public Bitmap createIconBitmap(Context context, int color) {
+        return createIconBitmap(context, color, true);
+    }
+
+    /**
+     * We need to set the icon color for disabled account @{
+     * @param context
+     * @param color the new color for the icon.
+     * @param showSlotIndex use to indicate if slot index is needed
+     * @return
+     * @hide
+     */
+    public Bitmap createIconBitmap(Context context, int color, boolean showSlotIndex) {
         int width = mIconBitmap.getWidth();
         int height = mIconBitmap.getHeight();
         DisplayMetrics metrics = context.getResources().getDisplayMetrics();
-
+        /// M: Fix for graphics low power mode @{
+        width = mIconBitmap.getScaledWidth(metrics.densityDpi);
+        height = mIconBitmap.getScaledHeight(metrics.densityDpi);
+        Bitmap scaledBitmap = Bitmap.createScaledBitmap(mIconBitmap, width, height, false);
+        scaledBitmap.setDensity(metrics.densityDpi);
         // Create a new bitmap of the same size because it will be modified.
-        Bitmap workingBitmap = Bitmap.createBitmap(metrics, width, height, mIconBitmap.getConfig());
+        //Bitmap workingBitmap = Bitmap.createBitmap(
+        //      metrics, width, height, mIconBitmap.getConfig());
+        Bitmap workingBitmap = Bitmap.createBitmap(
+                metrics, width, height, scaledBitmap.getConfig());
+        /// @}
 
         Canvas canvas = new Canvas(workingBitmap);
         Paint paint = new Paint();
 
         // Tint the icon with the color.
-        paint.setColorFilter(new PorterDuffColorFilter(mIconTint, PorterDuff.Mode.SRC_ATOP));
-        canvas.drawBitmap(mIconBitmap, 0, 0, paint);
+        paint.setColorFilter(new PorterDuffColorFilter((color == -1 ?
+                       mIconTint : color), PorterDuff.Mode.SRC_ATOP));
+        /// M: Fix for graphics low power mode @{
+        //canvas.drawBitmap(mIconBitmap, 0, 0, paint);
+        canvas.drawBitmap(scaledBitmap, 0, 0, paint);
+        /// @}
         paint.setColorFilter(null);
 
-        // Write the sim slot index.
-        paint.setAntiAlias(true);
-        paint.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
-        paint.setColor(Color.WHITE);
-        // Set text size scaled by density
-        paint.setTextSize(TEXT_SIZE * metrics.density);
-        // Convert sim slot index to localized string
-        final String index = String.format("%d", mSimSlotIndex + 1);
-        final Rect textBound = new Rect();
-        paint.getTextBounds(index, 0, 1, textBound);
-        final float xOffset = (width / 2.f) - textBound.centerX();
-        final float yOffset = (height / 2.f) - textBound.centerY();
-        canvas.drawText(index, xOffset, yOffset, paint);
+        // Single SIM project might prefer no show slot index.
+        if (showSlotIndex) {
+            // Write the sim slot index.
+            paint.setAntiAlias(true);
+            paint.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
+            paint.setColor(Color.WHITE);
 
+            // Set text size scaled by density
+            paint.setTextSize(TEXT_SIZE * metrics.density);
+            // Convert sim slot index to localized string
+            final String index = String.format("%d", mSimSlotIndex + 1);
+            final Rect textBound = new Rect();
+            paint.getTextBounds(index, 0, 1, textBound);
+            final float xOffset = (width / 2.f) - textBound.centerX();
+            final float yOffset = (height / 2.f) - textBound.centerY();
+            canvas.drawText(index, xOffset, yOffset, paint);
+        }
+        /// M: Fix for graphics low power mode @{
+        if (scaledBitmap != mIconBitmap) {
+            scaledBitmap.recycle();
+            android.util.Log.d("SubscriptionInfo", "recycle scaledBitmap");
+        }
+        /// @}
         return workingBitmap;
     }
+    // MTK-END
 
     /**
      * A highlight color to use in displaying information about this {@code PhoneAccount}.
@@ -255,6 +331,16 @@ public class SubscriptionInfo implements Parcelable {
         return mNumber;
     }
 
+    // MTK-START
+    /**
+     * Sets the number of this subscription.
+     * @hide
+     */
+    public void setNumber(String number) {
+        this.mNumber = number;
+    }
+    // MTK-END
+
     /**
      * @return the data roaming state for this subscription, either
      * {@link SubscriptionManager#DATA_ROAMING_ENABLE} or {@link SubscriptionManager#DATA_ROAMING_DISABLE}.
@@ -263,6 +349,16 @@ public class SubscriptionInfo implements Parcelable {
         return this.mDataRoaming;
     }
 
+    // MTK-START
+    /**
+     * Sets the data roaming value.
+     * @hide
+     */
+    public void setDataRoaming(int roaming) {
+        this.mDataRoaming = roaming;
+    }
+    // MTK-END
+
     /**
      * @return the MCC.
      */
@@ -270,12 +366,32 @@ public class SubscriptionInfo implements Parcelable {
         return this.mMcc;
     }
 
+    // MTK-START
+    /**
+     * Sets the MCC.
+     * @hide
+     */
+    public void setMcc(int mcc) {
+        this.mMcc = mcc;
+    }
+    // MTK-END
+
     /**
      * @return the MNC.
      */
     public int getMnc() {
         return this.mMnc;
     }
+
+    // MTK-START
+    /**
+     * Sets the MNC.
+     * @hide
+     */
+    public void setMnc(int mnc) {
+        this.mMnc = mnc;
+    }
+    // MTK-END
 
     /**
      * @return the ISO country code

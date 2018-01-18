@@ -200,6 +200,7 @@ public class RemoteViewsAdapter extends BaseAdapter implements Handler.Callback 
                 @Override
                 public void run() {
                     if (adapter.mNotifyDataSetChangedAfterOnServiceConnected) {
+                        Log.d(TAG, "onServiceConnected");
                         // Handle queued notifyDataSetChanged() if necessary
                         adapter.onNotifyDataSetChanged();
                     } else {
@@ -253,6 +254,7 @@ public class RemoteViewsAdapter extends BaseAdapter implements Handler.Callback 
         }
 
         public synchronized void onServiceDisconnected() {
+            Log.e("RemoteViewsAdapterServiceConnection", "onServiceDisconnected ");
             mIsConnected = false;
             mIsConnecting = false;
             mRemoteViewsFactory = null;
@@ -356,6 +358,7 @@ public class RemoteViewsAdapter extends BaseAdapter implements Handler.Callback 
          */
         public void notifyOnRemoteViewsLoaded(int position, RemoteViews view) {
             if (view == null) return;
+            Log.d(TAG, "notifyOnRemoteViewsLoaded "+view+" position "+position);
 
             final LinkedList<RemoteViewsFrameLayout> refs = mReferences.get(position);
             if (refs != null) {
@@ -890,22 +893,27 @@ public class RemoteViewsAdapter extends BaseAdapter implements Handler.Callback 
     }
 
     private void loadNextIndexInBackground() {
+        Log.d(TAG, "loadNextIndexInBackground() ");
         mWorkerQueue.post(new Runnable() {
             @Override
             public void run() {
+                Log.d(TAG, "loadNextIndexInBackground() run");
                 if (mServiceConnection.isConnected()) {
+                    Log.d(TAG, "loadNextIndexInBackground() isConnected");
                     // Get the next index to load
                     int position = -1;
                     synchronized (mCache) {
                         position = mCache.getNextIndexToLoad();
                     }
                     if (position > -1) {
+                        Log.d(TAG, "loadNextIndexInBackground() position > -1"+ position);
                         // Load the item, and notify any existing RemoteViewsFrameLayouts
                         updateRemoteViews(position, true);
 
                         // Queue up for the next one to load
                         loadNextIndexInBackground();
                     } else {
+                        Log.d(TAG, "loadNextIndexInBackground() position <= -1"+ position);
                         // No more items to load, so queue unbind
                         enqueueDeferredUnbindServiceMessage();
                     }
@@ -964,6 +972,7 @@ public class RemoteViewsAdapter extends BaseAdapter implements Handler.Callback 
     }
 
     private void updateRemoteViews(final int position, boolean notifyWhenLoaded) {
+        Log.e(TAG, "updateRemoteViews position"+position);
         IRemoteViewsFactory factory = mServiceConnection.getRemoteViewsFactory();
 
         // Load the item information from the remote service
@@ -1010,6 +1019,7 @@ public class RemoteViewsAdapter extends BaseAdapter implements Handler.Callback 
                 // Notify all the views that we have previously returned for this index that
                 // there is new data for it.
                 final RemoteViews rv = remoteViews;
+                Log.e(TAG, "updateRemoteViews "+notifyWhenLoaded);
                 if (notifyWhenLoaded) {
                     mMainQueue.post(new Runnable() {
                         @Override
@@ -1081,6 +1091,9 @@ public class RemoteViewsAdapter extends BaseAdapter implements Handler.Callback 
     }
 
     public View getView(int position, View convertView, ViewGroup parent) {
+        Log.d(TAG, "getView " + position);
+        Log.d(TAG, "getView first" );
+
         // "Request" an index so that we can queue it for loading, initiate subsequent
         // preloading, etc.
         synchronized (mCache) {
@@ -1178,6 +1191,7 @@ public class RemoteViewsAdapter extends BaseAdapter implements Handler.Callback 
             // Because temporary meta data is only ever modified from this thread (ie.
             // mWorkerThread), it is safe to assume that count is a valid representation.
             if (i < newCount) {
+                Log.d(TAG, "onNotifyDataSetChanged() "+ i);
                 updateRemoteViews(i, false);
             }
         }
@@ -1232,17 +1246,31 @@ public class RemoteViewsAdapter extends BaseAdapter implements Handler.Callback 
     }
 
     public void notifyDataSetChanged() {
+        Log.d(TAG, "notifyDataSetChanged");
         // Dequeue any unbind messages
         mMainQueue.removeMessages(sUnbindServiceMessageType);
 
         // If we are not connected, queue up the notifyDataSetChanged to be handled when we do
         // connect
         if (!mServiceConnection.isConnected()) {
+            if (mNotifyDataSetChangedAfterOnServiceConnected) {
+                Log.d(TAG, "notifyDataSetChanged first");
+                /// M: post onNotifyDataSetChanged() after Service has been connected @{
+                mWorkerQueue.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        onNotifyDataSetChanged();
+                    }
+                });
+                /// @}
+                return;
+            }
+
             mNotifyDataSetChangedAfterOnServiceConnected = true;
             requestBindService();
             return;
         }
-
+        Log.d(TAG, "notifyDataSetChanged second");
         mWorkerQueue.post(new Runnable() {
             @Override
             public void run() {
@@ -1252,6 +1280,7 @@ public class RemoteViewsAdapter extends BaseAdapter implements Handler.Callback 
     }
 
     void superNotifyDataSetChanged() {
+        Log.d(TAG, "superNotifyDataSetChanged");
         super.notifyDataSetChanged();
     }
 
@@ -1260,8 +1289,14 @@ public class RemoteViewsAdapter extends BaseAdapter implements Handler.Callback 
         boolean result = false;
         switch (msg.what) {
         case sUnbindServiceMessageType:
+            Log.d(TAG,"sUnbindServiceMessageType");
             if (mServiceConnection.isConnected()) {
-                mServiceConnection.unbind(mContext, mAppWidgetId, mIntent);
+                if(mCache.mIndicesToLoad.size() > 0){
+                    enqueueDeferredUnbindServiceMessage();
+                }else{
+                    Log.d(TAG,"mServiceConnection.unbind");
+                    mServiceConnection.unbind(mContext, mAppWidgetId, mIntent);
+                }
             }
             result = true;
             break;

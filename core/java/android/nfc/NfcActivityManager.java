@@ -43,7 +43,7 @@ import java.util.List;
 public final class NfcActivityManager extends IAppCallback.Stub
         implements Application.ActivityLifecycleCallbacks {
     static final String TAG = NfcAdapter.TAG;
-    static final Boolean DBG = false;
+    static final Boolean DBG = true;
 
     final NfcAdapter mAdapter;
 
@@ -246,6 +246,9 @@ public final class NfcActivityManager extends IAppCallback.Stub
 
     public void setNdefPushContentUri(Activity activity, Uri[] uris) {
         boolean isResumed;
+        /// M: @{
+        Log.d(TAG, "setNdefPushContentUri ");
+        /// }
         synchronized (NfcActivityManager.this) {
             NfcActivityState state = getActivityState(activity);
             state.uris = uris;
@@ -264,6 +267,9 @@ public final class NfcActivityManager extends IAppCallback.Stub
     public void setNdefPushContentUriCallback(Activity activity,
             NfcAdapter.CreateBeamUrisCallback callback) {
         boolean isResumed;
+        /// M: @{
+        Log.d(TAG, "setNdefPushContentUriCallback ");
+        /// }
         synchronized (NfcActivityManager.this) {
             NfcActivityState state = getActivityState(activity);
             state.uriCallback = callback;
@@ -280,6 +286,9 @@ public final class NfcActivityManager extends IAppCallback.Stub
 
     public void setNdefPushMessage(Activity activity, NdefMessage message, int flags) {
         boolean isResumed;
+        /// M: @{
+        Log.d(TAG, "setNdefPushMessage ");
+        /// }
         synchronized (NfcActivityManager.this) {
             NfcActivityState state = getActivityState(activity);
             state.ndefMessage = message;
@@ -298,6 +307,9 @@ public final class NfcActivityManager extends IAppCallback.Stub
     public void setNdefPushMessageCallback(Activity activity,
             NfcAdapter.CreateNdefMessageCallback callback, int flags) {
         boolean isResumed;
+        /// M: @{
+        Log.d(TAG, "setNdefPushMessageCallback ");
+        /// }
         synchronized (NfcActivityManager.this) {
             NfcActivityState state = getActivityState(activity);
             state.ndefMessageCallback = callback;
@@ -316,6 +328,9 @@ public final class NfcActivityManager extends IAppCallback.Stub
     public void setOnNdefPushCompleteCallback(Activity activity,
             NfcAdapter.OnNdefPushCompleteCallback callback) {
         boolean isResumed;
+        /// M: @{
+        Log.d(TAG, "setOnNdefPushCompleteCallback ");
+        /// }
         synchronized (NfcActivityManager.this) {
             NfcActivityState state = getActivityState(activity);
             state.onNdefPushCompleteCallback = callback;
@@ -335,6 +350,11 @@ public final class NfcActivityManager extends IAppCallback.Stub
      * Makes IPC call - do not hold lock.
      */
     void requestNfcServiceCallback() {
+
+        /// M: @{
+        Log.d(TAG, "requestNfcServiceCallback ");
+        /// }
+
         try {
             NfcAdapter.sService.setAppCallback(this);
         } catch (RemoteException e) {
@@ -462,7 +482,15 @@ public final class NfcActivityManager extends IAppCallback.Stub
         Binder token;
         synchronized (NfcActivityManager.this) {
             NfcActivityState state = findActivityState(activity);
-            if (DBG) Log.d(TAG, "onResume() for " + activity + " " + state);
+            /// M: @{
+            try {
+                if (DBG) Log.d(TAG, "onResume() for " + activity + " " + state);
+            } catch (Exception e) {
+                Log.e(TAG, "onActivityResumed()  exception:" + e);
+                e.printStackTrace();
+            }
+            /// }
+
             if (state == null) return;
             state.resumed = true;
             token = state.token;
@@ -482,7 +510,15 @@ public final class NfcActivityManager extends IAppCallback.Stub
         Binder token;
         synchronized (NfcActivityManager.this) {
             NfcActivityState state = findActivityState(activity);
-            if (DBG) Log.d(TAG, "onPause() for " + activity + " " + state);
+            /// M: @{
+            try {
+                if (DBG) Log.d(TAG, "onPause() for " + activity + " " + state);
+            } catch (Exception e) {
+                Log.e(TAG, "onActivityPaused()  exception:" + e);
+                e.printStackTrace();
+            }
+            /// }
+
             if (state == null) return;
             state.resumed = false;
             token = state.token;
@@ -507,7 +543,14 @@ public final class NfcActivityManager extends IAppCallback.Stub
     public void onActivityDestroyed(Activity activity) {
         synchronized (NfcActivityManager.this) {
             NfcActivityState state = findActivityState(activity);
-            if (DBG) Log.d(TAG, "onDestroy() for " + activity + " " + state);
+            /// M: @{
+            try {
+                if (DBG) Log.d(TAG, "onDestroy() for " + activity + " " + state);
+            } catch (Exception e) {
+                Log.e(TAG, "onActivityDestroyed()  exception:" + e);
+                e.printStackTrace();
+            }
+            /// }
             if (state != null) {
                 // release all associated references
                 destroyActivityState(activity);

@@ -36,6 +36,7 @@ import android.view.ViewDebug;
 
 import com.android.systemui.R;
 import com.android.systemui.recents.model.Task;
+import com.mediatek.systemui.statusbar.util.FeatureOptions;
 
 
 /**
@@ -232,6 +233,11 @@ public class TaskViewThumbnail extends View {
                 mThumbnailScale = 0f;
             } else if (isStackTask) {
                 float invThumbnailScale = 1f / mFullscreenThumbnailScale;
+                // M: Slim thumbnail's size for GMO @{
+                if (FeatureOptions.LOW_RAM_SUPPORT) {
+                    invThumbnailScale *= 2;
+                }
+                // @}
                 if (mDisplayOrientation == Configuration.ORIENTATION_PORTRAIT) {
                     if (mThumbnailInfo.screenOrientation == Configuration.ORIENTATION_PORTRAIT) {
                         // If we are in the same orientation as the screenshot, just scale it to the

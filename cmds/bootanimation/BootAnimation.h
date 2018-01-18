@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,6 +30,7 @@
 
 #include <EGL/egl.h>
 #include <GLES/gl.h>
+#include <media/mediaplayer.h>
 
 class SkBitmap;
 
@@ -35,12 +41,21 @@ class SurfaceComposerClient;
 class SurfaceControl;
 
 // ---------------------------------------------------------------------------
+enum boot_video_play_type{
+     BOOT_VIDEO_PLAY_REPEAT, // repeat to play until boot completing.
+     BOOT_VIDEO_PLAY_FULL, // play a full video no matter if boot is complete.
+     BOOT_VIDEO_PLAY_ONCE_WAIT, // play a video once even if boot is not complete.
+};
+
+
 
 class BootAnimation : public Thread, public IBinder::DeathRecipient
 {
 public:
                 BootAnimation();
+                BootAnimation(bool bSetBootOrShutDown,bool bSetPlayMP3,bool bSetRotated);
     virtual     ~BootAnimation();
+    void        setBootVideoPlayState(int playState);
 
     sp<SurfaceComposerClient> session() const;
 
@@ -78,6 +93,7 @@ private:
         struct Frame {
             String8 name;
             FileMap* map;
+            String8 fullPath;
             int trimX;
             int trimY;
             int trimWidth;
@@ -136,12 +152,44 @@ private:
     EGLDisplay  mSurface;
     sp<SurfaceControl> mFlingerSurfaceControl;
     sp<Surface> mFlingerSurface;
+
     bool        mClockEnabled;
     bool        mTimeIsAccurate;
     bool        mSystemBoot;
     String8     mZipFileName;
     SortedVector<String8> mLoadedFiles;
+
+    ZipFileRO   *mZip;
+    status_t initTexture(const char* EntryName);
+    void initBootanimationZip();
+    void initShutanimationZip();
+    const char* initAudioPath();
+    bool ETC1movie();
+    void initShader();
+    GLuint buildShader(const char* source, GLenum shaderType);
+    GLuint buildProgram (const char* vertexShaderSource, const char* fragmentShaderSource);
+
+    bool bBootOrShutDown;
+    bool bShutRotate;
+    bool bPlayMP3;
+    GLuint mProgram;
+    GLint mAttribPosition;
+    GLint mAttribTexCoord;
+    GLint mUniformTexture;
+    bool bETC1Movie;
+    int mBootVideoPlayType;
+    int mBootVideoPlayState;
     sp<TimeCheckThread> mTimeCheckThread;
+};
+
+class BootVideoListener: public MediaPlayerListener{
+public:
+                BootVideoListener(const sp<BootAnimation> &player);
+    virtual     ~BootVideoListener();
+    virtual void notify(int msg, int ext1, int ext2, const Parcel *obj);
+    sp<BootAnimation> mBootanim;
+
+
 };
 
 // ---------------------------------------------------------------------------

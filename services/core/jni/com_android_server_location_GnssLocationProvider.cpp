@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2015 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2008 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,6 +27,7 @@
 #include "jni.h"
 #include "hardware/hardware.h"
 #include "hardware/gps_internal.h"
+#include "hardware/gps_mtk.h"
 #include "hardware_legacy/power.h"
 #include "utils/Log.h"
 #include "utils/misc.h"
@@ -57,6 +63,7 @@ static jmethodID method_reportGeofencePauseStatus;
 static jmethodID method_reportGeofenceResumeStatus;
 static jmethodID method_reportMeasurementData;
 static jmethodID method_reportNavigationMessages;
+static jmethodID method_reportVzwDebugMessage;
 
 static const GpsInterface* sGpsInterface = NULL;
 static const GpsXtraInterface* sGpsXtraInterface = NULL;
@@ -68,6 +75,7 @@ static const GpsGeofencingInterface* sGpsGeofencingInterface = NULL;
 static const GpsMeasurementInterface* sGpsMeasurementInterface = NULL;
 static const GpsNavigationMessageInterface* sGpsNavigationMessageInterface = NULL;
 static const GnssConfigurationInterface* sGnssConfigurationInterface = NULL;
+static const VzwDebugInterface* sVzwDebugInterface = NULL;
 
 #define GPS_MAX_SATELLITE_COUNT 32
 #define GNSS_MAX_SATELLITE_COUNT 64
@@ -292,6 +300,29 @@ GpsXtraCallbacks sGpsXtraCallbacks = {
     xtra_download_request_callback,
     create_thread_callback,
 };
+
+static void vzw_debug_message_callback(VzwDebugData* vzw_message)
+{
+    ALOGD("vzw_debug_message_callback\n");
+    JNIEnv* env = AndroidRuntime::getJNIEnv();
+    jstring vzw_msg = env->NewStringUTF(vzw_message->vzw_msg_data);
+
+    if (vzw_msg) {
+        env->CallVoidMethod(mCallbacksObj, method_reportVzwDebugMessage,vzw_msg);
+    } else {
+        ALOGE("out of memory in vzw_debug_message_callback\n");
+    }
+
+    if (vzw_msg)
+        env->DeleteLocalRef(vzw_msg);
+
+    checkAndClearExceptionFromCallback(env, __FUNCTION__);
+}
+
+VzwDebugCallbacks sVzwDebugCallbacks = {
+    vzw_debug_message_callback,
+};
+
 
 static jbyteArray convert_to_ipv4(uint32_t ip, bool net_order)
 {
@@ -593,6 +624,8 @@ static void android_location_GnssLocationProvider_class_init_native(JNIEnv* env,
             clazz,
             "reportNavigationMessage",
             "(Landroid/location/GnssNavigationMessage;)V");
+    method_reportVzwDebugMessage = env->GetMethodID(clazz, "reportVzwDebugMessage",
+            "(Ljava/lang/String;)V");
 
     err = hw_get_module(GPS_HARDWARE_MODULE_ID, (hw_module_t const**)&module);
     if (err == 0) {
@@ -624,6 +657,8 @@ static void android_location_GnssLocationProvider_class_init_native(JNIEnv* env,
         sGnssConfigurationInterface =
             (const GnssConfigurationInterface*)sGpsInterface->get_extension(
                     GNSS_CONFIGURATION_INTERFACE);
+        sVzwDebugInterface =
+            (const VzwDebugInterface*)sGpsInterface->get_extension(VZW_DEBUG_INTERFACE);
     }
 }
 
@@ -667,6 +702,8 @@ static jboolean android_location_GnssLocationProvider_init(JNIEnv* env, jobject 
         sAGpsRilInterface->init(&sAGpsRilCallbacks);
     if (sGpsGeofencingInterface)
         sGpsGeofencingInterface->init(&sGpsGeofenceCallbacks);
+    if (sVzwDebugInterface)
+        sVzwDebugInterface->init(&sVzwDebugCallbacks);
 
     return JNI_TRUE;
 }
@@ -856,6 +893,17 @@ static void android_location_GnssLocationProvider_inject_xtra_data(JNIEnv* env, 
     jbyte* bytes = (jbyte *)env->GetPrimitiveArrayCritical(data, 0);
     sGpsXtraInterface->inject_xtra_data((char *)bytes, length);
     env->ReleasePrimitiveArrayCritical(data, bytes, JNI_ABORT);
+}
+
+static void android_location_GnssLocationProvider_set_vzw_debug_screen(JNIEnv* env,
+        jobject /* obj */, jboolean enabled)
+{
+    if (!sVzwDebugInterface) {
+        ALOGE("no VzwDebug interface supported");
+        return;
+    }
+
+    sVzwDebugInterface->set_vzw_debug_screen(enabled);
 }
 
 static void android_location_GnssLocationProvider_agps_data_conn_open(
@@ -1704,6 +1752,9 @@ static const JNINativeMethod sMethods[] = {
     {"native_configuration_update",
             "(Ljava/lang/String;)V",
             (void*)android_location_GnssLocationProvider_configuration_update},
+    {"native_set_vzw_debug_screen",
+            "(Z)V",
+            (void*) android_location_GnssLocationProvider_set_vzw_debug_screen},
 };
 
 int register_android_server_location_GnssLocationProvider(JNIEnv* env)

@@ -17,6 +17,7 @@
 #include <sys/resource.h>
 #include <sys/sysinfo.h>
 
+#include "../Debug.h"
 #include "TaskManager.h"
 #include "Task.h"
 #include "TaskProcessor.h"
@@ -24,6 +25,8 @@
 
 namespace android {
 namespace uirenderer {
+
+#define TASK_LOGD(...) if (CC_UNLIKELY(g_HWUI_debug_hwuitask)) ALOGD(__VA_ARGS__);
 
 ///////////////////////////////////////////////////////////////////////////////
 // Manager
@@ -36,6 +39,7 @@ TaskManager::TaskManager() {
     // Really no point in making more than 2 of these worker threads, but
     // we do want to limit ourselves to 1 worker thread on dual-core devices.
     int workerCount = cpuCount > 2 ? 2 : 1;
+    TASK_LOGD("TaskManager() %p, cpu = %d, thread = %d", this, cpuCount, workerCount);
     for (int i = 0; i < workerCount; i++) {
         String8 name;
         name.appendFormat("hwuiTask%d", i + 1);
@@ -44,6 +48,7 @@ TaskManager::TaskManager() {
 }
 
 TaskManager::~TaskManager() {
+    TASK_LOGD("~TaskManager() %p", this);
     for (size_t i = 0; i < mThreads.size(); i++) {
         mThreads[i]->exit();
     }
@@ -54,6 +59,7 @@ bool TaskManager::canRunTasks() const {
 }
 
 void TaskManager::stop() {
+    TASK_LOGD("[TaskMgr] %p stop", this);
     for (size_t i = 0; i < mThreads.size(); i++) {
         mThreads[i]->exit();
     }
@@ -98,6 +104,7 @@ bool TaskManager::WorkerThread::threadLoop() {
     for (size_t i = 0; i < tasks.size(); i++) {
         const TaskWrapper& task = tasks[i];
         task.mProcessor->process(task.mTask);
+        TASK_LOGD("[TaskMgr] %s finish task", mName.string());
     }
 
     return true;
@@ -106,9 +113,11 @@ bool TaskManager::WorkerThread::threadLoop() {
 bool TaskManager::WorkerThread::addTask(const TaskWrapper& task) {
     if (!isRunning()) {
         run(mName.string(), PRIORITY_DEFAULT);
+        TASK_LOGD("[TaskMgr] Running thread %s (%d)", mName.string(), getTid());
     } else if (exitPending()) {
         return false;
     }
+    TASK_LOGD("[TaskMgr] Add task to %s", mName.string());
 
     {
         Mutex::Autolock l(mLock);
@@ -125,6 +134,7 @@ size_t TaskManager::WorkerThread::getTaskCount() const {
 }
 
 void TaskManager::WorkerThread::exit() {
+    TASK_LOGD("[TaskMgr] Exit thread %s (%d)", mName.string(), getTid());
     requestExit();
     mSignal.signal();
 }

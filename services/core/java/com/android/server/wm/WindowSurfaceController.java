@@ -49,17 +49,17 @@ class WindowSurfaceController {
 
     final WindowStateAnimator mAnimator;
 
-    private SurfaceControl mSurfaceControl;
+    SurfaceControl mSurfaceControl;
 
     private boolean mSurfaceShown = false;
     private float mSurfaceX = 0;
     private float mSurfaceY = 0;
-    private float mSurfaceW = 0;
-    private float mSurfaceH = 0;
+    float mSurfaceW = 0;
+    float mSurfaceH = 0;
 
     private float mSurfaceAlpha = 0;
 
-    private int mSurfaceLayer = 0;
+    int mSurfaceLayer = 0;
 
     // Surface flinger doesn't support crop rectangles where width or height is non-positive.
     // However, we need to somehow handle the situation where the cropping would completely hide
@@ -153,7 +153,7 @@ class WindowSurfaceController {
     }
 
     void destroyInTransaction() {
-        if (SHOW_TRANSACTIONS || SHOW_SURFACE_ALLOC) {
+        if (true || SHOW_TRANSACTIONS || SHOW_SURFACE_ALLOC) {
             Slog.i(TAG, "Destroying surface " + this + " called by " + Debug.getCallers(8));
         }
         try {
@@ -515,7 +515,8 @@ class WindowSurfaceController {
 
     static class SurfaceTrace extends SurfaceControl {
         private final static String SURFACE_TAG = TAG_WITH_CLASS_NAME ? "SurfaceTrace" : TAG_WM;
-        private final static boolean LOG_SURFACE_TRACE = DEBUG_SURFACE_TRACE;
+        /// M: Enable log.
+        private final boolean LOG_SURFACE_TRACE = DEBUG_SURFACE_TRACE;
         final static ArrayList<SurfaceTrace> sSurfaces = new ArrayList<SurfaceTrace>();
 
         private float mSurfaceTraceAlpha = 0;

@@ -108,6 +108,14 @@ final class PendingIntentRecord extends IIntentSender.Stub {
             hashCode = hash;
             //Slog.i(ActivityManagerService.TAG, this + " hashCode=0x"
             //        + Integer.toHexString(hashCode));
+
+            /// M: Handle null packageName @{
+            if (packageName == null) {
+                Slog.d(TAG, "special case: packageName is null for " + this + " hashCode=0x"
+                    + Integer.toHexString(hashCode) + " ar=" + activity + " who=" + who
+                    + " r= " + requestCode + " rt= " + requestResolvedType);
+            }
+            /// M: Handle null packageName @}
         }
 
         public boolean equals(Object otherObj) {
@@ -149,6 +157,14 @@ final class PendingIntentRecord extends IIntentSender.Stub {
                 if (flags != other.flags) {
                     return false;
                 }
+
+                /// M: Handle null packageName @{
+                if (packageName == null) {
+                    Slog.d(TAG, "special case: packageName is null for " + this
+                        + " hashCode=0x" + Integer.toHexString(hashCode));
+                }
+                /// M: Handle null packageName @}
+
                 return true;
             } catch (ClassCastException e) {
             }

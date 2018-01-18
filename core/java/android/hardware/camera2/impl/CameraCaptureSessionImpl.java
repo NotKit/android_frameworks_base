@@ -460,13 +460,17 @@ public class CameraCaptureSessionImpl extends CameraCaptureSession
             @Override
             public void onCaptureSequenceCompleted(CameraDevice camera,
                     int sequenceId, long frameNumber) {
-                finishPendingSequence(sequenceId);
+                synchronized (CameraCaptureSessionImpl.this) {
+                    finishPendingSequence(sequenceId);
+                }
             }
 
             @Override
             public void onCaptureSequenceAborted(CameraDevice camera,
                     int sequenceId) {
-                finishPendingSequence(sequenceId);
+                synchronized (CameraCaptureSessionImpl.this) {
+                    finishPendingSequence(sequenceId);
+                }
             }
         };
 

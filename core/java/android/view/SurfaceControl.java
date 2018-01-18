@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -49,6 +54,8 @@ public class SurfaceControl {
     private static native void nativeCloseTransaction(boolean sync);
     private static native void nativeSetAnimationTransaction();
 
+    // M: setting extra surface flags
+    private static native void nativeSetFlagsEx(long nativeObject, int flags, int mask);
     private static native void nativeSetLayer(long nativeObject, int zorder);
     private static native void nativeSetPosition(long nativeObject, float x, float y);
     private static native void nativeSetGeometryAppliesWithResize(long nativeObject);
@@ -482,6 +489,12 @@ public class SurfaceControl {
         nativeSetMatrix(mNativeObject, dsdx, dtdx, dsdy, dtdy);
     }
 
+    // M: setting extra surface flags
+    public void setFlagsEx(int flags, int mask) {
+        checkNotReleased();
+        nativeSetFlagsEx(mNativeObject, flags, mask);
+    }
+
     public void setWindowCrop(Rect crop) {
         checkNotReleased();
         if (crop != null) {
@@ -831,6 +844,28 @@ public class SurfaceControl {
         // TODO: should take the display as a parameter
         IBinder displayToken = SurfaceControl.getBuiltInDisplay(
                 SurfaceControl.BUILT_IN_DISPLAY_ID_MAIN);
+        return nativeScreenshot(displayToken, new Rect(), width, height, 0, 0, true,
+                false, Surface.ROTATION_0);
+    }
+
+    /**
+     * Like {@link SurfaceControl#screenshot(int, int, int, int, boolean)} but
+     * with builtInDisplayId in the screenshot.
+     *
+     * @param width The desired width of the returned bitmap; the raw
+     * screen will be scaled down to this size.
+     * @param height The desired height of the returned bitmap; the raw
+     * screen will be scaled down to this size.
+     * @param builtInDisplayId The Built-in physical display id.
+     * @return Returns a Bitmap containing the screen contents, or null
+     * if an error occurs. Make sure to call Bitmap.recycle() as soon as
+     * possible, once its content is not needed anymore.
+     *
+     * @hide
+     */
+    public static Bitmap screenshot(int width, int height, int builtInDisplayId) {
+        IBinder displayToken = SurfaceControl.getBuiltInDisplay(builtInDisplayId);
+        Log.d(TAG, "screenshot, builtInDisplayId = " + builtInDisplayId);
         return nativeScreenshot(displayToken, new Rect(), width, height, 0, 0, true,
                 false, Surface.ROTATION_0);
     }

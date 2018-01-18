@@ -22,14 +22,19 @@ LOCAL_MODULE := Keyguard
 
 LOCAL_CERTIFICATE := platform
 
-LOCAL_JAVA_LIBRARIES := SettingsLib
+LOCAL_JAVA_LIBRARIES += telephony-common
+LOCAL_JAVA_LIBRARIES += SettingsLib
+
+LOCAL_STATIC_JAVA_LIBRARIES := com.mediatek.keyguard.ext
 
 LOCAL_PRIVILEGED_MODULE := true
 
 LOCAL_PROGUARD_FLAG_FILES := proguard.flags
 
 LOCAL_RESOURCE_DIR := $(LOCAL_PATH)/res
+LOCAL_RESOURCE_DIR += $(LOCAL_PATH)/res_ext
+LOCAL_AAPT_FLAGS := --auto-add-overlay
 
 include $(BUILD_STATIC_JAVA_LIBRARY)
 
-#include $(call all-makefiles-under,$(LOCAL_PATH))
+include $(call all-makefiles-under,$(LOCAL_PATH))

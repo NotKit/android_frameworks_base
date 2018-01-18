@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2012 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -48,10 +53,24 @@ public class WifiP2pWfdInfo implements Parcelable {
     private static final int SESSION_AVAILABLE                      = 0x30;
     private static final int SESSION_AVAILABLE_BIT1                 = 0x10;
     private static final int SESSION_AVAILABLE_BIT2                 = 0x20;
+    /*M: ALPS00799275: CP Support bit*/
+    private static final int CONTENT_PROTECTION_SUPPORT             = 0x0100;
+
+    //M: ALPS01255052: UIBC in WFD IE using WFD Extended Capability
+    private int mExtCapa;
+
+    /* Extended Capability bitmap */
+    private static final int UIBC_SUPPORT                           = 0x1;
+    private static final int I2C_READ_WRITE_SUPPORT                 = 0x2;
+    private static final int PREFERRED_DISPLAY_SUPPORT              = 0x4;
+    private static final int STANDBY_RESUME_CONTROL_SUPPORT         = 0x8;
 
     private int mCtrlPort;
 
     private int mMaxThroughput;
+
+    //M: ALPS02303267: for crossmount
+    public boolean mCrossmountLoaned;
 
     public WifiP2pWfdInfo() {
     }
@@ -61,6 +80,14 @@ public class WifiP2pWfdInfo implements Parcelable {
         mDeviceInfo = devInfo;
         mCtrlPort = ctrlPort;
         mMaxThroughput = maxTput;
+    }
+
+    public WifiP2pWfdInfo(int devInfo, int ctrlPort, int maxTput, int extCapa) {
+        mWfdEnabled = true;
+        mDeviceInfo = devInfo;
+        mCtrlPort = ctrlPort;
+        mMaxThroughput = maxTput;
+        mExtCapa = extCapa;
     }
 
     public boolean isWfdEnabled() {
@@ -121,6 +148,73 @@ public class WifiP2pWfdInfo implements Parcelable {
         }
     }
 
+    /*M: ALPS00799275: CP Support bit*/
+    public void setContentProtected(boolean enabled) {
+        if (enabled) {
+            mDeviceInfo |= CONTENT_PROTECTION_SUPPORT;
+        } else {
+            mDeviceInfo &= ~CONTENT_PROTECTION_SUPPORT;
+        }
+    }
+
+    /*M: ALPS00799275: CP Support bit*/
+    public boolean isContentProtected() {
+        return (mDeviceInfo & CONTENT_PROTECTION_SUPPORT) != 0;
+    }
+
+    /*M: ALPS01255052: UIBC in WFD IE using WFD Extended Capability*/
+    public int getExtendedCapability() {
+        return mExtCapa;
+    }
+
+    public void setUibcSupported(boolean enabled) {
+        if (enabled) {
+            mExtCapa |= UIBC_SUPPORT;
+        } else {
+            mExtCapa &= ~UIBC_SUPPORT;
+        }
+    }
+
+    public boolean isUibcSupported() {
+        return (mExtCapa & UIBC_SUPPORT) != 0;
+    }
+
+    public void setI2cRWSupported(boolean enabled) {
+        if (enabled) {
+            mExtCapa |= I2C_READ_WRITE_SUPPORT;
+        } else {
+            mExtCapa &= ~I2C_READ_WRITE_SUPPORT;
+        }
+    }
+
+    public boolean isI2cRWSupported() {
+        return (mExtCapa & I2C_READ_WRITE_SUPPORT) != 0;
+    }
+
+    public void setPreferredDisplaySupported(boolean enabled) {
+        if (enabled) {
+            mExtCapa |= PREFERRED_DISPLAY_SUPPORT;
+        } else {
+            mExtCapa &= ~PREFERRED_DISPLAY_SUPPORT;
+        }
+    }
+
+    public boolean isPreferredDisplaySupported() {
+        return (mExtCapa & PREFERRED_DISPLAY_SUPPORT) != 0;
+    }
+
+    public void setStandbyResumeCtrlSupported(boolean enabled) {
+        if (enabled) {
+            mExtCapa |= STANDBY_RESUME_CONTROL_SUPPORT;
+        } else {
+            mExtCapa &= ~STANDBY_RESUME_CONTROL_SUPPORT;
+        }
+    }
+
+    public boolean isStandbyResumeCtrlSupported() {
+        return (mExtCapa & STANDBY_RESUME_CONTROL_SUPPORT) != 0;
+    }
+
     public int getControlPort() {
         return mCtrlPort;
     }
@@ -142,12 +236,19 @@ public class WifiP2pWfdInfo implements Parcelable {
                 Locale.US, "%04x%04x%04x%04x", 6, mDeviceInfo, mCtrlPort, mMaxThroughput);
     }
 
+    public String getExtCapaHex() {
+        return String.format(
+                Locale.US, "%04x%04x", 2, mExtCapa);
+    }
+
     public String toString() {
         StringBuffer sbuf = new StringBuffer();
         sbuf.append("WFD enabled: ").append(mWfdEnabled);
-        sbuf.append("WFD DeviceInfo: ").append(mDeviceInfo);
+        sbuf.append("\n WFD DeviceInfo: ").append(mDeviceInfo);
         sbuf.append("\n WFD CtrlPort: ").append(mCtrlPort);
         sbuf.append("\n WFD MaxThroughput: ").append(mMaxThroughput);
+        sbuf.append("\n WFD Extended Capability: ").append(mExtCapa);
+        sbuf.append("\n WFD info. loan to Crossmount? ").append(mCrossmountLoaned);
         return sbuf.toString();
     }
 
@@ -163,6 +264,8 @@ public class WifiP2pWfdInfo implements Parcelable {
             mDeviceInfo = source.mDeviceInfo;
             mCtrlPort = source.mCtrlPort;
             mMaxThroughput = source.mMaxThroughput;
+            mExtCapa = source.mExtCapa;
+            mCrossmountLoaned = source.mCrossmountLoaned;
         }
     }
 
@@ -172,6 +275,8 @@ public class WifiP2pWfdInfo implements Parcelable {
         dest.writeInt(mDeviceInfo);
         dest.writeInt(mCtrlPort);
         dest.writeInt(mMaxThroughput);
+        dest.writeInt(mExtCapa);
+        dest.writeInt(mCrossmountLoaned ? 1 : 0);
     }
 
     public void readFromParcel(Parcel in) {
@@ -179,6 +284,8 @@ public class WifiP2pWfdInfo implements Parcelable {
         mDeviceInfo = in.readInt();
         mCtrlPort = in.readInt();
         mMaxThroughput = in.readInt();
+        mExtCapa = in.readInt();
+        mCrossmountLoaned = (in.readInt() == 1);
     }
 
     /** Implement the Parcelable interface */

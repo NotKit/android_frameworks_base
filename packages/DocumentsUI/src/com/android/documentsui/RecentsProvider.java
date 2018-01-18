@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -46,6 +51,7 @@ import com.google.android.collect.Sets;
 import libcore.io.IoUtils;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Set;
 
 public class RecentsProvider extends ContentProvider {
@@ -262,8 +268,15 @@ public class RecentsProvider extends ContentProvider {
             // Purge references to unknown authorities
             final Intent intent = new Intent(DocumentsContract.PROVIDER_INTERFACE);
             final Set<String> knownAuth = Sets.newHashSet();
-            for (ResolveInfo info : getContext()
-                    .getPackageManager().queryIntentContentProviders(intent, 0)) {
+            /// M: PackageManager.queryIntentContentProviders() may return null,
+            ///    So add this to avoid NPE
+            final List<ResolveInfo> infos = getContext().getPackageManager()
+                    .queryIntentContentProviders(intent, 0);
+            if (null == infos) {
+                return null;
+            }
+
+            for (ResolveInfo info : infos) {
                 knownAuth.add(info.providerInfo.authority);
             }
 
@@ -282,8 +295,14 @@ public class RecentsProvider extends ContentProvider {
             final Intent intent = new Intent(DocumentsContract.PROVIDER_INTERFACE);
             intent.setPackage(arg);
             final Set<String> packageAuth = Sets.newHashSet();
-            for (ResolveInfo info : getContext()
-                    .getPackageManager().queryIntentContentProviders(intent, 0)) {
+            /// M: PackageManager.queryIntentContentProviders() may return null,
+            ///    So add this to avoid NPE
+            final List<ResolveInfo> infos = getContext().getPackageManager()
+                    .queryIntentContentProviders(intent, 0);
+            if (null == infos) {
+                return null;
+            }
+            for (ResolveInfo info : infos) {
                 packageAuth.add(info.providerInfo.authority);
             }
 

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -54,6 +59,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -117,6 +123,38 @@ public class RootsCache {
             updateAuthorityAsync(uri.getAuthority());
         }
     }
+    /// M: update action bar when roots are reloaded @{
+    private final CopyOnWriteArrayList<RootUpdatedListener> mCallbacks =
+      new CopyOnWriteArrayList<RootUpdatedListener>();
+
+    /**
+     * Add RootUpdatedListener.
+     *
+     * @param listener The RootUpdatedListener.
+     */
+    public void addCallback(RootUpdatedListener listener) {
+        mCallbacks.add(listener);
+    }
+
+    /**
+     * Remove RootUpdatedListener
+     *
+     * @param listener The RootUpdatedListener.
+     */
+    public void removeCallBack(RootUpdatedListener listener) {
+        mCallbacks.remove(listener);
+    }
+
+    /**
+     * Listener for roots updating.
+     */
+    public interface RootUpdatedListener {
+        /**
+         * Call back.
+         */
+        public void callback();
+    }
+    /// @}
 
     /**
      * Gather roots from all known storage providers.
@@ -254,8 +292,10 @@ public class RootsCache {
             // Pick up provider with action string
             final Intent intent = new Intent(DocumentsContract.PROVIDER_INTERFACE);
             final List<ResolveInfo> providers = pm.queryIntentContentProviders(intent, 0);
-            for (ResolveInfo info : providers) {
+            if(providers != null){
+              for (ResolveInfo info : providers) {
                 handleDocumentsProvider(info.providerInfo);
+              }
             }
 
             final long delta = SystemClock.elapsedRealtime() - start;
@@ -270,6 +310,11 @@ public class RootsCache {
                 mRoots = mTaskRoots;
                 mStoppedAuthorities = mTaskStoppedAuthorities;
             }
+            /// M: update action bar when roots are reloaded @{
+            for (RootUpdatedListener listener : mCallbacks) {
+                listener.callback();
+            }
+            // / @}
             mFirstLoad.countDown();
             resolver.notifyChange(sNotificationUri, null, false);
             return null;
@@ -340,7 +385,8 @@ public class RootsCache {
         final Bundle systemCache = new Bundle();
         systemCache.putParcelableArrayList(TAG, roots);
         resolver.putCache(rootsUri, systemCache);
-
+				if (DEBUG)
+        	Log.d(TAG, "Loading roots for " + authority + " with " + roots);
         return roots;
     }
 
@@ -353,8 +399,11 @@ public class RootsCache {
         synchronized (mLock) {
             RootInfo root = getRootLocked(authority, rootId);
             if (root == null) {
-                mRoots.putAll(authority,
-                        loadRootsForAuthority(mContext.getContentResolver(), authority, false));
+                /// M: When use given authority and root id can't get root info from root cache, load new ones
+                /// from provider and replace old one in cache(old putAll mechanism may make there exist same
+                /// root in root cache and UI will show same wrong root to user).
+                mRoots.replaceValues(authority, loadRootsForAuthority
+                                     (mContext.getContentResolver(), authority, true));
                 root = getRootLocked(authority, rootId);
             }
             return root;

@@ -333,6 +333,11 @@ void RenderNode::pushLayerUpdate(TreeInfo& info) {
 #endif
             destroyLayer(mLayer);
             mLayer = nullptr;
+
+            /// M: Warn while layer becomes null.
+            ALOGW("Resize layer %p fail with dimension %dx%d for %s while max texture size is %d",
+                    mLayer, getWidth(), getHeight(), getName(),
+                    DeviceInfo::get()->maxTextureSize());
         }
         damageSelf(info);
         transformUpdateNeeded = true;

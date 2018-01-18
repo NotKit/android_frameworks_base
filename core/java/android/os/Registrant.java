@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +25,9 @@ import android.os.Handler;
 import android.os.Message;
 
 import java.lang.ref.WeakReference;
+
+/// M: Registrant Debug Log Enhancement
+import android.util.Log;
 
 /** @hide */
 public class Registrant
@@ -73,6 +81,8 @@ public class Registrant
 
         if (h == null) {
             clear();
+            /// M: Registrant Debug Log Enhancement
+            Log.d("Registrant", "internalNotifyRegistrant(): Warning! Handler is null, it could be already GCed. ( what=" + what + ", userObj=" + userObj + ", result=" + result + ", exception=" + exception + " )");
         } else {
             Message msg = Message.obtain();
 
@@ -95,7 +105,8 @@ public class Registrant
 
         if (h == null) {
             clear();
-
+            /// M: Registrant Debug Log Enhancement
+            Log.d("Registrant", "messageForRegistrant(): Warning! Handler is null, it could be already GCed. ( what=" + what + ", userObj=" + userObj + " )");
             return null;
         } else {
             Message msg = h.obtainMessage();

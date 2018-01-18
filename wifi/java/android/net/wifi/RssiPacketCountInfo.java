@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2012 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,8 +41,37 @@ public class RssiPacketCountInfo implements Parcelable {
 
     public int rxgood;
 
+    /**M: Poor Link
+       * @hide
+       */
+    public long rFailedCount;
+      /**M: Poor Link
+        * @hide
+        */
+    public long rRetryCount;
+      /** M: Poor Link
+       * @hide
+       */
+    public long rMultipleRetryCount;
+      /** M: Poor Link
+       * @hide
+       */
+    public long rACKFailureCount;
+      /** M: Poor Link
+        * @hide
+        */
+    public long rFCSErrorCount;
+
+      /** M: Poor Link
+        * @hide
+        */
+    public int mLinkspeed;
+
     public RssiPacketCountInfo() {
         rssi = txgood = txbad = rxgood = 0;
+         ///M:@{
+        rFailedCount = rRetryCount = rMultipleRetryCount = rACKFailureCount = rFCSErrorCount = mLinkspeed = 0;
+        ///@}
     }
 
     private RssiPacketCountInfo(Parcel in) {
@@ -45,6 +79,14 @@ public class RssiPacketCountInfo implements Parcelable {
         txgood = in.readInt();
         txbad = in.readInt();
         rxgood = in.readInt();
+        ///M: Poor Link@{
+        rFailedCount = in.readLong();
+        rRetryCount = in.readLong();
+        rMultipleRetryCount = in.readLong();
+        rACKFailureCount = in.readLong();
+        rFCSErrorCount = in.readLong();
+        mLinkspeed = in.readInt();
+        ///@}
     }
 
     @Override
@@ -53,6 +95,14 @@ public class RssiPacketCountInfo implements Parcelable {
         out.writeInt(txgood);
         out.writeInt(txbad);
         out.writeInt(rxgood);
+        ///M: Poor Link@{
+        out.writeLong(rFailedCount);
+        out.writeLong(rRetryCount);
+        out.writeLong(rMultipleRetryCount);
+        out.writeLong(rACKFailureCount);
+        out.writeLong(rFCSErrorCount);
+        out.writeInt(mLinkspeed);
+        ///@}
     }
 
     @Override

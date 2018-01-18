@@ -48,7 +48,7 @@ class Caches;
 
 // Debug
 #if DEBUG_PATHS
-    #define PATH_LOGD(...) ALOGD(__VA_ARGS__)
+    #define PATH_LOGD(...) MLOGD(DEBUG_PATHS, __VA_ARGS__)
 #else
     #define PATH_LOGD(...)
 #endif

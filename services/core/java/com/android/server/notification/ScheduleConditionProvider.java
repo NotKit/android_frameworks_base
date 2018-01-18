@@ -171,7 +171,8 @@ public class ScheduleConditionProvider extends SystemConditionProviderService {
             } else {
                 notifyCondition(conditionId, Condition.STATE_FALSE, "!meetsSchedule");
                 removeSnoozed(conditionId);
-                if (nextUserAlarmTime == 0) {
+                /// M: Fix ALPS02870187, avoid monkey test NPE.
+                if (nextUserAlarmTime == 0 && cal != null) {
                     cal.maybeSetNextAlarm(now, nextUserAlarmTime);
                 }
             }

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -204,6 +209,11 @@ extern int register_com_android_internal_os_PathClassLoaderFactory(JNIEnv* env);
 extern int register_com_android_internal_os_Zygote(JNIEnv *env);
 extern int register_com_android_internal_util_VirtualRefBasePtr(JNIEnv *env);
 
+extern int register_com_mediatek_perfservice_PerfServiceWrapper(JNIEnv* env);
+/// M: App-based AAL @{
+extern int register_com_mediatek_aal_AalUtils(JNIEnv* env);
+/// M: App-based AAL @}
+
 static AndroidRuntime* gCurRuntime = NULL;
 
 /*
@@ -246,6 +256,13 @@ int register_com_android_internal_os_RuntimeInit(JNIEnv* env)
 // ----------------------------------------------------------------------
 
 /*static*/ JavaVM* AndroidRuntime::mJavaVM = NULL;
+/*
+ * N:
+ * Add mVMShutdown flag to check if VM starts shutting down.
+ * If VM is shutdwon not to attachCurrentThread.
+ * Prevent accessing freed JavaVM while attachCurrentThread.
+ */
+static bool mVMShutdown = false;
 
 AndroidRuntime::AndroidRuntime(char* argBlockStart, const size_t argBlockLength) :
         mExitWithoutCleanup(false),
@@ -895,6 +912,12 @@ int AndroidRuntime::startVm(JavaVM** pJavaVM, JNIEnv** pEnv, bool zygote)
     snprintf(cpuAbiListBuf, sizeof(cpuAbiListBuf), "--cpu-abilist=%s", propBuf);
     addOption(cpuAbiListBuf);
 
+#ifdef MTK_USER_BUILD
+    addOption("-Dbuild-type=user");
+#else
+    addOption("-Dbuild-type=eng");
+#endif
+
     // Dalvik-cache pruning counter.
     parseRuntimeOption("dalvik.vm.zygote.max-boot-retry", cachePruneBuf,
                        "-Xzygote-max-boot-retry=");
@@ -963,6 +986,7 @@ jstring AndroidRuntime::NewStringLatin1(JNIEnv* env, const char* bytes) {
 }
 
 
+
 /*
  * Start the Android runtime.  This involves starting the virtual machine
  * and calling the "static void main(String[] args)" method in the class
@@ -975,6 +999,7 @@ void AndroidRuntime::start(const char* className, const Vector<String8>& options
 {
     ALOGD(">>>>>> START %s uid %d <<<<<<\n",
             className != NULL ? className : "(unknown)", getuid());
+
 
     static const String8 startSystemServer("start-system-server");
 
@@ -1072,6 +1097,7 @@ void AndroidRuntime::start(const char* className, const Vector<String8>& options
     ALOGD("Shutting down VM\n");
     if (mJavaVM->DetachCurrentThread() != JNI_OK)
         ALOGW("Warning: unable to detach main thread\n");
+    mVMShutdown = true;
     if (mJavaVM->DestroyJavaVM() != 0)
         ALOGW("Warning: VM did not shut down cleanly\n");
 }
@@ -1164,6 +1190,11 @@ static int javaDetachThread(void)
     free(args);
     JNIEnv* env;
     int result;
+
+    if(mVMShutdown == true) {
+        ALOGD("VM has been destroyed, do not attach VM.");
+        return -1;
+    }
 
     /* hook us into the VM */
     if (javaAttachThread(name, &env) != JNI_OK)
@@ -1267,6 +1298,10 @@ static const RegJNIRec gRegJNI[] = {
     REG_JNI(register_android_util_MemoryIntArray),
     REG_JNI(register_android_util_PathParser),
     REG_JNI(register_android_app_admin_SecurityLog),
+    REG_JNI(register_com_mediatek_perfservice_PerfServiceWrapper),
+/// M: App-based AAL @{
+    REG_JNI(register_com_mediatek_aal_AalUtils),
+/// M: App-based AAL @}
     REG_JNI(register_android_content_AssetManager),
     REG_JNI(register_android_content_StringBlock),
     REG_JNI(register_android_content_XmlBlock),

@@ -140,13 +140,13 @@ void RenderState::getViewport(GLsizei* outWidth, GLsizei* outHeight) {
 void RenderState::bindFramebuffer(GLuint fbo) {
     if (mFramebuffer != fbo) {
         mFramebuffer = fbo;
-        glBindFramebuffer(GL_FRAMEBUFFER, mFramebuffer);
+        TIME_LOG("glBindFramebuffer", glBindFramebuffer(GL_FRAMEBUFFER, mFramebuffer));
     }
 }
 
 GLuint RenderState::createFramebuffer() {
     GLuint ret;
-    glGenFramebuffers(1, &ret);
+    TIME_LOG("glGenFramebuffers", glGenFramebuffers(1, &ret));
     return ret;
 }
 
@@ -156,7 +156,7 @@ void RenderState::deleteFramebuffer(GLuint fbo) {
         // Reflect this in our cached value.
         mFramebuffer = 0;
     }
-    glDeleteFramebuffers(1, &fbo);
+    TIME_LOG("glDeleteFramebuffers", glDeleteFramebuffers(1, &fbo));
 }
 
 void RenderState::invokeFunctor(Functor* functor, DrawGlInfo::Mode mode, DrawGlInfo* info) {
@@ -370,14 +370,16 @@ void RenderState::render(const Glop& glop, const Matrix4& orthoMatrix) {
                         vertexData + kMeshTextureOffset, vertices.stride);
             }
 
-            glDrawElements(mesh.primitiveMode, drawCount, GL_UNSIGNED_SHORT, nullptr);
+            TIME_LOG("glDrawElements", glDrawElements(
+                mesh.primitiveMode, drawCount, GL_UNSIGNED_SHORT, nullptr));
             elementsCount -= drawCount;
             vertexData += (drawCount / 6) * 4 * vertices.stride;
         }
     } else if (indices.bufferObject || indices.indices) {
-        glDrawElements(mesh.primitiveMode, mesh.elementCount, GL_UNSIGNED_SHORT, indices.indices);
+        TIME_LOG("glDrawElements", glDrawElements(
+            mesh.primitiveMode, mesh.elementCount, GL_UNSIGNED_SHORT, indices.indices));
     } else {
-        glDrawArrays(mesh.primitiveMode, 0, mesh.elementCount);
+        TIME_LOG("glDrawArrays", glDrawArrays(mesh.primitiveMode, 0, mesh.elementCount));
     }
 
     GL_CHECKPOINT(MODERATE);

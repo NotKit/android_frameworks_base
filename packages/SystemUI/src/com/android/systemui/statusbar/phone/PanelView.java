@@ -123,6 +123,9 @@ public abstract class PanelView extends FrameLayout {
         }
     };
 
+    //M: This is use to improve keyguard unlock performance
+    private final static int UNLOCK_DURATION = 48;
+
     protected void onExpandingFinished() {
         mBar.onExpandingFinished();
     }
@@ -663,6 +666,8 @@ public abstract class PanelView extends FrameLayout {
         } else {
             mFlingAnimationUtils.applyDismissing(animator, mExpandedHeight, target, vel,
                     getHeight());
+            //M: Improve animation performance
+            animator.setDuration(UNLOCK_DURATION);
 
             // Make it shorter if we run a canned animation
             if (vel == 0) {

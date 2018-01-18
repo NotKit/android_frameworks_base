@@ -39,6 +39,7 @@ LOCAL_C_INCLUDES += \
     frameworks/base/core/jni/android \
     bionic/libc/dns/include \
     system/netd/include \
+    $(TOP)/$(MTK_ROOT)/frameworks-ext/native/include
 
 LOCAL_MODULE := libandroid
 

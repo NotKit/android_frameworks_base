@@ -20,6 +20,10 @@
 #include "Dither.h"
 #include "ProgramCache.h"
 
+/// M: [ProgramBinaryAtlas] For using program binaries
+#include "mediatek/MTKProgramAtlas.h"
+#include <stdio.h>
+
 namespace android {
 namespace uirenderer {
 
@@ -33,6 +37,22 @@ namespace uirenderer {
 
 #define STR(x) STR1(x)
 #define STR1(x) #x
+
+///////////////////////////////////////////////////////////////////////////////
+// M: Program binaries
+///////////////////////////////////////////////////////////////////////////////
+
+#define CACHE_PATH "/data/data/%s/program_cache"
+static programid gKeys[] = {
+0x0000000000000000, 0x0000000000000001, 0x0000000000000003, 0x0000000800000000,
+0x0000000800000001, 0x0000000800000003, 0x0000001800000000, 0x0000001000000000,
+0x0000001000000008, 0x0000010000000008, 0x000001000000000B, 0x0000000800900041,
+0x0000000800900043, 0x0000000000900044, 0x0000001800900040, 0x0000001000900040,
+0x0000000000900041, 0x0000000000500041, 0x0000003800000000, 0x0000000000000004,
+0x0000020000000008, 0x0000000800500041, 0x0000000000d00041, 0x0000000800500040,
+0x0000001800500044, 0x0000000800d00041, 0x0000001000500040, 0x0000020800000008,
+0x0000081000000000, 0x0000080800000003, 0x0000080000500041
+};
 
 ///////////////////////////////////////////////////////////////////////////////
 // Vertex shaders snippets
@@ -140,7 +160,7 @@ const char* gFS_Header_Extension_FramebufferFetch =
 const char* gFS_Header_Extension_ExternalTexture =
         "#extension GL_OES_EGL_image_external : require\n\n";
 const char* gFS_Header =
-        "precision mediump float;\n\n";
+        "precision highp float;\n\n";
 const char* gFS_Uniforms_Color =
         "uniform vec4 color;\n";
 const char* gFS_Uniforms_TextureSampler =
@@ -392,9 +412,93 @@ ProgramCache::~ProgramCache() {
     clear();
 }
 
+/**
+ * M: Task to save program keys to disk asynchronously
+ */
+class SaveToDiskTask : public Thread {
+public:
+    SaveToDiskTask() {};
+    virtual ~SaveToDiskTask() {};
+    Vector<programid> keys;
+private:
+     virtual bool threadLoop() {
+         ATRACE_NAME_L1("SaveToDisk");
+         char file[512];
+         snprintf(file, sizeof(file), CACHE_PATH, Dumper::getInstance().mProcessName);
+         FILE* fPtr = fopen(file, "w");
+         if (fPtr != NULL) {
+             size_t count = keys.size();
+             for (size_t i = 0; i < count; i++) {
+                 programid key = keys.itemAt(i);
+                 fwrite(&key, sizeof(programid), 1, fPtr);
+             }
+             fclose(fPtr);
+         }
+         return false;
+     }
+};
+
+
 ///////////////////////////////////////////////////////////////////////////////
 // Cache management
 ///////////////////////////////////////////////////////////////////////////////
+
+void ProgramCache::init() {
+    ALOGD("ProgramCache.init: enable enhancement %d", g_HWUI_debug_enhancement);
+    if (g_HWUI_debug_enhancement) {
+        /// M: [ProgramBinaryAtlas] Initialize program atlas.
+        programAtlas.init();
+
+        /// M: Preload programs into cache.
+        if (programAtlas.getServiceEnabled()) {
+            int size = int(sizeof(gKeys) / sizeof(gKeys[0]));
+            int max = size;
+            int index = -1;
+            programid buffer[max];
+            ProgramDescription description;
+            char file[512];
+            snprintf(file, sizeof(file), CACHE_PATH, Dumper::getInstance().mProcessName);
+            FILE* fPtr = fopen(file, "r");
+            if (fPtr != NULL) {
+                while (index < max && !feof(fPtr)) {
+                    fread(&buffer[++index], sizeof(programid), 1, fPtr);
+                }
+                fclose(fPtr);
+            }
+            ALOGD("Initializing program cache from %p, size = %d", fPtr, index);
+
+            for (int i = 0; i < index; i ++) {
+                int j = 0;
+                // only preload programs that there are binaries prepared
+                for (j = 0; j < size; ++j) {
+                    if (buffer[i] == gKeys[j]) {
+                        break;
+                    }
+                }
+                if (j < size) {
+                    description.set(buffer[i]);
+                    get(description);
+                }
+
+                ALOGD("-- %sinit (key = 0x%.8x%.8x)", j < size ? "" : "not ", uint32_t(buffer[i] >> 32),
+                        uint32_t(buffer[i] & 0xffffffff));
+            }
+        }
+    }
+}
+
+void ProgramCache::saveToDisk() {
+    if (g_HWUI_debug_enhancement && programAtlas.getServiceEnabled()) {
+        sp<SaveToDiskTask> task = new SaveToDiskTask();
+        size_t count = mCache.size();
+
+        ALOGD("ProgramCache save to disk, size = %d", (int)count);
+        for (std::map<programid, std::unique_ptr<Program>>::iterator it = mCache.begin(); it != mCache.end(); ++it) {
+            task->keys.add(it->first);
+        }
+        task->run("SaveToDisk");
+    }
+}
 
 void ProgramCache::clear() {
     PROGRAM_LOGD("Clearing program cache");
@@ -422,10 +526,149 @@ Program* ProgramCache::get(const ProgramDescription& description) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// M: [ProgramBinaryAtlas] Program atlas enhancement
+///////////////////////////////////////////////////////////////////////////////
+
+int ProgramCache::createPrograms(int64_t* map, int* mapLength) {
+    // must make sure that egl env is constructed before calling this function
+    ProgramDescription description;
+    int64_t offset = 0;
+    int count = 0;
+    int size = int(sizeof(gKeys) / sizeof(gKeys[0]));
+    if (size > *mapLength / 4) size = *mapLength / 4;
+
+    for (int i = 0; i < size; ++i) {
+        uint64_t startInner = 0;
+        startInner = systemTime(SYSTEM_TIME_MONOTONIC);
+
+        description.set(gKeys[i]);
+        String8 vertexShader = generateVertexShader(description);
+        String8 fragmentShader = generateFragmentShader(description);
+
+        GLuint newFS, newVS;
+        GLuint newProgram;
+        GLint success;
+        const GLchar* source[1];
+
+        //
+        //  Create new shader/program objects and attach them together.
+        //
+        newVS = glCreateShader(GL_VERTEX_SHADER);
+        newFS = glCreateShader(GL_FRAGMENT_SHADER);
+        newProgram = glCreateProgram();
+        glAttachShader(newProgram, newVS);
+        glAttachShader(newProgram, newFS);
+
+        //
+        //  Supply GLSL source shaders, compile, and link them
+        //
+        source[0] = vertexShader.string();
+        glShaderSource(newVS, 1, source, NULL);
+        glCompileShader(newVS);
+        source[0] = fragmentShader.string();
+        glShaderSource(newFS, 1, source, NULL);
+        glCompileShader(newFS);
+
+        glBindAttribLocation(newProgram, Program::kBindingPosition, "position");
+        if (description.hasTexture || description.hasExternalTexture) {
+            glBindAttribLocation(newProgram, Program::kBindingTexCoords, "texCoords");
+        }
+
+        glLinkProgram(newProgram);
+        glGetProgramiv(newProgram, GL_LINK_STATUS, &success);
+
+        if (success) {
+            GLint binaryLength;
+
+            //
+            //  Retrieve the binary from the program object
+            //
+            glGetProgramiv(newProgram, GL_PROGRAM_BINARY_LENGTH_OES, &binaryLength);
+
+            map[count++] = static_cast<int64_t>(description.key());
+            map[count++] = static_cast<int64_t>(offset);
+            map[count++] = static_cast<int64_t>(binaryLength);
+            map[count++] = static_cast<int64_t>(newProgram); // temp save program id here
+
+            uint64_t endInner = 0;
+            endInner = systemTime(SYSTEM_TIME_MONOTONIC);
+            PROGRAM_LOGD("%d Program id %d, key 0x%.8x%.8x, offset %" PRId64 ", binaryLength %d within %dns",
+                i, newProgram, uint32_t(description.key() >> 32), uint32_t(description.key() & 0xffffffff),
+                offset, binaryLength, (int) ((endInner - startInner) / 1000));
+
+            offset += binaryLength;
+
+            //
+            // Clean up
+            //
+            glDetachShader(newProgram, newVS);
+            glDetachShader(newProgram, newFS);
+            glDeleteShader(newVS);
+            glDeleteShader(newFS);
+
+        } else {
+            ALOGE("Error while linking shaders:");
+            GLint infoLen = 0;
+            glGetProgramiv(newProgram, GL_INFO_LOG_LENGTH, &infoLen);
+            if (infoLen > 1) {
+                GLchar log[infoLen];
+                glGetProgramInfoLog(newProgram, infoLen, 0, &log[0]);
+                ALOGE("%s", log);
+            }
+
+            //
+            // Clean up
+            //
+            glDetachShader(newProgram, newVS);
+            glDetachShader(newProgram, newFS);
+            glDeleteShader(newVS);
+            glDeleteShader(newFS);
+            glDeleteProgram(newProgram);
+        }
+    }
+
+    *mapLength = count;
+
+    return offset;
+}
+
+void ProgramCache::loadProgramBinariesAndDelete(int64_t* map, int mapLength, void* buffer, int length) {
+    for (int i = 0; i < mapLength;) {
+        i++;  // for key
+        int64_t offset = map[i++];
+        GLint binaryLength = static_cast<GLint>(map[i++]);
+        GLuint newProgram = static_cast<GLuint>(map[i]);
+        GLenum binaryFormat = 0;
+
+        if (offset + binaryLength > length || buffer == NULL) {
+            // this should not happen
+            map[i++] = 0;
+            glDeleteProgram(newProgram);
+            break;
+        }
+
+        void* binary = reinterpret_cast<void*>(reinterpret_cast<int64_t>(buffer) + offset);
+        glGetProgramBinaryOES(newProgram, binaryLength, NULL, &binaryFormat, binary);
+        map[i++] = binaryFormat;
+        glDeleteProgram(newProgram);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // Program generation
 ///////////////////////////////////////////////////////////////////////////////
 
 Program* ProgramCache::generateProgram(const ProgramDescription& description, programid key) {
+    if (g_HWUI_debug_enhancement) {
+        /// M: [ProgramBinaryAtlas] enhancement which creating program by binary
+        ALOGD("ProgramCache.generateProgram: %" PRId64, (int64_t) key);
+        ProgramAtlas::ProgramEntry* entry = programAtlas.getProgramEntry(key);
+        if (entry) {
+            Program* program = new Program(description, entry->binary, entry->binaryLength, entry->binaryFormat);
+            if (program->isInitialized()) return program;
+            else delete program;
+        }
+    }
     String8 vertexShader = generateVertexShader(description);
     String8 fragmentShader = generateFragmentShader(description);
 
@@ -625,9 +868,11 @@ String8 ProgramCache::generateFragmentShader(const ProgramDescription& descripti
 
         if (fast) {
 #if DEBUG_PROGRAMS
+            if (g_HWUI_DEBUG_PROGRAMS) {
                 PROGRAM_LOGD("*** Fast case:\n");
                 PROGRAM_LOGD("*** Generated fragment shader:\n\n");
                 printLongString(shader);
+            }
 #endif
 
             return shader;
@@ -736,8 +981,10 @@ String8 ProgramCache::generateFragmentShader(const ProgramDescription& descripti
     shader.append(gFS_Footer);
 
 #if DEBUG_PROGRAMS
+    if (g_HWUI_DEBUG_PROGRAMS) {
         PROGRAM_LOGD("*** Generated fragment shader:\n\n");
         printLongString(shader);
+    }
 #endif
 
     return shader;

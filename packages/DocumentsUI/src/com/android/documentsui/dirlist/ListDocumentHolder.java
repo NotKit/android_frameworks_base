@@ -47,6 +47,7 @@ final class ListDocumentHolder extends DocumentHolder {
     final ImageView mIconThumb;
     final ImageView mIconCheck;
     final IconHelper mIconHelper;
+    final ImageView mIconDrm;
 
     public ListDocumentHolder(Context context, ViewGroup parent, IconHelper iconHelper) {
         super(context, parent, R.layout.item_doc_list);
@@ -60,6 +61,7 @@ final class ListDocumentHolder extends DocumentHolder {
         mIconCheck = (ImageView) itemView.findViewById(R.id.icon_check);
         // Warning: mDetails view doesn't exists in layout-sw720dp-land layout
         mDetails = (LinearLayout) itemView.findViewById(R.id.line2);
+        mIconDrm = (ImageView) itemView.findViewById(R.id.icon_drm);
 
         mIconHelper = iconHelper;
     }
@@ -133,7 +135,8 @@ final class ListDocumentHolder extends DocumentHolder {
         mIconThumb.setAlpha(0f);
 
         final Uri uri = DocumentsContract.buildDocumentUri(docAuthority, docId);
-        mIconHelper.loadThumbnail(uri, docMimeType, docFlags, docIcon, mIconThumb, mIconMime, null);
+        mIconHelper.loadThumbnail
+          (uri, docMimeType, docFlags, docIcon, mIconThumb, mIconMime, null, cursor, mIconDrm);
 
         mTitle.setText(docDisplayName, TextView.BufferType.SPANNABLE);
         mTitle.setVisibility(View.VISIBLE);

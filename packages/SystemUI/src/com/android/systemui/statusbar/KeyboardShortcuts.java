@@ -421,8 +421,12 @@ public final class KeyboardShortcuts {
         final ComponentName assistComponent = assistUtils.getAssistComponentForUser(userId);
         PackageInfo assistPackageInfo = null;
         try {
-            assistPackageInfo = mPackageManager.getPackageInfo(
+            /// M: Fix Google issue ALPS03040627 as assitComponent == null cause exception {
+            if (assistComponent != null) {
+            /// @ }
+                assistPackageInfo = mPackageManager.getPackageInfo(
                     assistComponent.getPackageName(), 0, userId);
+            }
         } catch (RemoteException e) {
             Log.e(TAG, "PackageManagerService is dead");
         }
@@ -476,7 +480,8 @@ public final class KeyboardShortcuts {
             keyboardShortcutInfoAppItems.add(new KeyboardShortcutInfo(
                     mContext.getString(R.string.keyboard_shortcut_group_applications_im),
                     messagingIcon,
-                    KeyEvent.KEYCODE_T,
+                    // M: ALPS03048793 change key from T to S as defined in ShortCutmanager
+                    KeyEvent.KEYCODE_S,
                     KeyEvent.META_META_ON));
         }
 

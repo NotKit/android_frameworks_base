@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,6 +28,8 @@ import android.graphics.Canvas;
 import android.graphics.ColorFilter;
 import android.graphics.Outline;
 import android.graphics.PixelFormat;
+/// M: Make sure the opaque area contains statusbar
+import android.graphics.Region;
 import android.graphics.drawable.Drawable;
 import android.util.AttributeSet;
 import android.view.ActionMode;
@@ -48,6 +55,8 @@ public class ActionBarContainer extends FrameLayout {
     private boolean mIsSplit;
     private boolean mIsStacked;
     private int mHeight;
+    /// M: Make sure the opaque area contains statusbar
+    private int mStatusBarHeight;
 
     public ActionBarContainer(Context context) {
         this(context, null);
@@ -73,6 +82,10 @@ public class ActionBarContainer extends FrameLayout {
         }
         a.recycle();
 
+        /// M: Make sure the opaque area contains statusbar @{
+        mStatusBarHeight = context.getResources().getDimensionPixelSize(
+                com.android.internal.R.dimen.status_bar_height);
+        /// @}
         setWillNotDraw(mIsSplit ? mSplitBackground == null :
                 mBackground == null && mStackedBackground == null);
     }

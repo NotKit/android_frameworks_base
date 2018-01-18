@@ -195,6 +195,15 @@ public class FilesActivity extends BaseActivity {
 
         final RootInfo root = getCurrentRoot();
 
+        DirectoryFragment dir = getDirectoryFragment();
+        if (dir != null) {
+            boolean mode = dir.getIsSelectionMode();
+            Log.d(TAG, "onPrepareOptionsMenu mode = " + mode);
+            if (mode) {
+                return false;
+            }
+        }
+
         final MenuItem createDir = menu.findItem(R.id.menu_create_dir);
         final MenuItem pasteFromCb = menu.findItem(R.id.menu_paste_from_clipboard);
         final MenuItem settings = menu.findItem(R.id.menu_settings);
@@ -334,9 +343,9 @@ public class FilesActivity extends BaseActivity {
         }
 
         // Fall back to traditional VIEW action...
+        Log.d(TAG, "openDocument doc.mimeType = " + doc.mimeType);
         intent = new Intent(Intent.ACTION_VIEW);
-        intent.setDataAndType(doc.derivedUri, doc.mimeType);
-
+		intent.setDataAndType(doc.derivedUri, doc.mimeType);
         // Downloads has traditionally added the WRITE permission
         // in the TrampolineActivity. Since this behavior is long
         // established, we set the same permission for non-managed files
@@ -347,6 +356,7 @@ public class FilesActivity extends BaseActivity {
             flags |= Intent.FLAG_GRANT_WRITE_URI_PERMISSION;
         }
         intent.setFlags(flags);
+
 
         if (DEBUG && intent.getClipData() != null) {
             Log.d(TAG, "Starting intent w/ clip data: " + intent.getClipData());

@@ -24,7 +24,9 @@ LOCAL_SHARED_LIBRARIES += \
     libprotobuf-cpp-lite \
     libharfbuzz_ng \
     libft2 \
-    libminikin
+    libminikin \
+    libbinder \
+    libprogrambinary
 
 ifneq (false,$(ANDROID_ENABLE_RENDERSCRIPT))
     LOCAL_SHARED_LIBRARIES += libRS libRScpp

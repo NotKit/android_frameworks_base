@@ -23,11 +23,13 @@ import android.content.IntentFilter;
 import android.content.res.Resources;
 import android.net.ConnectivityManager;
 import android.net.NetworkCapabilities;
+import android.net.NetworkInfo;
 import android.net.wifi.WifiManager;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemProperties;
 import android.provider.Settings;
 import android.telephony.ServiceState;
 import android.telephony.SubscriptionInfo;
@@ -38,12 +40,17 @@ import android.text.TextUtils;
 import android.util.Log;
 import android.util.MathUtils;
 
+import com.android.ims.ImsManager;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.PhoneConstants;
 import com.android.internal.telephony.TelephonyIntents;
 import com.android.settingslib.net.DataUsageController;
 import com.android.systemui.DemoMode;
 import com.android.systemui.R;
+import com.mediatek.systemui.PluginManager;
+import com.mediatek.systemui.ext.ISystemUIStatusBarExt;
+import com.mediatek.systemui.statusbar.networktype.NetworkTypeUtils;
+import com.mediatek.systemui.statusbar.util.SIMHelper;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -99,7 +106,6 @@ public class NetworkControllerImpl extends BroadcastReceiver
     private final DataUsageController mDataUsageController;
 
     private boolean mInetCondition; // Used for Logging and demo.
-
     // BitSets indicating which network transport types (e.g., TRANSPORT_WIFI, TRANSPORT_MOBILE) are
     // connected and validated, respectively.
     private final BitSet mConnectedTransports = new BitSet();
@@ -127,6 +133,17 @@ public class NetworkControllerImpl extends BroadcastReceiver
 
     private int mEmergencySource;
     private boolean mIsEmergency;
+
+    ///: M: Support for PLMN @{
+    String[] mNetworkName;
+    int mSlotCount = 0;
+
+    /// M: Add for Plugin feature. @ {
+    private ISystemUIStatusBarExt mStatusBarSystemUIExt;
+    /// @ }
+
+    // M: [ALPS02614114] Check all phone's emergency state when no sims
+    private boolean mEmergencyPhone[];
 
     @VisibleForTesting
     ServiceState mLastServiceState;
@@ -167,6 +184,14 @@ public class NetworkControllerImpl extends BroadcastReceiver
         mHasMobileDataFeature =
                 mConnectivityManager.isNetworkSupported(ConnectivityManager.TYPE_MOBILE);
 
+        /// M: Support for PLMN. @{
+        mSlotCount = SIMHelper.getSlotCount();
+        mNetworkName = new String[mSlotCount];
+        /// M: Support for PLMN. @}
+
+        // M: [ALPS02614114] Check all phone's emergency state when no sims
+        mEmergencyPhone = new boolean[mSlotCount];
+
         // telephony
         mPhone = telephonyManager;
 
@@ -191,6 +216,10 @@ public class NetworkControllerImpl extends BroadcastReceiver
 
         // AIRPLANE_MODE_CHANGED is sent at boot; we've probably already missed it
         updateAirplaneMode(true /* force callback */);
+
+        /// M: Support for plugin. @{
+        mStatusBarSystemUIExt = PluginManager.getSystemUIStatusBarExt(mContext);
+        /// M: Support for plugin. @}
     }
 
     public DataSaverController getDataSaverController() {
@@ -219,11 +248,24 @@ public class NetworkControllerImpl extends BroadcastReceiver
         filter.addAction(ConnectivityManager.CONNECTIVITY_ACTION);
         filter.addAction(ConnectivityManager.INET_CONDITION_ACTION);
         filter.addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED);
+        addCustomizedAction(filter);
         mContext.registerReceiver(this, filter, null, mReceiverHandler);
         mListening = true;
 
         updateMobileControllers();
     }
+
+    /// M: Add MTK more filter action
+    private void addCustomizedAction(IntentFilter filter) {
+        filter.addAction(TelephonyIntents.ACTION_SUBINFO_RECORD_UPDATED);
+        /// Add for [VOLTE status icon]
+        filter .addAction(ImsManager.ACTION_IMS_STATE_CHANGED);
+        /// Receive preboot ipo broadcast.
+        filter.addAction("android.intent.action.ACTION_PREBOOT_IPO");
+        /// shutdown ipo
+        filter.addAction("android.intent.action.ACTION_SHUTDOWN_IPO");
+    }
+    /// @ }
 
     private void unregisterListeners() {
         mListening = false;
@@ -287,8 +329,18 @@ public class NetworkControllerImpl extends BroadcastReceiver
         if (mMobileSignalControllers.size() == 0) {
             // When there are no active subscriptions, determine emengency state from last
             // broadcast.
+            Log.d(TAG, "isEmergencyOnly No sims ");
             mEmergencySource = EMERGENCY_NO_CONTROLLERS;
-            return mLastServiceState != null && mLastServiceState.isEmergencyOnly();
+            /// M: [ALPS02614114] Check all phone's emergency state when no sims @{
+            for (int i = 0; i < mEmergencyPhone.length; i++) {
+                if (mEmergencyPhone[i]) {
+                    if (DEBUG) Log.d(TAG, "Found emergency in phone " + i);
+                    return true;
+                }
+            }
+            return false;
+            // return mLastServiceState != null && mLastServiceState.isEmergencyOnly();
+            // @}
         }
         int voiceSubId = mSubDefaults.getDefaultVoiceSubId();
         if (!SubscriptionManager.isValidSubscriptionId(voiceSubId)) {
@@ -326,13 +378,16 @@ public class NetworkControllerImpl extends BroadcastReceiver
         cb.setSubs(mCurrentSubscriptions);
         cb.setIsAirplaneMode(new IconState(mAirplaneMode,
                 TelephonyIcons.FLIGHT_MODE_ICON, R.string.accessibility_airplane_mode, mContext));
-        cb.setNoSims(mHasNoSims);
+        /// M: for ALPS02814831
+        //cb.setNoSims(mHasNoSims);
         mWifiSignalController.notifyListeners(cb);
         mEthernetSignalController.notifyListeners(cb);
         for (MobileSignalController mobileSignalController : mMobileSignalControllers.values()) {
             mobileSignalController.notifyListeners(cb);
         }
         mCallbackHandler.setListening(cb, true);
+        /// M: for ALPS02814831,mutil-thread timing issue.
+        cb.setNoSims(mHasNoSims);
     }
 
     @Override
@@ -376,7 +431,8 @@ public class NetworkControllerImpl extends BroadcastReceiver
             updateConnectivity();
         } else if (action.equals(Intent.ACTION_AIRPLANE_MODE_CHANGED)) {
             refreshLocale();
-            updateAirplaneMode(false);
+            boolean airplaneMode = intent.getBooleanExtra("state", false);
+            updateAirplaneMode(airplaneMode, false);
         } else if (action.equals(TelephonyIntents.ACTION_DEFAULT_VOICE_SUBSCRIPTION_CHANGED)) {
             // We are using different subs now, we might be able to make calls.
             recalculateEmergency();
@@ -389,14 +445,51 @@ public class NetworkControllerImpl extends BroadcastReceiver
         } else if (action.equals(TelephonyIntents.ACTION_SIM_STATE_CHANGED)) {
             // Might have different subscriptions now.
             updateMobileControllers();
+        /// M: Support "subinfo record update". @{
+        } else if (action.equals(TelephonyIntents.ACTION_SUBINFO_RECORD_UPDATED)) {
+            updateMobileControllersEx(intent);
+            /// M: Support "subinfo record update". @}
+            /// M: update plmn label @{
+            refreshPlmnCarrierLabel();
+            /// @}
         } else if (action.equals(TelephonyIntents.ACTION_SERVICE_STATE_CHANGED)) {
             mLastServiceState = ServiceState.newFromBundle(intent.getExtras());
-            if (mMobileSignalControllers.size() == 0) {
-                // If none of the subscriptions are active, we might need to recalculate
-                // emergency state.
-                recalculateEmergency();
+            // If none of the subscriptions are active, we might need to recalculate
+            // emergency state.
+            /// M:[ALPS02809725]Always save ecc state not only no sim
+            /// M: [ALPS02614114] Check all phone's emergency state when no sims @{
+            if (mLastServiceState != null) {
+               int phoneId = intent.getIntExtra(PhoneConstants.PHONE_KEY,
+                     PhoneConstants.SIM_ID_1);
+               mEmergencyPhone[phoneId] = mLastServiceState.isEmergencyOnly();
+               if (DEBUG) {
+                   Log.d(TAG, "Service State changed...phoneId: " + phoneId
+                           + " ,isEmergencyOnly: " + mEmergencyPhone[phoneId]);
+               }
+               if (mMobileSignalControllers.size() == 0) {
+                  recalculateEmergency();
+               }
+               // @}
             }
-        } else {
+        } else if (action.equals(ImsManager.ACTION_IMS_STATE_CHANGED)) {
+            Log.d(TAG, "onRecevie ACTION_IMS_STATE_CHANGED");
+            handleIMSAction(intent);
+        }
+        /// M: Fix ALPS02355838, when ipo boot, re-update the airplane mode status. @{
+        else if (action.equals("android.intent.action.ACTION_PREBOOT_IPO")) {
+            updateAirplaneMode(false);
+        }
+        /// @}
+        /// M: Fix ALPS02491846 when ipo shout down, clear mobilesignalController.
+        else if (action.equals("android.intent.action.ACTION_SHUTDOWN_IPO")){
+            Log.d(TAG, "IPO SHUTDOWN!!!");
+            List<SubscriptionInfo> subscriptions = Collections.emptyList();
+            setCurrentSubscriptions(subscriptions);
+            updateNoSims();
+            recalculateEmergency();
+        }
+        /// @}
+        else {
             int subId = intent.getIntExtra(PhoneConstants.SUBSCRIPTION_KEY,
                     SubscriptionManager.INVALID_SUBSCRIPTION_ID);
             if (SubscriptionManager.isValidSubscriptionId(subId)) {
@@ -431,8 +524,33 @@ public class NetworkControllerImpl extends BroadcastReceiver
         refreshLocale();
     }
 
+    /// M: Support "subinfo record update".
+    private void updateMobileControllersEx(Intent intent){
+        int detectedType = SubscriptionManager.EXTRA_VALUE_NOCHANGE;
+        if (intent != null) {
+            detectedType = intent.getIntExtra(SubscriptionManager.INTENT_KEY_DETECT_STATUS, 0);
+            Log.d(TAG, "updateMobileControllers detectedType: " + detectedType);
+        }
+        // If there have been no relevant changes to any of the subscriptions, we can leave as is.
+        if (detectedType != SubscriptionManager.EXTRA_VALUE_REPOSITION_SIM) {
+            // Even if the controllers are correct, make sure we have the right no sims state.
+            // Such as on boot, don't need any controllers, because there are no sims,
+            // but we still need to update the no sim state.
+            updateNoSims();
+            return;
+        }
+
+        updateMobileControllers();
+    }
+
     private void updateMobileControllers() {
+        /// M: SIMHelper update Active SubscriptionInfo
+        SIMHelper.updateSIMInfos(mContext);
+
         if (!mListening) {
+            if (DEBUG) {
+                Log.d(TAG, "updateMobileControllers: it's not listening");
+            }
             return;
         }
         doUpdateMobileControllers();
@@ -442,6 +560,7 @@ public class NetworkControllerImpl extends BroadcastReceiver
     void doUpdateMobileControllers() {
         List<SubscriptionInfo> subscriptions = mSubscriptionManager.getActiveSubscriptionInfoList();
         if (subscriptions == null) {
+            Log.d(TAG, "subscriptions is null");
             subscriptions = Collections.emptyList();
         }
         // If there have been no relevant changes to any of the subscriptions, we can leave as is.
@@ -486,7 +605,11 @@ public class NetworkControllerImpl extends BroadcastReceiver
             int subId = subscriptions.get(i).getSubscriptionId();
             // If we have a copy of this controller already reuse it, otherwise make a new one.
             if (cachedControllers.containsKey(subId)) {
-                mMobileSignalControllers.put(subId, cachedControllers.remove(subId));
+                /// M: Fix bug ALPS02416794 @{
+                MobileSignalController msc = cachedControllers.remove(subId);
+                msc.mSubscriptionInfo = subscriptions.get(i);
+                mMobileSignalControllers.put(subId, msc);
+                /// @}
             } else {
                 MobileSignalController controller = new MobileSignalController(mContext, mConfig,
                         mHasMobileDataFeature, mPhone, mCallbackHandler,
@@ -538,19 +661,38 @@ public class NetworkControllerImpl extends BroadcastReceiver
     @VisibleForTesting
     boolean hasCorrectMobileControllers(List<SubscriptionInfo> allSubscriptions) {
         if (allSubscriptions.size() != mMobileSignalControllers.size()) {
+            Log.d(TAG,"size not equals, reset subInfo");
             return false;
         }
+        /// M: Fix bug ALPS02416794 for check subid that map order is whether match.@{
         for (SubscriptionInfo info : allSubscriptions) {
-            if (!mMobileSignalControllers.containsKey(info.getSubscriptionId())) {
+            /*if (!mMobileSignalControllers.containsKey(info.getSubscriptionId())) {
+                return false;
+            }*/
+            MobileSignalController msc = mMobileSignalControllers.get(info.getSubscriptionId());
+            if (msc == null || msc.mSubscriptionInfo.getSimSlotIndex() != info.getSimSlotIndex()) {
+                Log.d(TAG, "info_subId = " + info.getSubscriptionId() +
+                       " info_slotId = " + info.getSimSlotIndex());
                 return false;
             }
         }
+        /// @}
         return true;
     }
 
     private void updateAirplaneMode(boolean force) {
         boolean airplaneMode = (Settings.Global.getInt(mContext.getContentResolver(),
                 Settings.Global.AIRPLANE_MODE_ON, 0) == 1);
+        /**
+         *  M: Extract the method to another function called
+         *  {@link updateAirplaneMode(boolean airplaneMode, boolean force)}
+         */
+        updateAirplaneMode(airplaneMode, force);
+    }
+
+    /// M: Since in broadcast case the provider may have delay, so extract a method
+    /// and pass airplane mode state. @ {
+    private void updateAirplaneMode(boolean airplaneMode, boolean force) {
         if (airplaneMode != mAirplaneMode || force) {
             mAirplaneMode = airplaneMode;
             for (MobileSignalController mobileSignalController : mMobileSignalControllers.values()) {
@@ -559,6 +701,7 @@ public class NetworkControllerImpl extends BroadcastReceiver
             notifyListeners();
         }
     }
+    /// @ }
 
     private void refreshLocale() {
         Locale current = mContext.getResources().getConfiguration().locale;
@@ -833,7 +976,6 @@ public class NetworkControllerImpl extends BroadcastReceiver
             updateMobileControllers();
         }
     }
-
     /**
      * Used to register listeners from the BG Looper, this way the PhoneStateListeners that
      * get created will also run on the BG Looper.
@@ -854,14 +996,15 @@ public class NetworkControllerImpl extends BroadcastReceiver
             return SubscriptionManager.getDefaultDataSubscriptionId();
         }
     }
-
+    /// M: Support[Network Type on Statusbar]
+    /// public the class so other class able to access config.
     @VisibleForTesting
-    static class Config {
-        boolean showAtLeast3G = false;
-        boolean alwaysShowCdmaRssi = false;
-        boolean show4gForLte = false;
-        boolean hideLtePlus = false;
-        boolean hspaDataDistinguishable;
+    public static class Config {
+        public boolean showAtLeast3G = false;
+        public boolean alwaysShowCdmaRssi = false;
+        public boolean show4gForLte = false;
+        public boolean hideLtePlus = false;
+        public boolean hspaDataDistinguishable;
 
         static Config readConfig(Context context) {
             Config config = new Config();
@@ -877,4 +1020,60 @@ public class NetworkControllerImpl extends BroadcastReceiver
             return config;
         }
     }
+
+    /// M: Support [Volte icon status]
+    @VisibleForTesting
+    void handleIMSAction(Intent intent) {
+        int phoneId = intent.getIntExtra(ImsManager.EXTRA_PHONE_ID,
+                SubscriptionManager.INVALID_PHONE_INDEX);
+        mStatusBarSystemUIExt.setImsSlotId(phoneId);
+        for (MobileSignalController controller : mMobileSignalControllers.values()) {
+            if (controller.getControllerSubInfo().getSimSlotIndex() ==
+                    intent.getIntExtra(ImsManager.EXTRA_PHONE_ID,
+                            SubscriptionManager.INVALID_PHONE_INDEX)) {
+                controller.handleBroadcast(intent);
+                break;
+            }
+        }
+    }
+    /// @}
+
+    /// M: Support "Operator plugin - Customize Carrier Label for PLMN". @{
+    /**
+     * Recalculate and update the plmn carrier label.
+     */
+    public void refreshPlmnCarrierLabel() {
+        for (int i = 0; i < mSlotCount; i++) {
+            boolean found = false;
+            for (Map.Entry<Integer, MobileSignalController> entry : mMobileSignalControllers
+                    .entrySet()) {
+                int subId = entry.getKey();
+                int slotId = -1;
+                MobileSignalController controller = entry.getValue();
+
+                if (controller.getControllerSubInfo() != null) {
+                    slotId = controller.getControllerSubInfo().getSimSlotIndex();
+                }
+
+                if (i == slotId) {
+                    mNetworkName[slotId] = controller.mCurrentState.networkName;
+                    PluginManager.getStatusBarPlmnPlugin(mContext).updateCarrierLabel(i, true,
+                            controller.getControllserHasService(), mNetworkName);
+                    mStatusBarSystemUIExt.setSimInserted(i, true);
+                    found = true;
+                    break;
+                }
+            }
+            // not have sub
+            if (!found) {
+                mNetworkName[i] = mContext
+                        .getString(com.android.internal.R.string.lockscreen_carrier_default);
+                PluginManager.getStatusBarPlmnPlugin(mContext).updateCarrierLabel(i, false, false,
+                        mNetworkName);
+                mStatusBarSystemUIExt.setSimInserted(i, false);
+            }
+        }
+    }
+    /// M: Support "Operator plugin - Customize Carrier Label for PLMN". @}
+
 }

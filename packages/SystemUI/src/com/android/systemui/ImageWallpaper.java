@@ -19,6 +19,7 @@ package com.android.systemui;
 import static android.opengl.GLES20.*;
 
 import static javax.microedition.khronos.egl.EGL10.*;
+import static android.opengl.GLES11Ext.*;
 
 import android.app.ActivityManager;
 import android.app.WallpaperManager;
@@ -54,6 +55,8 @@ import javax.microedition.khronos.egl.EGLContext;
 import javax.microedition.khronos.egl.EGLDisplay;
 import javax.microedition.khronos.egl.EGLSurface;
 
+import android.view.GraphicBuffer;
+import android.graphics.ImageFormat;
 /**
  * Default built-in wallpaper that simply shows a static image.
  */
@@ -63,6 +66,7 @@ public class ImageWallpaper extends WallpaperService {
     private static final String GL_LOG_TAG = "ImageWallpaperGL";
     private static final boolean DEBUG = false;
     private static final String PROPERTY_KERNEL_QEMU = "ro.kernel.qemu";
+    private static final String PROPERTY_MTK_GMO_RAM_OPTIMIZE = "ro.mtk_gmo_ram_optimize";
 
     static final boolean FIXED_SIZED_SURFACE = true;
     static final boolean USE_OPENGL = true;
@@ -108,6 +112,10 @@ public class ImageWallpaper extends WallpaperService {
         static final int EGL_OPENGL_ES2_BIT = 4;
 
         Bitmap mBackground;
+        private static final int GRAPHIC_BUFFER_USAGE = GraphicBuffer.USAGE_SW_READ_NEVER |
+            GraphicBuffer.USAGE_SW_WRITE_NEVER | GraphicBuffer.USAGE_HW_TEXTURE;
+        private GraphicBuffer mBuffer = null;
+
         int mBackgroundWidth = -1, mBackgroundHeight = -1;
         int mLastSurfaceWidth = -1, mLastSurfaceHeight = -1;
         int mLastRotation = -1;
@@ -146,6 +154,15 @@ public class ImageWallpaper extends WallpaperService {
                 "    gl_FragColor = texture2D(texture, outTexCoords);\n" +
                 "}\n\n";
 
+        private static final String sYv12FS =
+                "#extension GL_OES_EGL_image_external : require\n" +
+                "precision mediump float;\n\n" +
+                "varying vec2 outTexCoords;\n" +
+                "uniform samplerExternalOES texture;\n" +
+                "\nvoid main(void) {\n" +
+                "    gl_FragColor = texture2D(texture, outTexCoords);\n" +
+                "}\n\n";
+
         private static final int FLOAT_SIZE_BYTES = 4;
         private static final int TRIANGLE_VERTICES_DATA_STRIDE_BYTES = 5 * FLOAT_SIZE_BYTES;
         private static final int TRIANGLE_VERTICES_DATA_POS_OFFSET = 0;
@@ -160,7 +177,7 @@ public class ImageWallpaper extends WallpaperService {
         private AsyncTask<Void, Void, Bitmap> mLoader;
         private boolean mNeedsDrawAfterLoadingWallpaper;
         private boolean mSurfaceValid;
-
+        private boolean mYv12Enhancement = false;
         public DrawableEngine() {
             super();
             setFixedSizeAllowed(true);
@@ -168,13 +185,24 @@ public class ImageWallpaper extends WallpaperService {
 
         public void trimMemory(int level) {
             if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW
-                    && level <= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL
-                    && mBackground != null) {
+                    && level <= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL) {
                 if (DEBUG) {
                     Log.d(TAG, "trimMemory");
                 }
+                if("1".equals(SystemProperties.get(PROPERTY_MTK_GMO_RAM_OPTIMIZE, "0"))
+                    && mYv12Enhancement)
+                {
+                    if(mBuffer != null)
+                    {
+                        mBuffer.destroy();
+                        mBuffer = null;
+                    }
+                }
+                if(mBackground != null)
+                {
                 mBackground.recycle();
                 mBackground = null;
+                }
                 mBackgroundWidth = -1;
                 mBackgroundHeight = -1;
                 mWallpaperManager.forgetLoadedWallpaper();
@@ -199,6 +227,15 @@ public class ImageWallpaper extends WallpaperService {
         public void onDestroy() {
             super.onDestroy();
             mBackground = null;
+            if("1".equals(SystemProperties.get(PROPERTY_MTK_GMO_RAM_OPTIMIZE, "0"))
+                && mYv12Enhancement)
+            {
+                if(mBuffer != null)
+                {
+                    mBuffer.destroy();
+                    mBuffer = null;
+                }
+            }
             mWallpaperManager.forgetLoadedWallpaper();
         }
 
@@ -577,9 +614,25 @@ public class ImageWallpaper extends WallpaperService {
             ortho.loadOrtho(0.0f, frame.width(), frame.height(), 0.0f, -1.0f, 1.0f);
 
             final FloatBuffer triangleVertices = createMesh(left, top, right, bottom);
-
-            final int texture = loadTexture(mBackground);
-            final int program = buildProgram(sSimpleVS, sSimpleFS);
+            final int texture;
+            if("1".equals(SystemProperties.get(PROPERTY_MTK_GMO_RAM_OPTIMIZE, "0")))
+            {
+                texture = loadTexture_ext(mBackground);
+            }
+            else
+            {
+                texture = loadTexture(mBackground);
+            }
+            final int program;
+            if("1".equals(SystemProperties.get(PROPERTY_MTK_GMO_RAM_OPTIMIZE, "0"))
+                && mYv12Enhancement)
+            {
+                program = buildProgram(sSimpleVS, sYv12FS);
+            }
+            else
+            {
+                program = buildProgram(sSimpleVS, sSimpleFS);
+            }
 
             final int attribPosition = glGetAttribLocation(program, "position");
             final int attribTexCoords = glGetAttribLocation(program, "texCoords");
@@ -589,7 +642,15 @@ public class ImageWallpaper extends WallpaperService {
             checkGlError();
 
             glViewport(0, 0, frame.width(), frame.height());
+            if("1".equals(SystemProperties.get(PROPERTY_MTK_GMO_RAM_OPTIMIZE, "0"))
+                && mYv12Enhancement)
+            {
+                glBindTexture(GL_TEXTURE_EXTERNAL_OES, texture);
+            }
+            else
+            {
             glBindTexture(GL_TEXTURE_2D, texture);
+            }
 
             glUseProgram(program);
             glEnableVertexAttribArray(attribPosition);
@@ -600,7 +661,15 @@ public class ImageWallpaper extends WallpaperService {
             checkGlError();
 
             if (w > 0 || h > 0) {
+                if("1".equals(SystemProperties.get(PROPERTY_MTK_GMO_RAM_OPTIMIZE, "0"))
+                    && mYv12Enhancement)
+                {
+                    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+                }
+                else
+                {
                 glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+                }
                 glClear(GL_COLOR_BUFFER_BIT);
             }
 
@@ -641,7 +710,7 @@ public class ImageWallpaper extends WallpaperService {
 
         private int loadTexture(Bitmap bitmap) {
             int[] textures = new int[1];
-
+            mYv12Enhancement = false;
             glActiveTexture(GL_TEXTURE0);
             glGenTextures(1, textures, 0);
             checkGlError();
@@ -662,6 +731,46 @@ public class ImageWallpaper extends WallpaperService {
             return texture;
         }
 
+        private int loadTexture_ext(Bitmap bitmap) {
+            int[] textures = new int[1];
+            int width = bitmap.getWidth();
+            int height = bitmap.getHeight();
+            mYv12Enhancement = true;
+            Log.d(TAG, "loadTexture_ext bitmap width " + width + ", height" + height);
+            if(width%2 != 0)
+                width--;
+            if(height%2 != 0)
+                height--;
+            mBuffer = GraphicBuffer.create(width, height,
+                        ImageFormat.YV12,
+                        GraphicBuffer.USAGE_HW_TEXTURE |
+                        GraphicBuffer.USAGE_SW_WRITE_RARELY);
+            if(mBuffer == null)
+            {
+                Log.d(TAG, "graphic buffer is null executing normal jpg");
+                return loadTexture(bitmap);
+            }
+            glActiveTexture(GL_TEXTURE0);
+            glGenTextures(1, textures, 0);
+            checkGlError();
+
+            int texture = textures[0];
+            glBindTexture(GL_TEXTURE_EXTERNAL_OES, texture);
+            checkGlError();
+
+            glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+            glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+            Utils.BitmapToYv12(bitmap, mBuffer);
+            bitmap = null;
+            Utils.createTexture2D(texture, mBuffer);
+            checkGlError();
+
+            return texture;
+        }
         private int buildProgram(String vertex, String fragment) {
             int vertexShader = buildShader(vertex, GL_VERTEX_SHADER);
             if (vertexShader == 0) return 0;

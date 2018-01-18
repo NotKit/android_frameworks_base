@@ -55,6 +55,11 @@
         <group gid="inet" />
     </permission>
 
+    <permission name="mediatek.permission.ACCESS_MTK_MMHW" >
+        <group gid="media" />
+        <group gid="camera" />
+    </permission>
+
     <permission name="android.permission.READ_LOGS" >
         <group gid="log" />
     </permission>
@@ -143,6 +148,12 @@
     <assign-permission name="android.permission.UPDATE_DEVICE_STATS" uid="media" />
     <assign-permission name="android.permission.UPDATE_APP_OPS_STATS" uid="media" />
     <assign-permission name="android.permission.GET_PROCESS_STATE_AND_OOM_SCORE" uid="media" />
+    <assign-permission name="android.permission.CAMERA" uid="media" />
+    <assign-permission name="android.permission.ACCESS_FM_RADIO" uid="media" />
+    <assign-permission name="android.permission.CAPTURE_AUDIO_OUTPUT" uid="media" />
+    <!-- AudioServer is separated from mediaServer on Android N0, so AudioServer will
+         check mediaServer permission when mediaServer call audioServer through binder,
+         so add CAPTURE_AUDIO_OUTPUT permission for mediaServer. -->
 
     <assign-permission name="android.permission.MODIFY_AUDIO_SETTINGS" uid="audioserver" />
     <assign-permission name="android.permission.ACCESS_SURFACE_FLINGER" uid="audioserver" />
@@ -181,4 +192,13 @@
 
     <!-- These are the packages that shouldn't run as system user -->
     <system-user-blacklisted-app package="com.android.wallpaper.livepicker" />
+
+    <!-- Whitelist of what components are permitted as backup data transports.  The
+         'service' attribute here is a flattened ComponentName string. -->
+    <backup-transport-whitelisted-service
+        service="android/com.android.internal.backup.LocalTransportService" />
+    <backup-transport-whitelisted-service
+        service="com.google.android.gms/.backup.BackupTransportService" />
+    <backup-transport-whitelisted-service
+        service="com.google.android.gms/.backup.component.D2dTransportService" />
 </permissions>

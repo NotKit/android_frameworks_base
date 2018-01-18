@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -34,12 +39,14 @@ import android.text.TextUtils;
  */
 public class NtpTrustedTime implements TrustedTime {
     private static final String TAG = "NtpTrustedTime";
-    private static final boolean LOGD = false;
+    private static final boolean LOGD = true;
 
     private static NtpTrustedTime sSingleton;
     private static Context sContext;
 
-    private final String mServer;
+    //M: For multiple NTP server retry
+    //private final String mServer;
+    private String mServer;
     private final long mTimeout;
 
     private ConnectivityManager mCM;
@@ -110,6 +117,19 @@ public class NtpTrustedTime implements TrustedTime {
         } else {
             return false;
         }
+    }
+
+    //M: For multiple NTP server retry
+    public void setServer(String server) {
+        Log.d(TAG, "setServer:[" + server + "]");
+        if (server != null)
+        {
+            mServer = server;
+        }
+    }
+    public String getServer() {
+        Log.d(TAG, "getServer:[" + mServer + "]");
+        return mServer;
     }
 
     @Override

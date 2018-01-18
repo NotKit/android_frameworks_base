@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2008 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -234,6 +239,9 @@ public class WifiInfo implements Parcelable {
          */
     private boolean mMeteredHint;
 
+    ///M:ALPS01608242 to protect mwifiSsid dynamic change to null problem
+     private final Object mWifiSsidLock = new Object();
+
     /** @hide */
     public WifiInfo() {
         mWifiSsid = null;
@@ -304,7 +312,10 @@ public class WifiInfo implements Parcelable {
 
     /** @hide */
     public void setSSID(WifiSsid wifiSsid) {
-        mWifiSsid = wifiSsid;
+        ///M:ALPS01608242 to protect mwifiSsid dynamic change to null problem
+        synchronized (mWifiSsidLock) {
+            mWifiSsid = wifiSsid;
+        }
     }
 
     /**
@@ -576,17 +587,27 @@ public class WifiInfo implements Parcelable {
         dest.writeInt(mRssi);
         dest.writeInt(mLinkSpeed);
         dest.writeInt(mFrequency);
-        if (mIpAddress != null) {
+        //M: ALPS02057928 modify for avoid value dynamicly change to null @{
+        final InetAddress ia = mIpAddress;
+        byte[] bia = null;
+        if (ia != null) {
+            bia = ia.getAddress();
+        }
+        if (bia != null) {
             dest.writeByte((byte)1);
-            dest.writeByteArray(mIpAddress.getAddress());
+            dest.writeByteArray(bia);
         } else {
             dest.writeByte((byte)0);
         }
-        if (mWifiSsid != null) {
-            dest.writeInt(1);
-            mWifiSsid.writeToParcel(dest, flags);
-        } else {
-            dest.writeInt(0);
+        ///@}
+        ///M:ALPS01608242 to protect mwifiSsid dynamic change to null problem
+        synchronized (mWifiSsidLock) {
+            if (mWifiSsid != null) {
+                dest.writeInt(1);
+                mWifiSsid.writeToParcel(dest, flags);
+            } else {
+                dest.writeInt(0);
+            }
         }
         dest.writeString(mBSSID);
         dest.writeString(mMacAddress);

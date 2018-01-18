@@ -601,6 +601,16 @@ public abstract class Window {
 
         /** Returns the current stack Id for the window. */
         int getWindowStackId() throws RemoteException;
+
+        /**
+         * M: BMW
+         */
+        void stickWindow(boolean isSticky) throws RemoteException;
+
+        /**
+         * M: BMW
+         */
+        boolean isStickyByMtk() throws RemoteException;
     }
 
     /**

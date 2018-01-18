@@ -172,7 +172,7 @@ static void drawPath(const SkPath *path, const SkPaint* paint, SkBitmap& bitmap,
 
     SkCanvas canvas(bitmap);
     canvas.translate(-left + offset, -top + offset);
-    canvas.drawPath(*path, pathPaint);
+    TIME_LOG("canvas.drawPath", canvas.drawPath(*path, pathPaint));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -241,7 +241,7 @@ void PathCache::removeTexture(PathTexture* texture) {
         }
 
         PATH_LOGD("PathCache::delete name, size, mSize = %d, %d, %d",
-                texture->id, size, mSize);
+                texture->id(), size, mSize);
         if (mDebugEnabled) {
             ALOGD("Shape deleted, size = %d", size);
         }
@@ -263,7 +263,11 @@ void PathCache::purgeCache(uint32_t width, uint32_t height) {
 
 void PathCache::trim() {
     while (mSize > mMaxSize) {
-        mCache.removeOldest();
+        /// M: We can't remove last item in LruCache.
+        /// End removeOldest loop if there is only one item rest in LruCache.
+        if (!mCache.removeOldest()) {
+            break;
+        }
     }
 }
 
@@ -299,7 +303,7 @@ void PathCache::generateTexture(const PathDescription& entry, SkBitmap* bitmap,
     uint32_t size = texture->width() * texture->height();
     mSize += size;
     PATH_LOGD("PathCache::get/create: name, size, mSize = %d, %d, %d",
-            texture->id, size, mSize);
+            texture->id(), size, mSize);
     if (mDebugEnabled) {
         ALOGD("Shape created, size = %d", size);
     }
@@ -309,7 +313,8 @@ void PathCache::generateTexture(const PathDescription& entry, SkBitmap* bitmap,
 }
 
 void PathCache::clear() {
-    mCache.clear();
+    PATH_LOGD("PathCache::clear count = %d", (int)mCache.size());
+    TIME_LOG("PathCache::clear", mCache.clear());
 }
 
 void PathCache::generateTexture(SkBitmap& bitmap, Texture* texture) {
@@ -384,6 +389,8 @@ PathTexture* PathCache::get(const SkPath* path, const SkPaint* paint) {
     entry.shape.path.mGenerationID = path->getGenerationID();
 
     PathTexture* texture = mCache.get(entry);
+    PATH_LOGD("PathCache::get path = %p, cached texture = %p, entry = %u",
+        path, texture, (unsigned int)entry.hash());
 
     if (!texture) {
         texture = addTexture(entry, path, paint);
@@ -446,6 +453,8 @@ void PathCache::precache(const SkPath* path, const SkPaint* paint) {
         // asks for a path texture. This is also when the cache limit will
         // be enforced.
         mCache.put(entry, texture);
+        PATH_LOGD("PathCache::precache path = %p, cached texture = %p, entry = %u",
+            path, texture, (unsigned int)entry.hash());
 
         if (mProcessor == nullptr) {
             mProcessor = new PathProcessor(Caches::getInstance());

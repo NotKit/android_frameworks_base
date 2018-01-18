@@ -24,7 +24,6 @@
         android:gravity="end|fill_vertical"
         android:width="48dp"
         android:drawable="@drawable/control_background_40dp_material" />
-
     <item
         android:drawable="@drawable/ic_spinner_caret"
         android:gravity="end|center_vertical"

@@ -55,7 +55,7 @@ struct DeferStateStruct;
 /**
  * A layer has dimensions and is backed by an OpenGL texture or FBO.
  */
-class Layer : public VirtualLightRefBase, GpuMemoryTracker {
+class Layer : public VirtualLightRefBase, public GpuMemoryTracker {
 public:
     enum class Type {
         Texture,

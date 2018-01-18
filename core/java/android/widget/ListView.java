@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,7 +22,10 @@
 package android.widget;
 
 import com.google.android.collect.Lists;
-
+import android.annotation.Nullable;
+import android.os.Bundle;
+import android.os.Build;
+import android.os.Trace;
 import com.android.internal.R;
 import com.android.internal.util.Predicate;
 
@@ -35,6 +43,7 @@ import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.os.Trace;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.util.MathUtils;
 import android.util.SparseBooleanArray;
 import android.view.FocusFinder;
@@ -52,6 +61,7 @@ import android.view.accessibility.AccessibilityNodeInfo.CollectionInfo;
 import android.view.accessibility.AccessibilityNodeInfo.CollectionItemInfo;
 import android.view.accessibility.AccessibilityNodeProvider;
 import android.widget.RemoteViews.RemoteView;
+
 
 import java.util.ArrayList;
 import java.util.List;
@@ -81,6 +91,10 @@ import java.util.List;
  */
 @RemoteView
 public class ListView extends AbsListView {
+    private static final String TAG = "ListView";
+
+    private static final boolean IS_ENG_BUILD = "eng".equals(Build.TYPE);
+
     /**
      * Used to indicate a no preference for a position type.
      */
@@ -141,6 +155,9 @@ public class ListView extends AbsListView {
 
     // Keeps focused children visible through resizes
     private FocusSelector mFocusSelector;
+
+    // Flag to indicate do not scrap active views during the next layout process.
+    private boolean mAbandonActiveViews = false;
 
     public ListView(Context context) {
         this(context, null);
@@ -464,7 +481,7 @@ public class ListView extends AbsListView {
      *        data backing this list and for producing a view to represent an
      *        item in that data set.
      *
-     * @see #getAdapter() 
+     * @see #getAdapter()
      */
     @Override
     public void setAdapter(ListAdapter adapter) {
@@ -533,7 +550,7 @@ public class ListView extends AbsListView {
 
         super.resetList();
 
-        mLayoutMode = LAYOUT_NORMAL;
+        setListLayoutMode(LAYOUT_NORMAL);
     }
 
     private void clearRecycledState(ArrayList<FixedViewInfo> infos) {
@@ -1233,7 +1250,7 @@ public class ListView extends AbsListView {
             heightSize = measureHeightOfChildren(widthMeasureSpec, 0, NO_POSITION, heightSize, -1);
         }
 
-        setMeasuredDimension(widthSize, heightSize);
+        setMeasuredDimension(widthSize , heightSize);
 
         mWidthMeasureSpec = widthMeasureSpec;
     }
@@ -1532,7 +1549,7 @@ public class ListView extends AbsListView {
                         adjustViewsUpOrDown();
                     }
                 } else if (lastPosition == mItemCount - 1) {
-                    adjustViewsUpOrDown();                    
+                    adjustViewsUpOrDown();
                 }
             }
         }
@@ -1615,6 +1632,7 @@ public class ListView extends AbsListView {
                 invokeOnItemScrollListener();
                 return;
             } else if (mItemCount != mAdapter.getCount()) {
+                Log.d(TAG, "item no. = " + mItemCount + ", adapter no. = " + mAdapter.getCount());
                 throw new IllegalStateException("The content of the adapter has changed but "
                         + "ListView did not receive a notification. Make sure the content of "
                         + "your adapter is not modified from a background thread, but only from "
@@ -1684,12 +1702,22 @@ public class ListView extends AbsListView {
             // These views will be reused if possible
             final int firstPosition = mFirstPosition;
             final RecycleBin recycleBin = mRecycler;
-            if (dataChanged) {
-                for (int i = 0; i < childCount; i++) {
-                    recycleBin.addScrapView(getChildAt(i), firstPosition+i);
+            /**
+             * M: [ALPS01446118] Only recycle view did not set mAbandonActiveViews flag
+             * Though data is not changed, active views should not be reused as well
+             */
+            if (!mAbandonActiveViews) {
+                if (dataChanged) {
+                    for (int i = 0; i < childCount; i++) {
+                        recycleBin.addScrapView(getChildAt(i), firstPosition + i);
+                    }
+                } else {
+                    recycleBin.fillActiveViews(childCount, firstPosition);
                 }
             } else {
-                recycleBin.fillActiveViews(childCount, firstPosition);
+                for (int i = 0; i < childCount; i++) {
+                    removeDetachedView(getChildAt(i), false);
+                }
             }
 
             // Clear out old views
@@ -1760,9 +1788,16 @@ public class ListView extends AbsListView {
                 }
                 break;
             }
-
-            // Flush any cached views that did not get reused above
-            recycleBin.scrapActiveViews();
+            /// M: Do not scrap active views if the abandon flag is set.
+            if (mAbandonActiveViews) {
+                if (IS_ENG_BUILD) {
+                    Log.i(TAG, "Abandon active views because it cann't be reused!");
+                }
+                mAbandonActiveViews = false;
+            } else {
+                // Flush any cached views that did not get reused above
+                recycleBin.scrapActiveViews();
+            }
 
             // remove any header/footer that has been temp detached and not re-attached
             removeUnusedFixedViews(mHeaderViewInfos);
@@ -1787,6 +1822,10 @@ public class ListView extends AbsListView {
                     } else {
                         sel.setSelected(false);
                         mSelectorRect.setEmpty();
+                        if (IS_ENG_BUILD) {
+                            Log.d(TAG, "mSelectorRect.setEmpty in layoutChildren with sel = " + sel
+                                    + ", this = " + this);
+                        }
                     }
                 } else {
                     positionSelector(INVALID_POSITION, sel);
@@ -1813,6 +1852,9 @@ public class ListView extends AbsListView {
                     // Otherwise, clear selection.
                     mSelectedTop = 0;
                     mSelectorRect.setEmpty();
+                    if (IS_ENG_BUILD) {
+                        Log.d(TAG, "mSelectorRect.setEmpty in layoutChildren this=" + this);
+                    }
                 }
 
                 // Even if there is not selected position, we may need to
@@ -1857,9 +1899,9 @@ public class ListView extends AbsListView {
                     && focusLayoutRestoreView.getWindowToken() != null) {
                 focusLayoutRestoreView.dispatchFinishTemporaryDetach();
             }
-            
-            mLayoutMode = LAYOUT_NORMAL;
-            mDataChanged = false;
+
+            setListLayoutMode(LAYOUT_NORMAL);
+            setDataChanged(false);
             if (mPositionScrollAfterLayout != null) {
                 post(mPositionScrollAfterLayout);
                 mPositionScrollAfterLayout = null;
@@ -2109,7 +2151,7 @@ public class ListView extends AbsListView {
 
     /**
      * Makes the item at the supplied position selected.
-     * 
+     *
      * @param position the position of the item to select
      */
     @Override
@@ -2238,7 +2280,7 @@ public class ListView extends AbsListView {
             setSelection(count);
         } else {
             mNextSelectedPosition = count;
-            mLayoutMode = LAYOUT_SET_SELECTION;
+            setListLayoutMode(LAYOUT_SET_SELECTION);
         }
 
     }
@@ -2431,15 +2473,15 @@ public class ListView extends AbsListView {
         if (nextPage >= 0) {
             final int position = lookForSelectablePositionAfter(mSelectedPosition, nextPage, down);
             if (position >= 0) {
-                mLayoutMode = LAYOUT_SPECIFIC;
+                setListLayoutMode(LAYOUT_SPECIFIC);
                 mSpecificTop = mPaddingTop + getVerticalFadingEdgeLength();
 
                 if (down && (position > (mItemCount - getChildCount()))) {
-                    mLayoutMode = LAYOUT_FORCE_BOTTOM;
+                    setListLayoutMode(LAYOUT_FORCE_BOTTOM);
                 }
 
                 if (!down && (position < getChildCount())) {
-                    mLayoutMode = LAYOUT_FORCE_TOP;
+                    setListLayoutMode(LAYOUT_FORCE_TOP);
                 }
 
                 setSelectionInt(position);
@@ -2469,7 +2511,7 @@ public class ListView extends AbsListView {
             if (mSelectedPosition != 0) {
                 final int position = lookForSelectablePositionAfter(mSelectedPosition, 0, true);
                 if (position >= 0) {
-                    mLayoutMode = LAYOUT_FORCE_TOP;
+                    setListLayoutMode(LAYOUT_FORCE_TOP);
                     setSelectionInt(position);
                     invokeOnItemScrollListener();
                 }
@@ -2481,7 +2523,7 @@ public class ListView extends AbsListView {
                 final int position = lookForSelectablePositionAfter(
                         mSelectedPosition, lastItem, false);
                 if (position >= 0) {
-                    mLayoutMode = LAYOUT_FORCE_BOTTOM;
+                    setListLayoutMode(LAYOUT_FORCE_BOTTOM);
                     setSelectionInt(position);
                     invokeOnItemScrollListener();
                 }
@@ -2588,7 +2630,8 @@ public class ListView extends AbsListView {
                         selectedPos + 1 :
                         mFirstPosition;
             } else {
-                return INVALID_POSITION;
+                /// M: if there's no selectedView currently, look for a new position
+                return lookForSelectablePositionOnScreen(direction);
             }
         } else {
             final int listTop = mListPadding.top;
@@ -2598,7 +2641,8 @@ public class ListView extends AbsListView {
                         selectedPos - 1 :
                         lastPos;
             } else {
-                return INVALID_POSITION;
+                /// M: if there's no selectedView currently, look for a new position
+                return lookForSelectablePositionOnScreen(direction);
             }
         }
 
@@ -2960,7 +3004,7 @@ public class ListView extends AbsListView {
             if (startPos < firstPosition) {
                 startPos = firstPosition;
             }
-            
+
             final int lastVisiblePos = getLastVisiblePosition();
             final ListAdapter adapter = getAdapter();
             for (int pos = startPos; pos <= lastVisiblePos; pos++) {
@@ -3129,7 +3173,7 @@ public class ListView extends AbsListView {
     /**
      * Determine the distance to the nearest edge of a view in a particular
      * direction.
-     * 
+     *
      * @param descendant A descendant of this list.
      * @return The distance, or 0 if the nearest edge is already on screen.
      */
@@ -3386,7 +3430,7 @@ public class ListView extends AbsListView {
             final int listBottom = mBottom - mTop - effectivePaddingBottom + mScrollY;
             if (!mStackFromBottom) {
                 int bottom = 0;
-                
+
                 // Draw top divider or header for overscroll
                 final int scrollY = mScrollY;
                 if (count > 0 && scrollY < 0) {
@@ -3483,7 +3527,7 @@ public class ListView extends AbsListView {
                         }
                     }
                 }
-                
+
                 if (count > 0 && scrollY > 0) {
                     if (drawOverscrollFooter) {
                         final int absListBottom = mBottom;
@@ -3567,7 +3611,7 @@ public class ListView extends AbsListView {
     public int getDividerHeight() {
         return mDividerHeight;
     }
-    
+
     /**
      * Sets the height of the divider that will be drawn between each item in the list. Calling
      * this will override the intrinsic height as set by {@link #setDivider(Drawable)}
@@ -3625,7 +3669,7 @@ public class ListView extends AbsListView {
     public boolean areFooterDividersEnabled() {
         return mFooterDividersEnabled;
     }
-    
+
     /**
      * Sets the drawable that will be drawn above all other list content.
      * This area can become visible when the user overscrolls the list.
@@ -3678,7 +3722,7 @@ public class ListView extends AbsListView {
             // Don't cache the result of getChildCount or mFirstPosition here,
             // it could change in layoutChildren.
             if (adapter.getCount() < getChildCount() + mFirstPosition) {
-                mLayoutMode = LAYOUT_NORMAL;
+                setListLayoutMode(LAYOUT_NORMAL);
                 layoutChildren();
             }
 
@@ -3878,10 +3922,10 @@ public class ListView extends AbsListView {
     /**
      * Returns the set of checked items ids. The result is only valid if the
      * choice mode has not been set to {@link #CHOICE_MODE_NONE}.
-     * 
+     *
      * @return A new array which contains the id of each checked item in the
      *         list.
-     *         
+     *
      * @deprecated Use {@link #getCheckedItemIds()} instead.
      */
     @Deprecated
@@ -4051,6 +4095,26 @@ public class ListView extends AbsListView {
         super.encodeProperties(encoder);
 
         encoder.addProperty("recycleOnMeasure", recycleOnMeasure());
+    }
+
+    /**
+     * This API is used for application to clear recycler and determine whether
+     * to scrap active views during next layout process. It should only be
+     * called by activities which doesn't re-create itself when orientation changes.
+     *
+     * @internal
+     * @hide
+     */
+    public void clearScrapViewsIfNeeded() {
+        if (IS_ENG_BUILD) {
+            Log.d(TAG, "clearScrapViewsIfNeeded: mRecycler = " + mRecycler
+                    + ",mAbandonActiveViews = "
+                    + mAbandonActiveViews + ",this = " + this);
+        }
+        mRecycler.clear();
+        mAbandonActiveViews = true;
+        /// M: [ALPS01446118] force to relayout again
+        requestLayout();
     }
 
     /** @hide */

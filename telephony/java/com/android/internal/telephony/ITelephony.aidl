@@ -36,7 +36,6 @@ import com.android.internal.telephony.OperatorInfo;
 
 import java.util.List;
 
-
 /**
  * Interface used to interact with the phone.  Mostly this is used by the
  * TelephonyManager class.  A few places are still using this directly.
@@ -369,8 +368,25 @@ interface ITelephony {
      */
      int getCallStateForSlot(int slotId);
 
+    /**
+     * Returns the data activity.
+     */
      int getDataActivity();
+
+    /**
+     * Returns the data activity for a subId.
+     */
+     int getDataActivityForSubscriber(int subId);
+
+    /**
+     * Returns the data state.
+     */
      int getDataState();
+
+    /**
+     * Returns the data state for a subId.
+     */
+     int getDataStateForSubscriber(int subId);
 
     /**
      * Returns the current active phone type as integer.
@@ -597,7 +613,7 @@ interface ITelephony {
      *            is sent to the SIM.
      * @param data Data to be sent with the APDU.
      * @return The APDU response from the ICC card with the status appended at
-     *            the end.
+     *            the end. If an error occurs, an empty string is returned.
      */
     String iccTransmitApduLogicalChannel(int subId, int channel, int cla, int instruction,
             int p1, int p2, int p3, String data);
@@ -616,7 +632,7 @@ interface ITelephony {
      *            is sent to the SIM.
      * @param data Data to be sent with the APDU.
      * @return The APDU response from the ICC card with the status appended at
-     *            the end.
+     *            the end. If an error occurs, an empty string is returned.
      */
     String iccTransmitApduBasicChannel(int subId, int cla, int instruction,
             int p1, int p2, int p3, String data);
@@ -1091,6 +1107,17 @@ interface ITelephony {
      * Returns a list of packages that have carrier privileges.
      */
     List<String> getPackagesWithCarrierPrivileges();
+
+    // MTK-START
+    String getIccAtr(int subId);
+    byte[] iccExchangeSimIOEx(int subId, int fileID, int command,
+            int p1, int p2, int p3, String filePath, String data, String pin2);
+
+    byte[] loadEFTransparent(int slotId, int family, int fileID, String filePath);
+    List<String> loadEFLinearFixedAll(int slotId, int family, int fileID, String filePath);
+    // MTK-END
+
+    void setPolicyDataEnableForSubscriber(int subId, boolean enabled);
 
     /**
      * Return the application ID for the app type.

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2012 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -107,6 +112,36 @@ public class DctConstants {
     public static final int EVENT_PCO_DATA_RECEIVED = BASE + 45;
     public static final int EVENT_SET_CARRIER_DATA_ENABLED = BASE + 46;
 
+    /** M: start */
+    public static final int MTK_BASE = BASE + 500;
+    public static final int EVENT_DATA_ROAMING_CHANGED = MTK_BASE + 1;
+    public static final int EVENT_INIT_EMERGENCY_APN_SETTINGS = MTK_BASE + 2;
+    public static final int EVENT_APN_CHANGED_DONE = MTK_BASE + 3;
+    public static final int EVENT_SETUP_DATA_WHEN_LOADED = MTK_BASE + 4;
+    public static final int EVENT_FDN_CHANGED = MTK_BASE + 5;
+
+    // M: CC33 LTE.
+    public static final int EVENT_REMOVE_RESTRICT_EUTRAN = MTK_BASE + 6;
+    public static final int EVENT_RESET_PDP_DONE = MTK_BASE + 7;
+    // M: Reset Attach Apn
+    public static final int EVENT_RESET_ATTACH_APN = MTK_BASE + 8;
+    /* M: end */
+    // M: Send this event when DcTracker is creating, and all phones has been created
+    //    when handle this event. So we can do registration which need peer phone.
+    public static final int EVENT_POST_CREATE_PHONE = MTK_BASE + 9;
+    // M: [LTE][Low Power][UL traffic shaping] Start
+    public static final int EVENT_DEFAULT_APN_REFERENCE_COUNT_CHANGED = MTK_BASE + 10;
+    public static final int EVENT_LTE_ACCESS_STRATUM_STATE = MTK_BASE +11;
+    // M: [LTE][Low Power][UL traffic shaping] End
+
+    // M: DOCOMO IA
+    public static final int EVENT_REG_PLMN_CHANGED = MTK_BASE + 12;
+    public static final int EVENT_REG_SUSPENDED = MTK_BASE + 13;
+    public static final int EVENT_SET_RESUME = MTK_BASE + 14;
+
+    // M: IA- change attach APN
+    public static final int EVENT_ATTACH_APN_CHANGED = MTK_BASE + 15;
+
     /***** Constants *****/
 
     public static final int APN_INVALID_ID = -1;
@@ -120,7 +155,19 @@ public class DctConstants {
     public static final int APN_CBS_ID = 7;
     public static final int APN_IA_ID = 8;
     public static final int APN_EMERGENCY_ID = 9;
-    public static final int APN_NUM_TYPES = 10;
+
+    /** M: start */
+    public static final int APN_DM_ID = 10;
+    public static final int APN_WAP_ID = 11;
+    public static final int APN_NET_ID = 12;
+    public static final int APN_CMMAIL_ID = 13;
+    public static final int APN_RCSE_ID = 14;
+    public static final int APN_XCAP_ID = 15;
+    public static final int APN_RCS_ID = 16;
+    public static final int APN_BIP_ID = 17;
+    /** M: end */
+
+    public static final int APN_NUM_TYPES = APN_BIP_ID + 1;
 
     public static final int INVALID = -1;
     public static final int DISABLED = 0;

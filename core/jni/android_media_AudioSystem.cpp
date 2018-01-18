@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
 **
 ** Copyright 2006, The Android Open Source Project
 **
@@ -20,7 +25,12 @@
 #define LOG_TAG "AudioSystem-JNI"
 #include <utils/Log.h>
 
+#include <stdio.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <math.h>
 #include <sstream>
+
 #include <jni.h>
 #include <JNIHelp.h>
 #include "core_jni_helpers.h"
@@ -436,23 +446,46 @@ android_media_AudioSystem_recording_callback(int event, audio_session_t session,
 static jint
 android_media_AudioSystem_setDeviceConnectionState(JNIEnv *env, jobject thiz, jint device, jint state, jstring device_address, jstring device_name)
 {
-    const char *c_address = env->GetStringUTFChars(device_address, NULL);
-    const char *c_name = env->GetStringUTFChars(device_name, NULL);
+    /// M: ALPS02342362: Add null pointer check for CheckJNI of art VM @{
+    const char *c_address = NULL;
+    const char *c_name = NULL;
+    if (NULL != device_address) {
+        c_address = env->GetStringUTFChars(device_address, NULL);
+    }
+    if (NULL != device_name) {
+        c_name = env->GetStringUTFChars(device_name, NULL);
+    }
+    /// @}
     int status = check_AudioSystem_Command(AudioSystem::setDeviceConnectionState(static_cast <audio_devices_t>(device),
                                           static_cast <audio_policy_dev_state_t>(state),
                                           c_address, c_name));
-    env->ReleaseStringUTFChars(device_address, c_address);
-    env->ReleaseStringUTFChars(device_name, c_name);
+    /// M: ALPS02444366: Add null pointer check for CheckJNI of art VM @{
+    if (NULL != device_address) {
+        env->ReleaseStringUTFChars(device_address, c_address);
+    }
+    if (NULL != device_name) {
+        env->ReleaseStringUTFChars(device_name, c_name);
+    }
+    /// @}
     return (jint) status;
 }
 
 static jint
 android_media_AudioSystem_getDeviceConnectionState(JNIEnv *env, jobject thiz, jint device, jstring device_address)
 {
-    const char *c_address = env->GetStringUTFChars(device_address, NULL);
+    /// M: ALPS02342362: Add null pointer check for CheckJNI of art VM @{
+    const char *c_address = NULL;
+    if (NULL != device_address) {
+        c_address = env->GetStringUTFChars(device_address, NULL);
+    }
+    /// @}
     int state = static_cast <int>(AudioSystem::getDeviceConnectionState(static_cast <audio_devices_t>(device),
                                           c_address));
-    env->ReleaseStringUTFChars(device_address, c_address);
+    /// M: ALPS02444366: Add null pointer check for CheckJNI of art VM @{
+    if (NULL != device_address) {
+        env->ReleaseStringUTFChars(device_address, c_address);
+    }
+    /// @}
     return (jint) state;
 }
 
@@ -1163,6 +1196,7 @@ android_media_AudioSystem_listAudioPorts(JNIEnv *env, jobject clazz,
     unsigned int generation1;
     unsigned int generation;
     unsigned int numPorts;
+    unsigned int AllocateMemnumPorts;//MTK_AUDIO
     jint *nGeneration;
     struct audio_port *nPorts = NULL;
     int attempts = MAX_PORT_GENERATION_SYNC_ATTEMPTS;
@@ -1190,7 +1224,7 @@ android_media_AudioSystem_listAudioPorts(JNIEnv *env, jobject clazz,
             goto exit;
         }
         nPorts = (struct audio_port *)realloc(nPorts, numPorts * sizeof(struct audio_port));
-
+        AllocateMemnumPorts = numPorts;
         status = AudioSystem::listAudioPorts(AUDIO_PORT_ROLE_NONE,
                                              AUDIO_PORT_TYPE_NONE,
                                                       &numPorts,
@@ -1198,7 +1232,7 @@ android_media_AudioSystem_listAudioPorts(JNIEnv *env, jobject clazz,
                                                       &generation);
         ALOGV("listAudioPorts AudioSystem::listAudioPorts numPorts %d generation %d generation1 %d",
               numPorts, generation, generation1);
-    } while (generation1 != generation && status == NO_ERROR);
+    } while ((generation1 != generation || numPorts != AllocateMemnumPorts) && status == NO_ERROR);
 
     jStatus = nativeToJavaStatus(status);
     if (jStatus != AUDIO_JAVA_SUCCESS) {
@@ -1389,6 +1423,7 @@ android_media_AudioSystem_listAudioPatches(JNIEnv *env, jobject clazz,
     unsigned int generation1;
     unsigned int generation;
     unsigned int numPatches;
+    unsigned int AllocateMemnumPatches;//MTK_AUDIO
     jint *nGeneration;
     struct audio_patch *nPatches = NULL;
     jobjectArray jSources = NULL;
@@ -1421,14 +1456,14 @@ android_media_AudioSystem_listAudioPatches(JNIEnv *env, jobject clazz,
         }
 
         nPatches = (struct audio_patch *)realloc(nPatches, numPatches * sizeof(struct audio_patch));
-
+        AllocateMemnumPatches = numPatches;
         status = AudioSystem::listAudioPatches(&numPatches,
                                                nPatches,
                                                &generation);
         ALOGV("listAudioPatches AudioSystem::listAudioPatches numPatches %d generation %d generation1 %d",
               numPatches, generation, generation1);
 
-    } while (generation1 != generation && status == NO_ERROR);
+    } while ((generation1 != generation || numPatches != AllocateMemnumPatches) && status == NO_ERROR);
 
     jStatus = nativeToJavaStatus(status);
     if (jStatus != AUDIO_JAVA_SUCCESS) {
@@ -1742,7 +1777,6 @@ android_media_AudioSystem_systemReady(JNIEnv *env, jobject thiz)
 {
     return nativeToJavaStatus(AudioSystem::systemReady());
 }
-
 
 // ----------------------------------------------------------------------------
 

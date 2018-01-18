@@ -51,6 +51,7 @@ import android.os.ServiceManager;
 import android.os.StrictMode;
 import android.service.voice.IVoiceInteractionSession;
 import android.text.TextUtils;
+import android.util.ArrayMap;
 import android.util.Log;
 import android.util.Singleton;
 import com.android.internal.app.IVoiceInteractor;
@@ -58,6 +59,7 @@ import com.android.internal.os.IResultReceiver;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /** {@hide} */
 public abstract class ActivityManagerNative extends Binder implements IActivityManager
@@ -2301,6 +2303,17 @@ public abstract class ActivityManagerNative extends Binder implements IActivityM
             return true;
         }
 
+        /// M: Add for getting swap memory usage @{
+        case GET_PROCESS_PSWAP_TRANSACTION: {
+            data.enforceInterface(IActivityManager.descriptor);
+            int[] pids = data.createIntArray();
+            long[] pss = getProcessPswap(pids);
+            reply.writeNoException();
+            reply.writeLongArray(pss);
+            return true;
+        }
+        /// @}
+
         case SHOW_BOOT_MESSAGE_TRANSACTION: {
             data.enforceInterface(IActivityManager.descriptor);
             CharSequence msg = TextUtils.CHAR_SEQUENCE_CREATOR.createFromParcel(data);
@@ -3025,6 +3038,123 @@ public abstract class ActivityManagerNative extends Binder implements IActivityM
             reply.writeInt(result ? 1 : 0);
             return true;
         }
+
+        /// M: Start of Mediatek transactions
+        /// M: IPO feature @{
+        case FORCE_KILL_PACKAGE_TRANSACTION: {
+            data.enforceInterface(IActivityManager.descriptor);
+            String packageName = data.readString();
+            int userId = data.readInt();
+            String reason = data.readString();
+            forceKillPackage(packageName, userId, reason);
+            reply.writeNoException();
+            return true;
+        }
+        /// M: IPO feature @}
+
+        /// M: Wallpaper Slim @{
+        case SET_WALLPAPER_PROCESS: {
+            data.enforceInterface(IActivityManager.descriptor);
+            ComponentName className = ComponentName.readFromParcel(data);
+            setWallpaperProcess(className);
+            reply.writeNoException();
+            return true;
+        }
+        case UPDATE_WALLPAPER_STATE: {
+            data.enforceInterface(IActivityManager.descriptor);
+            boolean isForeground = data.readInt() != 0;
+            updateWallpaperState(isForeground);
+            reply.writeNoException();
+            return true;
+        }
+        /// M: Wallpaper Slim @}
+
+        /// M: BMW @{
+        case SET_STICK_WINDOW_TRANSACTION: {
+            data.enforceInterface(IActivityManager.descriptor);
+            IBinder token = data.readStrongBinder();
+            boolean isSticky = data.readInt() != 0;
+            stickWindow(token, isSticky);
+            reply.writeNoException();
+            return true;
+        }
+        case GET_STICKY_WINDOW_TRANSACTION: {
+            data.enforceInterface(IActivityManager.descriptor);
+            IBinder token = data.readStrongBinder();
+            boolean isSticky = isStickyByMtk(token);
+            reply.writeNoException();
+            reply.writeInt(isSticky ? 1 : 0);
+            return true;
+        }
+        case RESTORE_WINDOW_TRANSACTION: {
+            data.enforceInterface(IActivityManager.descriptor);
+            restoreWindow();
+            reply.writeNoException();
+            return true;
+        }
+        /// M: BMW @}
+
+        /// M: Running booster @{
+        case GET_INFO_PACKAGE_LIST_FROM_PID_TRANSACTION: {
+            data.enforceInterface(IActivityManager.descriptor);
+            int pid = data.readInt();
+            String[] result = getPackageListFromPid(pid);
+            reply.writeNoException();
+            reply.writeStringArray(result);
+            return true;
+        }
+        case GET_INFO_PROCESSES_WITH_ADJ_TRANSACTION: {
+            data.enforceInterface(IActivityManager.descriptor);
+            ArrayMap<Integer, ArrayList<Integer>> result = getProcessesWithAdj();
+            reply.writeNoException();
+            int size = result.size();
+            reply.writeInt(size);
+            for (Map.Entry<Integer, ArrayList<Integer>> e : result.entrySet()) {
+                reply.writeInt(e.getKey().intValue());
+                ArrayList<Integer> entryList = e.getValue();
+                int listSize = entryList.size();
+                reply.writeInt(listSize);
+                for (int j = 0; j < listSize; j++) {
+                    reply.writeInt(entryList.get(j).intValue());
+                }
+            }
+            return true;
+        }
+        /// M: Running booster @}
+
+        /// M : [process suppression] @{
+        case READY_TO_GET_CONTENT_PROVIDER_TRANSACTION: {
+            data.enforceInterface(IActivityManager.descriptor);
+            IBinder b = data.readStrongBinder();
+            IApplicationThread app = ApplicationThreadNative.asInterface(b);
+            String name = data.readString();
+            int userId = data.readInt();
+            int result = readyToGetContentProvider(app, name, userId);
+            reply.writeNoException();
+            reply.writeInt(result);
+            return true;
+        }
+        /// M : [process suppression] @}
+
+        /// M: App-based AAL @{
+        case AAL_SET_AAL_MODE: {
+            data.enforceInterface(IActivityManager.descriptor);
+            final int mode = data.readInt();
+            setAalMode(mode);
+            reply.writeNoException();
+            return true;
+        }
+
+        case AAL_SET_AAL_ENABLED: {
+            data.enforceInterface(IActivityManager.descriptor);
+            boolean enabled = data.readInt() != 0;
+            setAalEnabled(enabled);
+            reply.writeNoException();
+            return true;
+        }
+        /// M: App-based AAL @}
+
+        /// M: End of Mediatek transactions
         }
 
         return super.onTransact(code, data, reply, flags);
@@ -5993,6 +6123,21 @@ class ActivityManagerProxy implements IActivityManager
         return res;
     }
 
+    /// M: Add for getting swap memory usage @{
+    public long[] getProcessPswap(int[] pids) throws RemoteException {
+        Parcel data = Parcel.obtain();
+        Parcel reply = Parcel.obtain();
+        data.writeInterfaceToken(IActivityManager.descriptor);
+        data.writeIntArray(pids);
+        mRemote.transact(GET_PROCESS_PSWAP_TRANSACTION, data, reply, 0);
+        reply.readException();
+        long[] res = reply.createLongArray();
+        data.recycle();
+        reply.recycle();
+        return res;
+    }
+    /// @}
+
     public void showBootMessage(CharSequence msg, boolean always) throws RemoteException {
         Parcel data = Parcel.obtain();
         Parcel reply = Parcel.obtain();
@@ -7099,6 +7244,7 @@ class ActivityManagerProxy implements IActivityManager
         reply.recycle();
         return;
     }
+
     @Override
     public boolean canBypassWorkChallenge(PendingIntent intent)
             throws RemoteException {
@@ -7113,6 +7259,177 @@ class ActivityManagerProxy implements IActivityManager
         reply.recycle();
         return result != 0;
     }
+
+    /// M: Mediatek added APIs start
+    /// M: IPO feature @{
+    public void forceKillPackage(String packageName, int userId, String reason)
+            throws RemoteException {
+        Parcel data = Parcel.obtain();
+        Parcel reply = Parcel.obtain();
+        data.writeInterfaceToken(IActivityManager.descriptor);
+        data.writeString(packageName);
+        data.writeInt(userId);
+        data.writeString(reason);
+        mRemote.transact(FORCE_KILL_PACKAGE_TRANSACTION, data, reply, 0);
+        reply.readException();
+        data.recycle();
+        reply.recycle();
+    }
+    /// M: IPO feature @}
+
+    /// M: Wallpaper Slim @{
+    public void setWallpaperProcess(ComponentName className) throws RemoteException {
+        Parcel data = Parcel.obtain();
+        Parcel reply = Parcel.obtain();
+        data.writeInterfaceToken(IActivityManager.descriptor);
+        ComponentName.writeToParcel(className, data);
+        mRemote.transact(SET_WALLPAPER_PROCESS, data, reply, 0);
+        reply.readException();
+        data.recycle();
+        reply.recycle();
+    }
+
+    public void updateWallpaperState(boolean isForeground) throws RemoteException {
+        Parcel data = Parcel.obtain();
+        Parcel reply = Parcel.obtain();
+        data.writeInterfaceToken(IActivityManager.descriptor);
+        data.writeInt(isForeground ? 1 : 0);
+        mRemote.transact(UPDATE_WALLPAPER_STATE, data, reply, 0);
+        reply.readException();
+        data.recycle();
+        reply.recycle();
+    }
+    /// M: Wallpaper Slim @}
+
+    /// M: BMW @{
+    @Override
+    public void stickWindow(IBinder token, boolean isSticky) throws RemoteException {
+        Parcel data = Parcel.obtain();
+        Parcel reply = Parcel.obtain();
+        data.writeInterfaceToken(IActivityManager.descriptor);
+        data.writeStrongBinder(token);
+        data.writeInt(isSticky ? 1 : 0);
+        mRemote.transact(SET_STICK_WINDOW_TRANSACTION, data, reply, 0);
+        reply.readException();
+        data.recycle();
+        reply.recycle();
+    }
+
+    @Override
+    public boolean isStickyByMtk(IBinder token) throws RemoteException {
+        Parcel data = Parcel.obtain();
+        Parcel reply = Parcel.obtain();
+        data.writeInterfaceToken(IActivityManager.descriptor);
+        data.writeStrongBinder(token);
+        mRemote.transact(GET_STICKY_WINDOW_TRANSACTION, data, reply, 0);
+        reply.readException();
+        boolean isSticky = reply.readInt() != 0;
+        data.recycle();
+        reply.recycle();
+        return isSticky;
+    }
+
+    public void restoreWindow() throws RemoteException {
+        Parcel data = Parcel.obtain();
+        Parcel reply = Parcel.obtain();
+        data.writeInterfaceToken(IActivityManager.descriptor);
+        mRemote.transact(RESTORE_WINDOW_TRANSACTION, data, reply, 0);
+        reply.readException();
+        data.recycle();
+        reply.recycle();
+    }
+    /// M: BMW @}
+
+    /// M: Running booster @{
+    public String[] getPackageListFromPid(int pid) throws RemoteException {
+        Parcel data = Parcel.obtain();
+        Parcel reply = Parcel.obtain();
+        data.writeInterfaceToken(IActivityManager.descriptor);
+        data.writeInt(pid);
+        mRemote.transact(GET_INFO_PACKAGE_LIST_FROM_PID_TRANSACTION, data, reply, 0);
+        reply.readException();
+        String[] result = reply.readStringArray();
+        data.recycle();
+        reply.recycle();
+        return result;
+    }
+
+    public ArrayMap<Integer, ArrayList<Integer>> getProcessesWithAdj() throws RemoteException {
+        Parcel data = Parcel.obtain();
+        Parcel reply = Parcel.obtain();
+        data.writeInterfaceToken(IActivityManager.descriptor);
+        mRemote.transact(GET_INFO_PROCESSES_WITH_ADJ_TRANSACTION, data, reply, 0);
+        reply.readException();
+        ArrayMap<Integer, ArrayList<Integer>> result = null;
+        int size = reply.readInt();
+        if (size > 0) {
+            result = new ArrayMap<Integer, ArrayList<Integer>>();
+            for (int i = 0; i < size; i++) {
+                int key = reply.readInt();
+                int listSize = reply.readInt();
+                ArrayList<Integer> entryList = null;
+                if (listSize > 0) {
+                    entryList = new ArrayList<Integer>();
+                    for (int j = 0; j < listSize; j++) {
+                        int value = reply.readInt();
+                        entryList.add(Integer.valueOf(value));
+                    }
+                }
+                result.put(Integer.valueOf(key), entryList);
+            }
+        }
+        data.recycle();
+        reply.recycle();
+        return result;
+    }
+    /// M: Running booster @}
+
+    /// M : [process suppression] @{
+    public int readyToGetContentProvider(IApplicationThread caller,
+            String name, int userId) throws RemoteException {
+        Parcel data = Parcel.obtain();
+        Parcel reply = Parcel.obtain();
+        data.writeInterfaceToken(IActivityManager.descriptor);
+        data.writeStrongBinder(caller != null ? caller.asBinder() : null);
+        data.writeString(name);
+        data.writeInt(userId);
+        mRemote.transact(READY_TO_GET_CONTENT_PROVIDER_TRANSACTION, data, reply, 0);
+        reply.readException();
+        int result = reply.readInt();
+        data.recycle();
+        reply.recycle();
+
+        return result;
+    }
+    /// M : [process suppression] @}
+
+    /// M: App-based AAL @{
+    @Override
+    public void setAalMode(int mode) throws RemoteException {
+        Parcel data = Parcel.obtain();
+        Parcel reply = Parcel.obtain();
+        data.writeInterfaceToken(IActivityManager.descriptor);
+        data.writeInt(mode);
+        mRemote.transact(AAL_SET_AAL_MODE, data, reply, 0);
+        reply.readException();
+        data.recycle();
+        reply.recycle();
+    }
+
+    @Override
+    public void setAalEnabled(boolean enabled) throws RemoteException {
+        Parcel data = Parcel.obtain();
+        Parcel reply = Parcel.obtain();
+        data.writeInterfaceToken(IActivityManager.descriptor);
+        data.writeInt(enabled ? 1 : 0);
+        mRemote.transact(AAL_SET_AAL_ENABLED, data, reply, 0);
+        reply.readException();
+        data.recycle();
+        reply.recycle();
+    }
+    /// M: App-based AAL @}
+
+    /// M: Mediatek added APIs end
 
     private IBinder mRemote;
 }

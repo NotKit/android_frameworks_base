@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,6 +23,7 @@ package android.net.wifi;
 
 import android.os.Parcelable;
 import android.os.Parcel;
+
 
 /**
  * A class representing Wi-Fi Protected Setup
@@ -46,10 +52,44 @@ public class WpsInfo implements Parcelable {
     /** Passed with pin method configuration */
     public String pin;
 
+    /** M: NFC Float II @{ */
+    /** @hide */
+   /**
+     * WPS/P2P NFC WPS regsitrar parameter
+     * @hide
+     * @internal
+     */
+    public String ssid;
+    /**
+     * WPS/P2P NFC WPS regsitrar parameter
+     * @hide
+     * @internal
+     */
+    public String authentication;
+    /**
+     * WPS/P2P NFC WPS regsitrar parameter
+     * @hide
+     * @internal
+     */
+    public String encryption;
+    /**
+     * WPS/P2P NFC WPS regsitrar parameter
+     * @hide
+     * @internal
+     */
+    public String key;
+    /** @} */
+
     public WpsInfo() {
         setup = INVALID;
         BSSID = null;
         pin = null;
+        /** M: NFC Float II @{ */
+        ssid = null;
+        authentication = null;
+        encryption = null;
+        key = null;
+        /** @} */
     }
 
     public String toString() {
@@ -60,6 +100,16 @@ public class WpsInfo implements Parcelable {
         sbuf.append('\n');
         sbuf.append(" pin: ").append(pin);
         sbuf.append('\n');
+        /** M: NFC Float II @{ */
+        sbuf.append(" SSID: ").append(ssid);
+        sbuf.append('\n');
+        sbuf.append(" authentication: ").append(authentication);
+        sbuf.append('\n');
+        sbuf.append(" encryption: ").append(encryption);
+        sbuf.append('\n');
+        sbuf.append(" key: ").append(key);
+        sbuf.append('\n');
+        /** @} */
         return sbuf.toString();
     }
 
@@ -74,6 +124,12 @@ public class WpsInfo implements Parcelable {
             setup = source.setup;
             BSSID = source.BSSID;
             pin = source.pin;
+            /** M: NFC Float II @{ */
+            ssid = source.ssid;
+            authentication = source.authentication;
+            encryption = source.encryption;
+            key = source.key;
+            /** @} */
         }
     }
 
@@ -82,6 +138,12 @@ public class WpsInfo implements Parcelable {
         dest.writeInt(setup);
         dest.writeString(BSSID);
         dest.writeString(pin);
+        /** M: NFC Float II @{ */
+        dest.writeString(ssid);
+        dest.writeString(authentication);
+        dest.writeString(encryption);
+        dest.writeString(key);
+        /** @} */
     }
 
     /** Implement the Parcelable interface */
@@ -92,6 +154,12 @@ public class WpsInfo implements Parcelable {
                 config.setup = in.readInt();
                 config.BSSID = in.readString();
                 config.pin = in.readString();
+                /** M: NFC Float II @{ */
+                config.ssid = in.readString();
+                config.authentication = in.readString();
+                config.encryption = in.readString();
+                config.key = in.readString();
+                /** @} */
                 return config;
             }
 

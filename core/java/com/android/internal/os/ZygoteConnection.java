@@ -165,6 +165,15 @@ class ZygoteConnection {
         try {
             parsedArgs = new Arguments(args);
 
+            /// M: GMO Zygote64 on demand @{
+            if (parsedArgs.trySecondaryZygote) {
+                if (ZygoteInit.DEBUG_ZYGOTE_ON_DEMAND) {
+                    Log.d(TAG, "ZygoteOnDemand: runOnce() trySecondaryZygote");
+                }
+                return handleTrySecondaryZygote();
+            }
+            /// M: GMO Zygote64 on demand @}
+
             if (parsedArgs.abiListQuery) {
                 return handleAbiListQuery();
             }
@@ -269,6 +278,24 @@ class ZygoteConnection {
         }
     }
 
+    /// M: GMO Zygote64 on demand @{
+    private boolean handleTrySecondaryZygote() {
+        final boolean usingWrapper = ZygoteInit.sZygoteReady;
+        if (ZygoteInit.DEBUG_ZYGOTE_ON_DEMAND) {
+            Log.d(TAG, "ZygoteOnDemand: handleTrySecondaryZygote " + usingWrapper);
+        }
+        try {
+            mSocketOutStream.writeInt(0);
+            mSocketOutStream.writeBoolean(usingWrapper);
+        } catch (IOException ex) {
+            Log.e(TAG, "ZygoteOnDemand: Error writing to command socket", ex);
+            return true;
+        }
+
+        return false;
+    }
+    /// M: GMO Zygote64 on demand @}
+
     /**
      * Closes socket associated with this connection.
      */
@@ -372,6 +399,10 @@ class ZygoteConnection {
          * not be reliable in the case of process-sharing apps.
          */
         String appDataDir;
+
+        /// M: GMO Zygote64 on demand @{
+        boolean trySecondaryZygote;
+        /// M: GMO Zygote64 on demand @}
 
         /**
          * Constructs instance and parses args
@@ -531,6 +562,15 @@ class ZygoteConnection {
                     instructionSet = arg.substring(arg.indexOf('=') + 1);
                 } else if (arg.startsWith("--app-data-dir=")) {
                     appDataDir = arg.substring(arg.indexOf('=') + 1);
+                /// M: GMO Zygote64 on demand @{
+                } else if (arg.startsWith("--try-secondary-zygote")) {
+                    if (ZygoteInit.sZygoteOnDemandEnabled) {
+                        if (ZygoteInit.DEBUG_ZYGOTE_ON_DEMAND) {
+                            Log.d(TAG, "ZygoteOnDemand: parseArgs --try-secondary-zygote");
+                        }
+                        trySecondaryZygote = true;
+                    }
+                /// M: GMO Zygote64 on demand @}
                 } else {
                     break;
                 }
@@ -540,7 +580,7 @@ class ZygoteConnection {
                 if (args.length - curArg > 0) {
                     throw new IllegalArgumentException("Unexpected arguments after --query-abi-list.");
                 }
-            } else {
+            } else if (!trySecondaryZygote) { /// M: GMO Zygote64 on demand
                 if (!seenRuntimeArgs) {
                     throw new IllegalArgumentException("Unexpected argument : " + args[curArg]);
                 }

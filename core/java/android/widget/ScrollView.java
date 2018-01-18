@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -644,7 +649,7 @@ public class ScrollView extends FrameLayout {
             case MotionEvent.ACTION_MOVE:
                 final int activePointerIndex = ev.findPointerIndex(mActivePointerId);
                 if (activePointerIndex == -1) {
-                    Log.e(TAG, "Invalid pointerId=" + mActivePointerId + " in onTouchEvent");
+                    Log.e(TAG, "Invalid pointerId=" + mActivePointerId + " in onTouchEvent MOVE");
                     break;
                 }
 
@@ -747,7 +752,16 @@ public class ScrollView extends FrameLayout {
             }
             case MotionEvent.ACTION_POINTER_UP:
                 onSecondaryPointerUp(ev);
-                mLastMotionY = (int) ev.getY(ev.findPointerIndex(mActivePointerId));
+
+                /// M: [ALPS00812039] Invalid pointer handling
+                final int pointerIndex = ev.findPointerIndex(mActivePointerId);
+                if (pointerIndex == -1) {
+                    Log.e(TAG, "Invalid pointerId = " + mActivePointerId
+                            + " in onTouchEvent POINTER_UP");
+                    break;
+                }
+
+                mLastMotionY = (int) ev.getY(pointerIndex);
                 break;
         }
 
@@ -899,8 +913,11 @@ public class ScrollView extends FrameLayout {
         int scrollRange = 0;
         if (getChildCount() > 0) {
             View child = getChildAt(0);
+            /// M: Take account of margin
+            final MarginLayoutParams lp = (MarginLayoutParams) child.getLayoutParams();
             scrollRange = Math.max(0,
-                    child.getHeight() - (getHeight() - mPaddingBottom - mPaddingTop));
+                    child.getHeight() - (getHeight() - mPaddingBottom - mPaddingTop
+                            - lp.topMargin - lp.bottomMargin));
         }
         return scrollRange;
     }
@@ -1259,8 +1276,18 @@ public class ScrollView extends FrameLayout {
     }
 
     @Override
+    public boolean canScrollVertically(int direction) {
+        if (getHeight() <= 0) {
+            return false;
+        }
+
+        return super.canScrollVertically(direction);
+    }
+
+    @Override
     protected void measureChild(View child, int parentWidthMeasureSpec,
             int parentHeightMeasureSpec) {
+
         ViewGroup.LayoutParams lp = child.getLayoutParams();
 
         int childWidthMeasureSpec;
@@ -1875,6 +1902,22 @@ public class ScrollView extends FrameLayout {
                 return new SavedState[size];
             }
         };
+    }
+
+    /**
+     * M: add for Email to adjust view scroll effect
+     *
+     * The amount of friction applied to flings. The default value
+     * is {@link ViewConfiguration#getScrollFriction}.
+     *
+     * @param friction the amount of friction applied to flings
+     * @hide
+     */
+    public void setFriction(float friction) {
+        if (mScroller == null) {
+            mScroller = new OverScroller(getContext());
+        }
+        mScroller.setFriction(friction);
     }
 
 }

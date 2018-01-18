@@ -22,6 +22,11 @@ import android.util.SparseArray;
 
 import java.util.List;
 
+/// M: CTA requirement - Enhanced exception dialog by runtime permission @{
+import com.mediatek.am.AMEventHookData;
+import com.mediatek.am.AMEventHookResult;
+///@}
+
 /**
  * Package manager local system service interface.
  *
@@ -168,4 +173,14 @@ public abstract class PackageManagerInternal {
      * @return Whether was launched.
      */
     public abstract boolean wasPackageEverLaunched(String packageName, int userId);
+
+    /// M: CTA requirement - Enhanced exception dialog by runtime permission @{
+    /**
+     * Init MtkPermErrorDialog if app is crashed by runtime security exception.
+     *
+     * @param data required information for initializing MtkPermErrorDialog
+     * @param result The result action returned to AMS
+     */
+    public abstract void initMtkPermErrorDialog(AMEventHookData.BeforeShowAppErrorDialog data,
+            AMEventHookResult result);
 }

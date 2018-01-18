@@ -22,6 +22,8 @@ import android.os.Handler;
 import android.util.Log;
 import android.util.LongSparseArray;
 import android.util.Pair;
+import android.os.SystemProperties;
+
 
 import java.util.Iterator;
 import java.util.NoSuchElementException;
@@ -273,7 +275,6 @@ public abstract class SubtitleTrack implements MediaTimeProvider.OnMediaTimeList
         if (mVisible) {
             return;
         }
-
         mVisible = true;
         RenderingWidget renderingWidget = getRenderingWidget();
         if (renderingWidget != null) {
@@ -289,7 +290,6 @@ public abstract class SubtitleTrack implements MediaTimeProvider.OnMediaTimeList
         if (!mVisible) {
             return;
         }
-
         if (mTimeProvider != null) {
             mTimeProvider.cancelNotifications(this);
         }
@@ -301,24 +301,27 @@ public abstract class SubtitleTrack implements MediaTimeProvider.OnMediaTimeList
     }
 
     /** @hide */
-    protected synchronized boolean addCue(Cue cue) {
-        mCues.add(cue);
+    protected boolean addCue(Cue cue) {
+        ///M: acquire subtitleTrack lock to avoid dead lock when seek @{
+        synchronized (this) {
+            mCues.add(cue);
 
-        if (cue.mRunID != 0) {
-            Run run = mRunsByID.get(cue.mRunID);
-            if (run == null) {
-                run = new Run();
-                mRunsByID.put(cue.mRunID, run);
-                run.mEndTimeMs = cue.mEndTimeMs;
-            } else if (run.mEndTimeMs < cue.mEndTimeMs) {
-                run.mEndTimeMs = cue.mEndTimeMs;
+            if (cue.mRunID != 0) {
+                Run run = mRunsByID.get(cue.mRunID);
+                if (run == null) {
+                    run = new Run();
+                    mRunsByID.put(cue.mRunID, run);
+                    run.mEndTimeMs = cue.mEndTimeMs;
+                } else if (run.mEndTimeMs < cue.mEndTimeMs) {
+                    run.mEndTimeMs = cue.mEndTimeMs;
+                }
+
+                // link-up cues in the same run
+                cue.mNextInRun = run.mFirstCue;
+                run.mFirstCue = cue;
             }
-
-            // link-up cues in the same run
-            cue.mNextInRun = run.mFirstCue;
-            run.mFirstCue = cue;
         }
-
+        ///M @}
         // if a cue is added that should be visible, need to refresh view
         long nowMs = -1;
         if (mTimeProvider != null) {
@@ -333,46 +336,49 @@ public abstract class SubtitleTrack implements MediaTimeProvider.OnMediaTimeList
         if (DEBUG) Log.v(TAG, "mVisible=" + mVisible + ", " +
                 cue.mStartTimeMs + " <= " + nowMs + ", " +
                 cue.mEndTimeMs + " >= " + mLastTimeMs);
-
-        if (mVisible &&
-                cue.mStartTimeMs <= nowMs &&
-                // we don't trust nowMs, so check any cue since last callback
-                cue.mEndTimeMs >= mLastTimeMs) {
-            if (mRunnable != null) {
-                mHandler.removeCallbacks(mRunnable);
-            }
-            final SubtitleTrack track = this;
-            final long thenMs = nowMs;
-            mRunnable = new Runnable() {
-                @Override
-                public void run() {
-                    // even with synchronized, it is possible that we are going
-                    // to do multiple updates as the runnable could be already
-                    // running.
-                    synchronized (track) {
-                        mRunnable = null;
-                        updateActiveCues(true, thenMs);
-                        updateView(mActiveCues);
-                    }
+        ///M: acquire subtitleTrack lock to avoid dead lock when seek @{
+        synchronized (this) {
+            if (mVisible &&
+                    cue.mStartTimeMs <= nowMs &&
+                    // we don't trust nowMs, so check any cue since last callback
+                    cue.mEndTimeMs >= mLastTimeMs) {
+                if (mRunnable != null) {
+                    mHandler.removeCallbacks(mRunnable);
                 }
-            };
-            // delay update so we don't update view on every cue.  TODO why 10?
-            if (mHandler.postDelayed(mRunnable, 10 /* delay */)) {
-                if (DEBUG) Log.v(TAG, "scheduling update");
-            } else {
-                if (DEBUG) Log.w(TAG, "failed to schedule subtitle view update");
+                final SubtitleTrack track = this;
+                final long thenMs = nowMs;
+                mRunnable = new Runnable() {
+                    @Override
+                    public void run() {
+                        // even with synchronized, it is possible that we are going
+                        // to do multiple updates as the runnable could be already
+                        // running.
+                        synchronized (track) {
+                            mRunnable = null;
+                            updateActiveCues(true, thenMs);
+                            updateView(mActiveCues);
+                        }
+                    }
+                };
+                // delay update so we don't update view on every cue.  TODO why 10?
+                if (mHandler.postDelayed(mRunnable, 10 /* delay */)) {
+                    if (DEBUG) Log.v(TAG, "scheduling update");
+                } else {
+                    if (DEBUG) Log.w(TAG, "failed to schedule subtitle view update");
+                }
+                return true;
             }
-            return true;
-        }
 
-        if (mVisible &&
-                cue.mEndTimeMs >= mLastTimeMs &&
-                (cue.mStartTimeMs < mNextScheduledTimeMs ||
-                 mNextScheduledTimeMs < 0)) {
-            scheduleTimedEvents();
-        }
+            if (mVisible &&
+                    cue.mEndTimeMs >= mLastTimeMs &&
+                    (cue.mStartTimeMs < mNextScheduledTimeMs ||
+                    mNextScheduledTimeMs < 0)) {
+                scheduleTimedEvents();
+            }
 
-        return false;
+            return false;
+        }
+        ///M @}
     }
 
     /** @hide */

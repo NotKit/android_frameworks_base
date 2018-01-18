@@ -49,6 +49,7 @@ import android.util.Log;
 import android.util.Slog;
 import android.util.Xml;
 import com.android.internal.util.XmlUtils;
+import com.mediatek.cta.CtaUtils;
 import org.xmlpull.v1.XmlPullParser;
 import org.xmlpull.v1.XmlPullParserException;
 
@@ -57,7 +58,9 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Arrays;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -96,6 +99,11 @@ final class DefaultPermissionGrantPolicy {
         PHONE_PERMISSIONS.add(Manifest.permission.ADD_VOICEMAIL);
         PHONE_PERMISSIONS.add(Manifest.permission.USE_SIP);
         PHONE_PERMISSIONS.add(Manifest.permission.PROCESS_OUTGOING_CALLS);
+        /// M: CTA requirement - permission control  @{
+        if (CtaUtils.isCtaSupported()) {
+            PHONE_PERMISSIONS.add(com.mediatek.Manifest.permission.CTA_CONFERENCE_CALL);
+        }
+        ///@}
     }
 
     private static final Set<String> CONTACTS_PERMISSIONS = new ArraySet<>();
@@ -125,6 +133,11 @@ final class DefaultPermissionGrantPolicy {
         SMS_PERMISSIONS.add(Manifest.permission.RECEIVE_WAP_PUSH);
         SMS_PERMISSIONS.add(Manifest.permission.RECEIVE_MMS);
         SMS_PERMISSIONS.add(Manifest.permission.READ_CELL_BROADCASTS);
+        /// M: CTA requirement - permission control  @{
+        if (CtaUtils.isCtaSupported()) {
+            SMS_PERMISSIONS.add(com.mediatek.Manifest.permission.CTA_SEND_MMS);
+        }
+        ///@}
     }
 
     private static final Set<String> MICROPHONE_PERMISSIONS = new ArraySet<>();
@@ -206,6 +219,12 @@ final class DefaultPermissionGrantPolicy {
         grantPermissionsToSysComponentsAndPrivApps(userId);
         grantDefaultSystemHandlerPermissions(userId);
         grantDefaultPermissionExceptions(userId);
+
+        /// M: CTA requirement - permission control  @{
+        if (CtaUtils.isCtaSupported()) {
+            grantCtaPermToPreInstalledPackage(userId);
+        }
+        ///@}
     }
 
     public void scheduleReadDefaultPermissionExceptions() {
@@ -424,6 +443,13 @@ final class DefaultPermissionGrantPolicy {
                     && doesPackageSupportRuntimePermissions(calendarPackage)) {
                 grantRuntimePermissionsLPw(calendarPackage, CALENDAR_PERMISSIONS, userId);
                 grantRuntimePermissionsLPw(calendarPackage, CONTACTS_PERMISSIONS, userId);
+            }
+
+			PackageParser.Package calendarpackage = getSystemPackageLPr("com.android.calendar");
+            if (calendarpackage != null) {
+                grantRuntimePermissionsLPw(calendarpackage, CALENDAR_PERMISSIONS, userId);
+                grantRuntimePermissionsLPw(calendarpackage, CONTACTS_PERMISSIONS, userId);
+				grantRuntimePermissionsLPw(calendarpackage, STORAGE_PERMISSIONS, userId);
             }
 
             // Calendar provider
@@ -895,6 +921,13 @@ final class DefaultPermissionGrantPolicy {
 
             if (permissions.contains(permission)) {
                 final int flags = mService.getPermissionFlags(permission, pkg.packageName, userId);
+                /// M: Skip re-granting CTA permissions after MOTA
+                // For CTA permissions which have NOT been set by user and are marked
+                // as review required, we will force grant these permissions.
+                boolean forceGrantCtaPerm = CtaUtils.isCtaOnlyPermission(permission)
+                        && ((flags & PackageManager.FLAG_PERMISSION_REVIEW_REQUIRED) != 0)
+                        && ((flags & PackageManager.FLAG_PERMISSION_USER_SET) == 0);
+                ///@}
 
                 // If any flags are set to the permission, then it is either set in
                 // its current state by the system or device/profile owner or the user.
@@ -902,7 +935,13 @@ final class DefaultPermissionGrantPolicy {
                 // Unless the caller wants to override user choices. The override is
                 // to make sure we can grant the needed permission to the default
                 // sms and phone apps after the user chooses this in the UI.
-                if (flags == 0 || isDefaultPhoneOrSms) {
+                /// M: PreGrant CTA permissions to non-system pre-installed apps
+                /// M: [ALPS02979876] the app of force_show_list will have
+                ///    flag != 0 (with FLAG_PERMISSION_REVIEW_REQUIRED).
+                ///    We need also to grant its permission in this case.
+                if (flags == 0 || isDefaultPhoneOrSms || forceGrantCtaPerm
+                    || isNeedToGrantAppOfForceShowList(pkg.packageName, flags)
+                    ) {
                     // Never clobber policy or system.
                     final int fixedFlags = PackageManager.FLAG_PERMISSION_SYSTEM_FIXED
                             | PackageManager.FLAG_PERMISSION_POLICY_FIXED;
@@ -939,6 +978,41 @@ final class DefaultPermissionGrantPolicy {
                 }
             }
         }
+    }
+
+    private static HashSet<String> mForcePermReviewPkgs = null;
+    private boolean isListedInForceShow(String pkgName) {
+        if (mForcePermReviewPkgs == null) {
+            mForcePermReviewPkgs = new HashSet<String>(
+                    Arrays.asList(mService.mContext.getResources().getStringArray(
+                            com.mediatek.internal.R.array.force_review_pkgs)));
+        }
+
+        return mForcePermReviewPkgs.contains(pkgName);
+    }
+
+    private boolean isNeedToGrantAppOfForceShowList(final String pkg,
+        final int flags) {
+        if (!CtaUtils.isCtaSupported()) {
+            return false;
+        }
+
+        boolean isReviewNeeded =
+            (flags & PackageManager.FLAG_PERMISSION_REVIEW_REQUIRED) != 0;
+        boolean isNotUserSet =
+            (flags & PackageManager.FLAG_PERMISSION_USER_SET) == 0;
+        boolean isListed = isListedInForceShow(pkg);
+
+        if (DEBUG) {
+            Log.d(TAG, "isNeedToGrantAppOfForceShowList(pkg = "
+                + pkg + " flags = " + flags);
+            Log.d(TAG, "isNeedToGrantAppOfForceShowList("
+                + "isReviewNeeded = " + isReviewNeeded
+                + " isNotUserSet = " + isNotUserSet
+                + " isListed = " + isListed) ;
+        }
+
+        return isReviewNeeded && isNotUserSet && isListed;
     }
 
     private boolean isSysComponentOrPersistentPlatformSignedPrivAppLPr(PackageParser.Package pkg) {
@@ -1131,4 +1205,33 @@ final class DefaultPermissionGrantPolicy {
             this.fixed = fixed;
         }
     }
+
+    /// M: CTA requirement - permission control @{
+    public void grantCtaPermToPreInstalledPackage(int userId) {
+        Log.d(TAG, "grantCtaPermToPreInstalledPackage userId = " + userId);
+        synchronized (mService.mPackages) {
+            for (PackageParser.Package pkg : mService.mPackages.values()) {
+                if (!doesPackageSupportRuntimePermissions(pkg)
+                        || pkg.requestedPermissions.isEmpty()) {
+                    continue;
+                }
+                Set<String> permissions = new ArraySet<>();
+                final int permissionCount = pkg.requestedPermissions.size();
+                for (int i = 0; i < permissionCount; i++) {
+                    String permission = pkg.requestedPermissions.get(i);
+                    BasePermission bp = mService.mSettings.mPermissions.get(permission);
+                    if (bp != null && bp.isRuntime() && CtaUtils.isCtaOnlyPermission(bp.name)) {
+                        Log.d(TAG, "grantCtaPermToPreInstalledPackage grant " + permission +
+                                " to pre-installed package: " + pkg.packageName);
+                        permissions.add(permission);
+                    }
+                }
+                if (!permissions.isEmpty()) {
+                    grantRuntimePermissionsLPw(pkg, permissions,
+                            isSysComponentOrPersistentPlatformSignedPrivAppLPr(pkg), false, userId);
+                }
+            }
+        }
+    }
+    ///@}
 }

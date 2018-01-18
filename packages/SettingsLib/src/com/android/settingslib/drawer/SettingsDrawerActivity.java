@@ -102,6 +102,8 @@ public class SettingsDrawerActivity extends Activity {
             toolbar.setVisibility(View.GONE);
             mDrawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED);
             mDrawerLayout = null;
+            /// M: Add debug log
+            Log.d(TAG, "onCreate, set mode LOCKED_CLOSED!!!");
             return;
         }
         getDashboardCategories();
@@ -123,6 +125,9 @@ public class SettingsDrawerActivity extends Activity {
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
+        /// M: Add debug log
+        Log.d(TAG, "onOptionsItemSelected: showMenu=" + mShowingMenu + " homeId? "
+                + (item.getItemId() == android.R.id.home) + " count=" + mDrawerAdapter.getCount());
         if (mShowingMenu && mDrawerLayout != null && item.getItemId() == android.R.id.home
                 && mDrawerAdapter.getCount() != 0) {
             openDrawer();
@@ -207,11 +212,15 @@ public class SettingsDrawerActivity extends Activity {
             if (mDrawerLayout != null) {
                 mDrawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED);
                 mDrawerLayout = null;
+                /// M: Add debug log
+                Log.d(TAG, "setIsDrawerPresent, set mode LOCKED_CLOSED!!!");
             }
         }
     }
 
     public void openDrawer() {
+        /// M: Add debug log
+        Log.d(TAG, "openDrawer: mDrawerLayout is null? " + (mDrawerLayout != null));
         if (mDrawerLayout != null) {
             mDrawerLayout.openDrawer(Gravity.START);
         }
@@ -259,10 +268,14 @@ public class SettingsDrawerActivity extends Activity {
             mDrawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED);
         } else {
             mDrawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED);
+            /// M: Add debug log
+            Log.d(TAG, "updateDrawer, set mode LOCKED_CLOSED!!!");
         }
     }
 
     public void showMenuIcon() {
+        /// M: Add debug log
+        Log.d(TAG, "showMenuIcon");
         mShowingMenu = true;
         getActionBar().setHomeAsUpIndicator(R.drawable.ic_menu);
         getActionBar().setHomeActionContentDescription(R.string.content_description_menu_button);

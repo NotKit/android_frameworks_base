@@ -260,8 +260,32 @@ public final class WebViewFactory {
             WebViewProviderResponse response = null;
             Trace.traceBegin(Trace.TRACE_TAG_WEBVIEW,
                     "WebViewUpdateService.waitForAndGetProvider()");
+            /// M: Browser will try MTK WebView if exist @{
             try {
+                String callPackage = initialApplication.getPackageName();
+                if (callPackage.equalsIgnoreCase("com.android.browser")) {
+                    String wpackageName = "com.mediatek.webview";
+                    PackageInfo packageInfo =
+                        initialApplication.getPackageManager().getPackageInfo(
+                        wpackageName, PackageManager.GET_SHARED_LIBRARY_FILES
+                        | PackageManager.MATCH_DEBUG_TRIAGED_MISSING
+                        // Make sure that we fetch the current provider even if its not
+                        // installed for the current user
+                        | PackageManager.MATCH_UNINSTALLED_PACKAGES
+                        // Fetch signatures for verification
+                        | PackageManager.GET_SIGNATURES
+                        // Get meta-data for meta data flag verification
+                        | PackageManager.GET_META_DATA);
+                        response = new WebViewProviderResponse(
+                              packageInfo, WebViewFactory.LIBLOAD_SUCCESS);
+
+                } else {
+                    response = getUpdateService().waitForAndGetProvider();
+                }
+            } catch (PackageManager.NameNotFoundException e) {
+                Log.e(LOGTAG, "Couldn't find MTK WebView package for Browser");
                 response = getUpdateService().waitForAndGetProvider();
+            /// @}
             } finally {
                 Trace.traceEnd(Trace.TRACE_TAG_WEBVIEW);
             }

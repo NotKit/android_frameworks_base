@@ -626,6 +626,11 @@ public class TaskStackAnimationHelper {
             }
 
             int taskIndex = stackTasks.indexOf(task);
+            /// M: Avoid JE when taskIndex is -1 @{
+            if (taskIndex == -1) {
+                continue;
+            }
+            // /@}
             TaskViewTransform fromTransform = mTmpCurrentTaskTransforms.get(taskIndex);
             TaskViewTransform toTransform = mTmpFinalTaskTransforms.get(taskIndex);
 

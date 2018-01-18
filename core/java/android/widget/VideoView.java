@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -434,40 +439,50 @@ public class VideoView extends SurfaceView
             if (mMediaController != null) {
                 mMediaController.setEnabled(true);
             }
-            mVideoWidth = mp.getVideoWidth();
-            mVideoHeight = mp.getVideoHeight();
+            /// M: work around for ALPS01306192 which is caused by operations
+            /// in the same main thread strangely @{
+            try {
+                mVideoWidth = mp.getVideoWidth();
+                mVideoHeight = mp.getVideoHeight();
 
-            int seekToPosition = mSeekWhenPrepared;  // mSeekWhenPrepared may be changed after seekTo() call
-            if (seekToPosition != 0) {
-                seekTo(seekToPosition);
-            }
-            if (mVideoWidth != 0 && mVideoHeight != 0) {
-                //Log.i("@@@@", "video size: " + mVideoWidth +"/"+ mVideoHeight);
-                getHolder().setFixedSize(mVideoWidth, mVideoHeight);
-                if (mSurfaceWidth == mVideoWidth && mSurfaceHeight == mVideoHeight) {
-                    // We didn't actually change the size (it was already at the size
-                    // we need), so we won't get a "surface changed" callback, so
-                    // start the video here instead of in the callback.
+                // mSeekWhenPrepared may be changed after seekTo() call
+                int seekToPosition = mSeekWhenPrepared;
+                if (seekToPosition != 0) {
+                    seekTo(seekToPosition);
+                }
+                if (mVideoWidth != 0 && mVideoHeight != 0) {
+                    //Log.i("@@@@", "video size: " + mVideoWidth +"/"+ mVideoHeight);
+                    getHolder().setFixedSize(mVideoWidth, mVideoHeight);
+                    if (mSurfaceWidth == mVideoWidth && mSurfaceHeight == mVideoHeight) {
+                        // We didn't actually change the size (it was already at the size
+                        // we need), so we won't get a "surface changed" callback, so
+                        // start the video here instead of in the callback.
+                        if (mTargetState == STATE_PLAYING) {
+                            start();
+                            if (mMediaController != null) {
+                                mMediaController.show();
+                            }
+                        } else if (!isPlaying() &&
+                                   (seekToPosition != 0 || getCurrentPosition() > 0)) {
+                           if (mMediaController != null) {
+                               // Show the media controls when we're paused into
+                               // a video and make 'em stick.
+                               mMediaController.show(0);
+                           }
+                       }
+                    }
+                } else {
+                    // We don't know the video size yet, but should start anyway.
+                    // The video size might be reported to us later.
                     if (mTargetState == STATE_PLAYING) {
                         start();
-                        if (mMediaController != null) {
-                            mMediaController.show();
-                        }
-                    } else if (!isPlaying() &&
-                               (seekToPosition != 0 || getCurrentPosition() > 0)) {
-                       if (mMediaController != null) {
-                           // Show the media controls when we're paused into a video and make 'em stick.
-                           mMediaController.show(0);
-                       }
-                   }
+                    }
                 }
-            } else {
-                // We don't know the video size yet, but should start anyway.
-                // The video size might be reported to us later.
-                if (mTargetState == STATE_PLAYING) {
-                    start();
-                }
+            } catch (IllegalStateException e) {
+                Log.e(TAG, "onPrepared IllegalStateException");
+                e.printStackTrace();
             }
+            /// @}
         }
     };
 

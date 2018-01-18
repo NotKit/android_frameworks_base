@@ -78,6 +78,15 @@ public class TrafficStats {
      */
     public static final int UID_TETHERING = -5;
 
+    // M:DataUsage for ViLTE
+    /**
+     * Special UID value used when collecting {@link NetworkStatsHistory} for
+     * Vilte on mobile.
+     *
+     * @hide
+     */
+    public static final int UID_VILTE = -6;
+
     /**
      * Default tag value for {@link DownloadManager} traffic.
      *
@@ -107,6 +116,21 @@ public class TrafficStats {
      * @hide
      */
     public static final int TAG_SYSTEM_RESTORE = 0xFFFFFF04;
+
+    // M:DataUsage for ViLTE
+    /**
+     * Default tag value for Vilte traffic.
+     *
+     * @hide
+     */
+    public static final int TAG_VILTE_MOBILE = 0xFFFFFF05;
+
+    /**
+     * Default tag value for Vilte traffic.
+     *
+     * @hide
+     */
+    public static final int TAG_VILTE_WIFI = 0xFFFFFF06;
 
     private static INetworkStatsService sStatsService;
 

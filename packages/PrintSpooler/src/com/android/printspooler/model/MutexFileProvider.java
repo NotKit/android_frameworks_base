@@ -55,10 +55,17 @@ public final class MutexFileProvider {
             file.delete();
         }
         file.createNewFile();
+        ///M: Initialize the variable. @{
+        mOwnerThread = null;
+        ///M: @}
     }
 
     public File acquireFile(OnReleaseRequestCallback callback) {
         synchronized (mLock) {
+            if (DEBUG) {
+                Log.i(LOG_TAG, "[Enter]Acquired file: " + mFile + " by thread: " + mOwnerThread
+                                        + " current thread is: " + Thread.currentThread());
+            }
             // If this thread has the file, nothing to do.
             if (mOwnerThread == Thread.currentThread()) {
                 return mFile;

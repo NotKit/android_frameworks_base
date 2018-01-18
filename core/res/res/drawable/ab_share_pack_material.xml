@@ -14,6 +14,6 @@
      limitations under the License.
 -->
 
-<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
+<nine-patch xmlns:android="http://schemas.android.com/apk/res/android"
     android:src="@drawable/ab_share_pack_mtrl_alpha"
     android:tint="?attr/colorControlNormal" />

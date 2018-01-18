@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,9 +22,13 @@
 package com.android.server.statusbar;
 
 import android.app.StatusBarManager;
+import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.content.res.Resources;
 import android.graphics.Rect;
 import android.os.Binder;
 import android.os.Bundle;
@@ -28,6 +37,7 @@ import android.os.IBinder;
 import android.os.Process;
 import android.os.RemoteException;
 import android.os.ResultReceiver;
+import android.os.ServiceManager;
 import android.os.UserHandle;
 import android.text.TextUtils;
 import android.util.ArrayMap;
@@ -42,6 +52,8 @@ import com.android.internal.util.FastPrintWriter;
 import com.android.server.LocalServices;
 import com.android.server.notification.NotificationDelegate;
 import com.android.server.wm.WindowManagerService;
+
+import com.mediatek.common.dm.DmAgent; /// M: DM Lock Feature.
 
 import java.io.FileDescriptor;
 import java.io.FileOutputStream;
@@ -108,6 +120,9 @@ public class StatusBarManagerService extends IStatusBarService.Stub {
         mWindowManager = windowManager;
 
         LocalServices.addService(StatusBarManagerInternal.class, mInternalService);
+
+        /// M: DM Lock Feature.
+        registerDMLock();
     }
 
     /**
@@ -489,6 +504,8 @@ public class StatusBarManagerService extends IStatusBarService.Stub {
                 });
             if (mBar != null) {
                 try {
+                    /// M:[ALPS01673960] Fix User cannot drag down the notification bar.
+                    Slog.d(TAG, "disable statusbar calling PID = " + Binder.getCallingPid());
                     mBar.disable(net1, net2);
                 } catch (RemoteException ex) {
                 }
@@ -959,4 +976,54 @@ public class StatusBarManagerService extends IStatusBarService.Stub {
             }
         }
     }
+    
+    /// M: DM Lock Feature. @{
+    IBinder mDMToken = new Binder();
+    private void registerDMLock() {
+        try {
+           IBinder binder = ServiceManager.getService("DmAgent");
+           if (binder != null) {
+               DmAgent agent = DmAgent.Stub.asInterface(binder);
+               boolean locked = agent.isLockFlagSet();
+               dmEnable(!locked);
+           }
+        } catch (RemoteException ex) {
+        }
+
+        Slog.i(TAG, "registerDMLock");
+        IntentFilter filter = new IntentFilter();
+        filter.addAction("com.mediatek.ppl.NOTIFY_LOCK");
+        filter.addAction("com.mediatek.ppl.NOTIFY_UNLOCK");
+        filter.addAction("com.mediatek.dm.LAWMO_LOCK");
+        filter.addAction("com.mediatek.dm.LAWMO_UNLOCK");
+        mContext.registerReceiver(mPPLReceiver, filter);
+    }
+
+    private final BroadcastReceiver mPPLReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+
+            if (action.equals("com.mediatek.ppl.NOTIFY_LOCK") ||
+                action.equals("com.mediatek.dm.LAWMO_LOCK")) {
+                dmEnable(false);
+            } else if (action.equals("com.mediatek.ppl.NOTIFY_UNLOCK") ||
+                action.equals("com.mediatek.dm.LAWMO_UNLOCK")) {
+                dmEnable(true);
+            }
+        }
+    };
+
+    private int dmEnable(boolean enable) {
+        Slog.i(TAG, " enable state is " + enable);
+        int net = 0;
+        if (!enable) {
+            net = StatusBarManager.DISABLE_EXPAND | StatusBarManager.DISABLE_NOTIFICATION_ALERTS
+                    | StatusBarManager.DISABLE_NOTIFICATION_ICONS
+                    | StatusBarManager.DISABLE_NOTIFICATION_TICKER;
+        }
+        disable(net, mDMToken, mContext.getPackageName());
+        return 0;
+    }
+    /// @}
 }

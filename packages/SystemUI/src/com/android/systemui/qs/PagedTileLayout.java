@@ -53,7 +53,10 @@ public class PagedTileLayout extends ViewPager implements QSTileLayout {
             public void onPageScrolled(int position, float positionOffset,
                     int positionOffsetPixels) {
                 if (mPageIndicator == null) return;
-                setCurrentPage(position, positionOffset != 0);
+                // M: [ALPS02786437] Fix the opposite position in RTL
+                // setCurrentPage(position, positionOffset != 0);
+                setCurrentPage(isLayoutRtl() ? mPages.size() - 1 - position
+                        : position, positionOffset != 0);
                 mPageIndicator.setLocation(position + positionOffset);
                 if (mPageListener != null) {
                     mPageListener.onPageChanged(positionOffsetPixels == 0 &&

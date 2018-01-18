@@ -28,6 +28,8 @@ import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.util.Log;
+
+import com.android.ims.ImsManager;
 import com.android.internal.telephony.cdma.EriInfo;
 import com.android.settingslib.net.DataUsageController;
 import com.android.systemui.SysuiTestCase;
@@ -72,6 +74,11 @@ public class NetworkControllerBaseTest extends SysuiTestCase {
     protected int mSubId;
 
     private NetworkCapabilities mNetCapabilities;
+    /// M: for volte icon @{
+    //Indices map to ImsConfig.FeatureConstants
+    private boolean[] imsFeatureEnabled = {true, false, false, false, false, false};
+    // {"VoLTE", "ViLTE", "VoWiFi", "ViWiFi","UTLTE", "UTWiFi"};
+    /// @}
 
     @Override
     protected void setUp() throws Exception {
@@ -109,6 +116,7 @@ public class NetworkControllerBaseTest extends SysuiTestCase {
         // For now just pretend to be the data sim, so we can test that too.
         mSubId = SubscriptionManager.DEFAULT_SUBSCRIPTION_ID;
         when(mMockTm.getDataEnabled(mSubId)).thenReturn(true);
+
         setDefaultSubId(mSubId);
         setSubscriptions(mSubId);
         mNetworkController.handleSetUserSetupComplete(true);
@@ -127,6 +135,8 @@ public class NetworkControllerBaseTest extends SysuiTestCase {
             SubscriptionInfo subscription = mock(SubscriptionInfo.class);
             when(subscription.getSubscriptionId()).thenReturn(subId);
             subs.add(subscription);
+            /// M: support volte test.
+            when(subscription.getSimSlotIndex()).thenReturn(subId);
         }
         when(mMockSm.getActiveSubscriptionInfoList()).thenReturn(subs);
         mNetworkController.doUpdateMobileControllers();
@@ -202,6 +212,32 @@ public class NetworkControllerBaseTest extends SysuiTestCase {
         updateServiceState();
     }
 
+    /// M: For network type big icon test @{
+    public void setNetworkType(int networkType){
+        when(mServiceState.getDataNetworkType()).thenReturn(TelephonyManager.NETWORK_TYPE_UNKNOWN);
+        when(mServiceState.getVoiceNetworkType()).thenReturn(networkType);
+        updateServiceState();
+    }
+    /// @}
+
+    /// M: For 4G+ icon test @{
+    public void setUsingCarrierAggregation(boolean value){
+        when(mServiceState.isUsingCarrierAggregation()).thenReturn(value);
+        updateServiceState();
+    }
+    /// @}
+
+    /// M: For Volte icon test @{
+    public Intent createImsStateIntent(int state, int phoneId){
+        Intent intent = new Intent(ImsManager.ACTION_IMS_STATE_CHANGED);
+        intent.putExtra(ImsManager.EXTRA_IMS_REG_STATE_KEY, state);
+        intent.putExtra(ImsManager.EXTRA_PHONE_ID, phoneId);
+        intent.putExtra(ImsManager.EXTRA_IMS_ENABLE_CAP_KEY, imsFeatureEnabled);
+
+        return intent;
+    }
+    /// @}
+
     public void setDataRegState(int dataRegState) {
         when(mServiceState.getDataRegState()).thenReturn(dataRegState);
         updateServiceState();
@@ -273,12 +309,15 @@ public class NetworkControllerBaseTest extends SysuiTestCase {
         ArgumentCaptor<Integer> typeIconArg = ArgumentCaptor.forClass(Integer.class);
         ArgumentCaptor<Boolean> dataInArg = ArgumentCaptor.forClass(Boolean.class);
         ArgumentCaptor<Boolean> dataOutArg = ArgumentCaptor.forClass(Boolean.class);
-
+        ///M: Add for interface modify
         Mockito.verify(mCallbackHandler, Mockito.atLeastOnce()).setMobileDataIndicators(
                     ArgumentCaptor.forClass(IconState.class).capture(),
                     iconArg.capture(),
                     ArgumentCaptor.forClass(Integer.class).capture(),
-                    typeIconArg.capture(), dataInArg.capture(), dataOutArg.capture(),
+                    ArgumentCaptor.forClass(Integer.class).capture(),
+                    ArgumentCaptor.forClass(Integer.class).capture(),
+                    typeIconArg.capture(),
+                    dataInArg.capture(), dataOutArg.capture(),
                     ArgumentCaptor.forClass(String.class).capture(),
                     ArgumentCaptor.forClass(String.class).capture(),
                     ArgumentCaptor.forClass(Boolean.class).capture(),
@@ -296,12 +335,13 @@ public class NetworkControllerBaseTest extends SysuiTestCase {
     protected void verifyLastMobileDataIndicators(boolean visible, int icon, int typeIcon) {
         ArgumentCaptor<IconState> iconArg = ArgumentCaptor.forClass(IconState.class);
         ArgumentCaptor<Integer> typeIconArg = ArgumentCaptor.forClass(Integer.class);
-
-        // TODO: Verify all fields.
+        ///M: Add for interface modify
         Mockito.verify(mCallbackHandler, Mockito.atLeastOnce()).setMobileDataIndicators(
                 iconArg.capture(),
                 ArgumentCaptor.forClass(IconState.class).capture(),
                 typeIconArg.capture(),
+                ArgumentCaptor.forClass(Integer.class).capture(),
+                ArgumentCaptor.forClass(Integer.class).capture(),
                 ArgumentCaptor.forClass(Integer.class).capture(),
                 ArgumentCaptor.forClass(Boolean.class).capture(),
                 ArgumentCaptor.forClass(Boolean.class).capture(),
@@ -314,6 +354,61 @@ public class NetworkControllerBaseTest extends SysuiTestCase {
         assertEquals("Data icon in status bar", typeIcon, (int) typeIconArg.getValue());
         assertEquals("Visibility in status bar", visible, iconState.visible);
     }
+
+    /// M: For network type big icon  and volte icon test.@{
+    protected void verifyLastMobileNetworkIcon(int icon){
+        ArgumentCaptor<Integer> iconArg = ArgumentCaptor.forClass(Integer.class);
+        ///M: Add for interface modify
+        Mockito.verify(mCallbackHandler, Mockito.atLeastOnce()).setMobileDataIndicators(
+            ArgumentCaptor.forClass(IconState.class).capture(),
+                ArgumentCaptor.forClass(IconState.class).capture(),
+                ArgumentCaptor.forClass(Integer.class).capture(),
+                iconArg.capture(),
+                ArgumentCaptor.forClass(Integer.class).capture(),
+                ArgumentCaptor.forClass(Integer.class).capture(),
+                ArgumentCaptor.forClass(Boolean.class).capture(),
+                ArgumentCaptor.forClass(Boolean.class).capture(),
+                ArgumentCaptor.forClass(String.class).capture(),
+                ArgumentCaptor.forClass(String.class).capture(),
+                ArgumentCaptor.forClass(Boolean.class).capture(),
+                ArgumentCaptor.forClass(Integer.class).capture());
+
+        assertEquals("network icon in status bar", icon, (int) iconArg.getValue());
+    }
+    /// @}
+
+    /// M: For vlote icon test @{
+    protected void volteIconTest(int dataState, int dataNetType,
+            int serviceState, int iconId) {
+        // Stubbing collaborators.
+        updateDataConnectionState(dataState,dataNetType);
+        //Invocation Ims action.
+        mNetworkController.handleIMSAction(createImsStateIntent(
+                serviceState,SubscriptionManager.DEFAULT_SUBSCRIPTION_ID));
+        //Verify volte icon.
+        verifyLastVolteIcon(iconId);
+    }
+
+    protected void verifyLastVolteIcon(int icon){
+        ArgumentCaptor<Integer> volteIconArg = ArgumentCaptor.forClass(Integer.class);
+        ///M: Add for interface modify
+        Mockito.verify(mCallbackHandler, Mockito.atLeastOnce()).setMobileDataIndicators(
+            ArgumentCaptor.forClass(IconState.class).capture(),
+                ArgumentCaptor.forClass(IconState.class).capture(),
+                ArgumentCaptor.forClass(Integer.class).capture(),
+                ArgumentCaptor.forClass(Integer.class).capture(),
+                volteIconArg.capture(),
+                ArgumentCaptor.forClass(Integer.class).capture(),
+                ArgumentCaptor.forClass(Boolean.class).capture(),
+                ArgumentCaptor.forClass(Boolean.class).capture(),
+                ArgumentCaptor.forClass(String.class).capture(),
+                ArgumentCaptor.forClass(String.class).capture(),
+                ArgumentCaptor.forClass(Boolean.class).capture(),
+                ArgumentCaptor.forClass(Integer.class).capture());
+
+        assertEquals("volte icon in status bar", icon, (int) volteIconArg.getValue());
+    }
+    /// @}
 
    protected void assertNetworkNameEquals(String expected) {
        assertEquals("Network name", expected, mMobileSignalController.getState().networkName);

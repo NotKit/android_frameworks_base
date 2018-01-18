@@ -156,7 +156,12 @@ public class SystemSensorManager extends SensorManager {
                     listener.getClass().getEnclosingClass().getName() :
                     listener.getClass().getName();
                 queue = new SensorEventQueue(listener, looper, this, fullClassName);
-                if (!queue.addSensor(sensor, delayUs, maxBatchReportLatencyUs)) {
+				//guohuajun add
+				if(mContext.getOpPackageName().equals("com.mediatek.camera")){
+					queue.setToCameraSensor();
+				}
+				//guohuajun add end
+				if (!queue.addSensor(sensor, delayUs, maxBatchReportLatencyUs)) {
                     queue.dispose();
                     return false;
                 }
@@ -640,13 +645,18 @@ public class SystemSensorManager extends SensorManager {
     static final class SensorEventQueue extends BaseEventQueue {
         private final SensorEventListener mListener;
         private final SparseArray<SensorEvent> mSensorsEvents = new SparseArray<SensorEvent>();
-
+		private boolean isCameraSensor = false; //guohuajun add
         public SensorEventQueue(SensorEventListener listener, Looper looper,
                 SystemSensorManager manager, String packageName) {
             super(looper, manager, OPERATING_MODE_NORMAL, packageName);
             mListener = listener;
+		
         }
-
+		//guohuajun add
+		public void setToCameraSensor(){
+			isCameraSensor = true;
+		}
+		//guohuajun add end
         @Override
         public void addSensorEvent(Sensor sensor) {
             SensorEvent t = new SensorEvent(Sensor.getMaxLengthValuesArray(sensor,
@@ -684,6 +694,16 @@ public class SystemSensorManager extends SensorManager {
                 // the queue waiting to be delivered. Ignore.
                 return;
             }
+            //guohuajun add
+			if(sensor.getType()==Sensor.TYPE_ACCELEROMETER&&isCameraSensor==false){
+				//Log.d("guohuajun","sensor.getType() = Sensor.TYPE_ACCELEROMETER");
+				float temp = values[0];
+				values[0] = values[1];
+				values[1] = -temp;
+			}else{
+				//Log.d("guohuajun","sensor.getType() = "+sensor.getType());
+			}
+			//guohuajun add end
             // Copy from the values array.
             System.arraycopy(values, 0, t.values, 0, t.values.length);
             t.timestamp = timestamp;

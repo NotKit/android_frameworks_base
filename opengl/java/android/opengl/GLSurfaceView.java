@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2008 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +22,7 @@
 package android.opengl;
 
 import android.content.Context;
+import android.os.SystemProperties;
 import android.os.Trace;
 import android.util.AttributeSet;
 import android.util.Log;
@@ -35,6 +41,11 @@ import javax.microedition.khronos.egl.EGLDisplay;
 import javax.microedition.khronos.egl.EGLSurface;
 import javax.microedition.khronos.opengles.GL;
 import javax.microedition.khronos.opengles.GL10;
+
+/// M:PerfBoost include @{
+import com.mediatek.perfservice.IPerfServiceWrapper;
+import com.mediatek.perfservice.PerfServiceWrapper;
+/// @}
 
 /**
  * An implementation of SurfaceView that uses the dedicated surface for
@@ -161,13 +172,29 @@ import javax.microedition.khronos.opengles.GL10;
  */
 public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback2 {
     private final static String TAG = "GLSurfaceView";
-    private final static boolean LOG_ATTACH_DETACH = false;
-    private final static boolean LOG_THREADS = false;
-    private final static boolean LOG_PAUSE_RESUME = false;
-    private final static boolean LOG_SURFACE = false;
-    private final static boolean LOG_RENDERER = false;
-    private final static boolean LOG_RENDERER_DRAW_FRAME = false;
-    private final static boolean LOG_EGL = false;
+
+    /// M: remove "final" for runtime log swtiching
+    private static boolean LOG_ATTACH_DETACH = false;
+    private static boolean LOG_THREADS = false;
+    private static boolean LOG_PAUSE_RESUME = false;
+    private static boolean LOG_SURFACE = false;
+    private static boolean LOG_RENDERER = false;
+    private static boolean LOG_RENDERER_DRAW_FRAME = false;
+    private static boolean LOG_EGL = false;
+
+
+    /// M: Add a group of log filter flag for GLSurfaceView, used to switch log on/off runtime @{
+    private static final String LOG_PROPERTY_NAME = "debug.glsurfaceview.dumpinfo";
+    private static final int DBG_ATTACH_DETACH = 0x00000001;
+    private static final int DBG_THREADS = 0x00000002;
+    private static final int DBG_PAUSE_RESUME = 0x00000004;
+    private static final int DBG_SURFACE = 0x00000008;
+    private static final int DBG_RENDERER = 0x00000010;
+    private static final int DBG_RENDERER_DRAW_FRAME = 0x00000020;
+    private static final int DBG_EGL = 0x00000040;
+    /// @}
+
+
     /**
      * The renderer only renders
      * when the surface is created, or when {@link #requestRender} is called.
@@ -247,6 +274,8 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
         // setType is not needed for SDK 2.0 or newer. Uncomment this
         // statement if back-porting this code to older SDKs.
         // holder.setType(SurfaceHolder.SURFACE_TYPE_GPU);
+
+        checkLogProperty();
     }
 
     /**
@@ -346,6 +375,7 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
      */
     public void setRenderer(Renderer renderer) {
         checkRenderThreadState();
+        Log.i(TAG, "setRenderer(), this = " + this);
         if (mEGLConfigChooser == null) {
             mEGLConfigChooser = new SimpleEGLConfigChooser(true);
         }
@@ -373,6 +403,7 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
     public void setEGLContextFactory(EGLContextFactory factory) {
         checkRenderThreadState();
         mEGLContextFactory = factory;
+        Log.i(TAG, "setEGLContextFactory(), factory = " + factory + ", this = " + this);
     }
 
     /**
@@ -387,6 +418,7 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
     public void setEGLWindowSurfaceFactory(EGLWindowSurfaceFactory factory) {
         checkRenderThreadState();
         mEGLWindowSurfaceFactory = factory;
+        Log.i(TAG, "setEGLWindowSurfaceFactory(), factory = " + factory + ", this = " + this);
     }
 
     /**
@@ -491,6 +523,7 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
      * @see #RENDERMODE_WHEN_DIRTY
      */
     public void setRenderMode(int renderMode) {
+        Log.i(TAG, "setRenderMode = " + renderMode + ", this = " + this);
         mGLThread.setRenderMode(renderMode);
     }
 
@@ -598,7 +631,7 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
         if (LOG_ATTACH_DETACH) {
-            Log.d(TAG, "onAttachedToWindow reattach =" + mDetached);
+            Log.d(TAG, "onAttachedToWindow reattach =" + mDetached + ", this = " + this);
         }
         if (mDetached && (mRenderer != null)) {
             int renderMode = RENDERMODE_CONTINUOUSLY;
@@ -617,7 +650,7 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
     @Override
     protected void onDetachedFromWindow() {
         if (LOG_ATTACH_DETACH) {
-            Log.d(TAG, "onDetachedFromWindow");
+            Log.d(TAG, "onDetachedFromWindow" + ", this = " + this);
         }
         if (mGLThread != null) {
             mGLThread.requestExitAndWait();
@@ -781,17 +814,21 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
         public EGLContext createContext(EGL10 egl, EGLDisplay display, EGLConfig config) {
             int[] attrib_list = {EGL_CONTEXT_CLIENT_VERSION, mEGLContextClientVersion,
                     EGL10.EGL_NONE };
-
+            Log.i("DefaultContextFactory", "createContext = " + Thread.currentThread().getId()
+                        + ", this = " + GLSurfaceView.this);
             return egl.eglCreateContext(display, config, EGL10.EGL_NO_CONTEXT,
                     mEGLContextClientVersion != 0 ? attrib_list : null);
         }
 
         public void destroyContext(EGL10 egl, EGLDisplay display,
                 EGLContext context) {
+            Log.i("DefaultContextFactory", "eglDestroyContext = " + Thread.currentThread().getId()
+                        + ", this = " + GLSurfaceView.this);
             if (!egl.eglDestroyContext(display, context)) {
                 Log.e("DefaultContextFactory", "display:" + display + " context: " + context);
                 if (LOG_THREADS) {
-                    Log.i("DefaultContextFactory", "tid=" + Thread.currentThread().getId());
+                    Log.i("DefaultContextFactory", "tid=" + Thread.currentThread().getId()
+                        + ", this = " + GLSurfaceView.this);
                 }
                 EglHelper.throwEglException("eglDestroyContex", egl.eglGetError());
             }
@@ -827,7 +864,7 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
                 // notified via SurfaceHolder.Callback.surfaceDestroyed.
                 // In theory the application should be notified first,
                 // but in practice sometimes it is not. See b/4588890
-                Log.e(TAG, "eglCreateWindowSurface", e);
+                Log.e("DefaultWindowSurfaceFactory", "eglCreateWindowSurface", e);
             }
             return result;
         }
@@ -1031,6 +1068,8 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
              * We can now initialize EGL for that display
              */
             int[] version = new int[2];
+            Log.i("EglHelper", "eglInitialize = " + Thread.currentThread().getId()
+                        + ", this = " + mGLSurfaceViewWeakRef.get());
             if(!mEgl.eglInitialize(mEglDisplay, version)) {
                 throw new RuntimeException("eglInitialize failed");
             }
@@ -1039,6 +1078,8 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
                 mEglConfig = null;
                 mEglContext = null;
             } else {
+                Log.i("EglHelper", "chooseConfig = " + Thread.currentThread().getId()
+                        + ", this = " + view);
                 mEglConfig = view.mEGLConfigChooser.chooseConfig(mEgl, mEglDisplay);
 
                 /*
@@ -1246,6 +1287,10 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
             mRenderMode = RENDERMODE_CONTINUOUSLY;
             mWantRenderNotification = false;
             mGLSurfaceViewWeakRef = glSurfaceViewWeakRef;
+
+            /// M:PerfBoost include @{
+            mPerfServiceWrapper = new PerfServiceWrapper(null);
+            /// @}
         }
 
         @Override
@@ -1254,6 +1299,8 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
             if (LOG_THREADS) {
                 Log.i("GLThread", "starting tid=" + getId());
             }
+            Trace.traceBegin(Trace.TRACE_TAG_GRAPHICS, "GLSurfaceView-run");
+            Trace.traceEnd(Trace.TRACE_TAG_GRAPHICS);
 
             try {
                 guardedRun();
@@ -1507,7 +1554,7 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
 
                     if (createEglContext) {
                         if (LOG_RENDERER) {
-                            Log.w("GLThread", "onSurfaceCreated");
+                            Log.w("GLThread", "onSurfaceCreated start");
                         }
                         GLSurfaceView view = mGLSurfaceViewWeakRef.get();
                         if (view != null) {
@@ -1519,11 +1566,14 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
                             }
                         }
                         createEglContext = false;
+                        if (LOG_RENDERER) {
+                            Log.w("GLThread", "onSurfaceCreated end");
+                        }
                     }
 
                     if (sizeChanged) {
                         if (LOG_RENDERER) {
-                            Log.w("GLThread", "onSurfaceChanged(" + w + ", " + h + ")");
+                            Log.w("GLThread", "onSurfaceChanged(" + w + ", " + h + ") start");
                         }
                         GLSurfaceView view = mGLSurfaceViewWeakRef.get();
                         if (view != null) {
@@ -1535,22 +1585,33 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
                             }
                         }
                         sizeChanged = false;
+                        if (LOG_RENDERER) {
+                            Log.w("GLThread", "onSurfaceChanged(" + w + ", " + h + ") end");
+                        }
                     }
 
                     if (LOG_RENDERER_DRAW_FRAME) {
-                        Log.w("GLThread", "onDrawFrame tid=" + getId());
+                        Log.w("GLThread", "onDrawFrame Start tid=" + getId());
                     }
                     {
                         GLSurfaceView view = mGLSurfaceViewWeakRef.get();
                         if (view != null) {
                             try {
                                 Trace.traceBegin(Trace.TRACE_TAG_VIEW, "onDrawFrame");
+                                /// M:PerfBoost include @{
+                                mPerfServiceWrapper.notifyFrameUpdate(0);
+                                /// @}
                                 view.mRenderer.onDrawFrame(gl);
                             } finally {
                                 Trace.traceEnd(Trace.TRACE_TAG_VIEW);
                             }
                         }
                     }
+
+                    if (LOG_RENDERER_DRAW_FRAME) {
+                        Log.w("GLThread", "onDrawFrame End tid=" + getId());
+                    }
+
                     int swapError = mEglHelper.swap();
                     switch (swapError) {
                         case EGL10.EGL_SUCCESS:
@@ -1620,8 +1681,17 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
 
         public void requestRender() {
             synchronized(sGLThreadManager) {
+                if (LOG_THREADS) {
+                    Log.i("GLThread", "requestRender start tid=" + getId());
+                }
+                Trace.traceBegin(Trace.TRACE_TAG_GRAPHICS, "requestRender");
                 mRequestRender = true;
                 sGLThreadManager.notifyAll();
+                Trace.traceEnd(Trace.TRACE_TAG_GRAPHICS);
+                if (LOG_THREADS) {
+                    Log.i("GLThread", "requestRender end tid=" + getId());
+                }
+
             }
         }
 
@@ -1655,8 +1725,9 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
         public void surfaceCreated() {
             synchronized(sGLThreadManager) {
                 if (LOG_THREADS) {
-                    Log.i("GLThread", "surfaceCreated tid=" + getId());
+                    Log.i("GLThread", "surfaceCreated start tid=" + getId());
                 }
+                Trace.traceBegin(Trace.TRACE_TAG_GRAPHICS, "surfaceCreated");
                 mHasSurface = true;
                 mFinishedCreatingEglSurface = false;
                 sGLThreadManager.notifyAll();
@@ -1669,14 +1740,19 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
                         Thread.currentThread().interrupt();
                     }
                 }
+                Trace.traceEnd(Trace.TRACE_TAG_GRAPHICS);
+                if (LOG_THREADS) {
+                    Log.i("GLThread", "surfaceCreated end tid=" + getId());
+                }
             }
         }
 
         public void surfaceDestroyed() {
             synchronized(sGLThreadManager) {
                 if (LOG_THREADS) {
-                    Log.i("GLThread", "surfaceDestroyed tid=" + getId());
+                    Log.i("GLThread", "surfaceDestroyed start tid=" + getId());
                 }
+                Trace.traceBegin(Trace.TRACE_TAG_GRAPHICS, "surfaceDestroyed");
                 mHasSurface = false;
                 sGLThreadManager.notifyAll();
                 while((!mWaitingForSurface) && (!mExited)) {
@@ -1686,14 +1762,19 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
                         Thread.currentThread().interrupt();
                     }
                 }
+                Trace.traceEnd(Trace.TRACE_TAG_GRAPHICS);
+                if (LOG_THREADS) {
+                    Log.i("GLThread", "surfaceDestroyed end tid=" + getId());
+                }
             }
         }
 
         public void onPause() {
             synchronized (sGLThreadManager) {
                 if (LOG_PAUSE_RESUME) {
-                    Log.i("GLThread", "onPause tid=" + getId());
+                    Log.i("GLThread", "onPause start tid=" + getId());
                 }
+                Trace.traceBegin(Trace.TRACE_TAG_GRAPHICS, "onPause");
                 mRequestPaused = true;
                 sGLThreadManager.notifyAll();
                 while ((! mExited) && (! mPaused)) {
@@ -1706,14 +1787,20 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
                         Thread.currentThread().interrupt();
                     }
                 }
+                Trace.traceEnd(Trace.TRACE_TAG_GRAPHICS);
+                if (LOG_PAUSE_RESUME) {
+                    Log.i("GLThread", "onPause end tid=" + getId());
+                }
+
             }
         }
 
         public void onResume() {
             synchronized (sGLThreadManager) {
                 if (LOG_PAUSE_RESUME) {
-                    Log.i("GLThread", "onResume tid=" + getId());
+                    Log.i("GLThread", "onResume start tid=" + getId());
                 }
+                Trace.traceBegin(Trace.TRACE_TAG_GRAPHICS, "onResume");
                 mRequestPaused = false;
                 mRequestRender = true;
                 mRenderComplete = false;
@@ -1728,11 +1815,20 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
                         Thread.currentThread().interrupt();
                     }
                 }
+                Trace.traceEnd(Trace.TRACE_TAG_GRAPHICS);
+                if (LOG_PAUSE_RESUME) {
+                    Log.i("GLThread", "onResume end tid=" + getId());
+                }
+
             }
         }
 
         public void onWindowResize(int w, int h) {
             synchronized (sGLThreadManager) {
+                if (LOG_THREADS) {
+                    Log.i("GLThread", "onWindowResize start tid=" + getId());
+                }
+                Trace.traceBegin(Trace.TRACE_TAG_GRAPHICS, "onWindowResize");
                 mWidth = w;
                 mHeight = h;
                 mSizeChanged = true;
@@ -1762,6 +1858,10 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
                         Thread.currentThread().interrupt();
                     }
                 }
+                Trace.traceEnd(Trace.TRACE_TAG_GRAPHICS);
+                if (LOG_THREADS) {
+                    Log.i("GLThread", "onWindowResize end tid=" + getId());
+                }
             }
         }
 
@@ -1769,6 +1869,10 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
             // don't call this from GLThread thread or it is a guaranteed
             // deadlock!
             synchronized(sGLThreadManager) {
+                if (LOG_THREADS) {
+                    Log.i("GLThread", "requestExitAndWait start tid=" + getId());
+                }
+                Trace.traceBegin(Trace.TRACE_TAG_GRAPHICS, "requestExotAndWait");
                 mShouldExit = true;
                 sGLThreadManager.notifyAll();
                 while (! mExited) {
@@ -1778,12 +1882,24 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
                         Thread.currentThread().interrupt();
                     }
                 }
+                Trace.traceEnd(Trace.TRACE_TAG_GRAPHICS);
+                if (LOG_THREADS) {
+                    Log.i("GLThread", "requestExitAndWait end tid=" + getId());
+                }
             }
         }
 
         public void requestReleaseEglContextLocked() {
+            if (LOG_THREADS) {
+                Log.i("GLThread", "requestReleaseEglContextLocked start tid=" + getId());
+            }
+            Trace.traceBegin(Trace.TRACE_TAG_GRAPHICS, "requestReleaseEglContextLocked");
             mShouldReleaseEglContext = true;
             sGLThreadManager.notifyAll();
+            Trace.traceEnd(Trace.TRACE_TAG_GRAPHICS);
+            if (LOG_THREADS) {
+                Log.i("GLThread", "requestReleaseEglContextLocked end tid=" + getId());
+            }
         }
 
         /**
@@ -1794,9 +1910,17 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
             if (r == null) {
                 throw new IllegalArgumentException("r must not be null");
             }
+            if (LOG_THREADS) {
+                Log.i("GLThread", "queueEvent start tid=" + getId() + " runnable=" + r);
+            }
+            Trace.traceBegin(Trace.TRACE_TAG_GRAPHICS, "queueEvent");
             synchronized(sGLThreadManager) {
                 mEventQueue.add(r);
                 sGLThreadManager.notifyAll();
+            }
+            Trace.traceEnd(Trace.TRACE_TAG_GRAPHICS);
+            if (LOG_THREADS) {
+                Log.i("GLThread", "queueEvent end tid=" + getId());
             }
         }
 
@@ -1833,6 +1957,9 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
          */
         private WeakReference<GLSurfaceView> mGLSurfaceViewWeakRef;
 
+        /// M:PerfBoost include @{
+        private IPerfServiceWrapper mPerfServiceWrapper;
+        /// @}
     }
 
     static class LogWriter extends Writer {
@@ -1909,4 +2036,44 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
     private int mDebugFlags;
     private int mEGLContextClientVersion;
     private boolean mPreserveEGLContextOnPause;
+
+
+
+    /**
+     * M: Check whether GLSurfaceView logs is enabled.
+     *
+     */
+    private static void checkLogProperty() {
+        String dumpString = SystemProperties.get(LOG_PROPERTY_NAME);
+        if (dumpString != null) {
+            if (dumpString.length() <= 0 || dumpString.length() > 7) {
+                Log.d(TAG, "checkGLSurfaceViewlLogProperty get invalid command");
+                return;
+            }
+            int logFilter = 0;
+            try {
+                logFilter = Integer.parseInt(dumpString, 2);
+            } catch (NumberFormatException e) {
+                Log.w(TAG, "Invalid format of propery string: " + dumpString);
+            }
+            LOG_ATTACH_DETACH = (logFilter & DBG_ATTACH_DETACH) == DBG_ATTACH_DETACH;
+            LOG_THREADS = (logFilter & DBG_THREADS) == DBG_THREADS;
+            LOG_PAUSE_RESUME = (logFilter & DBG_PAUSE_RESUME) == DBG_PAUSE_RESUME;
+            LOG_SURFACE = (logFilter & DBG_SURFACE) == DBG_SURFACE;
+            LOG_RENDERER = (logFilter & DBG_RENDERER) == DBG_RENDERER;
+            LOG_RENDERER_DRAW_FRAME =
+                    (logFilter & DBG_RENDERER_DRAW_FRAME) == DBG_RENDERER_DRAW_FRAME;
+            LOG_EGL = (logFilter & DBG_EGL) == DBG_EGL;
+
+            Log.d(TAG, "checkGLSurfaceViewlLogProperty debug filter: " +
+                    "ATTACH_DETACH=" + LOG_ATTACH_DETACH +
+                    ", THREADS=" + LOG_THREADS +
+                    ", PAUSE_RESUME=" + LOG_PAUSE_RESUME +
+                    ", SURFACE=" + LOG_SURFACE +
+                    ", RENDERER=" + LOG_RENDERER +
+                    ", RENDERER_DRAW_FRAME=" + LOG_RENDERER_DRAW_FRAME +
+                    ", EGL=" + LOG_EGL);
+
+        }
+    }
 }

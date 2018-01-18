@@ -147,6 +147,7 @@ public final class UserInfoController {
                 String name = userName;
                 Drawable avatar = null;
                 Bitmap rawAvatar = um.getUserIcon(userId);
+                Log.d(TAG,"rawAvatar = " + rawAvatar);
                 if (rawAvatar != null) {
                     avatar = new UserIconDrawable(avatarSize)
                             .setIcon(rawAvatar).setBadgeIfManagedUser(mContext, userId).bake();

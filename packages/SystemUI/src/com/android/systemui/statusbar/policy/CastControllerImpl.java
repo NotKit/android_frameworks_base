@@ -16,15 +16,26 @@
 
 package com.android.systemui.statusbar.policy;
 
+import static android.media.MediaRouter.ROUTE_TYPE_REMOTE_DISPLAY;
+
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageManager.NameNotFoundException;
+import android.hardware.display.DisplayManager;
+import android.hardware.display.WifiDisplayStatus;
 import android.media.MediaRouter;
 import android.media.MediaRouter.RouteInfo;
 import android.media.projection.MediaProjectionInfo;
 import android.media.projection.MediaProjectionManager;
+import android.net.wifi.p2p.WifiP2pDevice;
+import android.net.wifi.p2p.WifiP2pManager;
 import android.os.Handler;
+import android.os.SystemProperties;
+import android.os.UserHandle;
 import android.text.TextUtils;
 import android.util.ArrayMap;
 import android.util.ArraySet;
@@ -44,8 +55,11 @@ import static android.media.MediaRouter.ROUTE_TYPE_REMOTE_DISPLAY;
 /** Platform implementation of the cast controller. **/
 public class CastControllerImpl implements CastController {
     private static final String TAG = "CastController";
-    private static final boolean DEBUG = Log.isLoggable(TAG, Log.DEBUG);
-
+    private static final boolean DEBUG = true; // Log.isLoggable(TAG, Log.DEBUG);
+    /// M: WFD sink support {@
+    private static final String FLOAT_MENU_PACKAGE = "com.mediatek.floatmenu";
+    private static final String FLOAT_MENU_CLASS = "com.mediatek.floatmenu.FloatMenuService";
+    /// @}
     private final Context mContext;
     private final ArrayList<Callback> mCallbacks = new ArrayList<Callback>();
     private final MediaRouter mMediaRouter;
@@ -53,7 +67,12 @@ public class CastControllerImpl implements CastController {
     private final Object mDiscoveringLock = new Object();
     private final MediaProjectionManager mProjectionManager;
     private final Object mProjectionLock = new Object();
-
+    /// M: WFD sink support {@
+    private final DisplayManager mDisplayManager;
+    private final boolean mWfdSinkSupport;
+    private final boolean mWfdSinkUibcSupport;
+    private WifiP2pDevice mP2pDevice;
+    /// @}
     private boolean mDiscovering;
     private boolean mCallbackRegistered;
     private MediaProjectionInfo mProjection;
@@ -65,6 +84,12 @@ public class CastControllerImpl implements CastController {
                 context.getSystemService(Context.MEDIA_PROJECTION_SERVICE);
         mProjection = mProjectionManager.getActiveProjectionInfo();
         mProjectionManager.addCallback(mProjectionCallback, new Handler());
+        /// M: WFD sink support {@
+        mDisplayManager = (DisplayManager) mContext
+            .getSystemService(Context.DISPLAY_SERVICE);
+        mWfdSinkSupport = SystemProperties.get("ro.mtk_wfd_sink_support").equals("1");
+        mWfdSinkUibcSupport = SystemProperties.get("ro.mtk_wfd_sink_uibc_support").equals("1");
+        /// @}
         if (DEBUG) Log.d(TAG, "new CastController()");
     }
 
@@ -88,10 +113,18 @@ public class CastControllerImpl implements CastController {
         synchronized (mDiscoveringLock) {
             handleDiscoveryChangeLocked();
         }
+        /// M: WFD sink support {@
+        if (DEBUG) Log.d(TAG, "addCallback");
+        if (isWfdSinkSupported()) {
+            fireOnWfdStatusChanged(callback);
+            fireOnWifiP2pDeviceChanged(callback);
+        }
+        /// @}
     }
 
     @Override
     public void removeCallback(Callback callback) {
+        if (DEBUG) Log.d(TAG, "removeCallback");
         mCallbacks.remove(callback);
         synchronized (mDiscoveringLock) {
             handleDiscoveryChangeLocked();
@@ -115,7 +148,8 @@ public class CastControllerImpl implements CastController {
         }
         if (mDiscovering) {
             mMediaRouter.addCallback(ROUTE_TYPE_REMOTE_DISPLAY, mMediaCallback,
-                    MediaRouter.CALLBACK_FLAG_REQUEST_DISCOVERY);
+                    /// M: Change callback flag from REQUEST_DISCOVERY to PERFORM_ACTIVE_SCAN
+                    MediaRouter.CALLBACK_FLAG_PERFORM_ACTIVE_SCAN);
             mCallbackRegistered = true;
         } else if (mCallbacks.size() != 0) {
             mMediaRouter.addCallback(ROUTE_TYPE_REMOTE_DISPLAY, mMediaCallback,
@@ -132,6 +166,7 @@ public class CastControllerImpl implements CastController {
     @Override
     public Set<CastDevice> getCastDevices() {
         final ArraySet<CastDevice> devices = new ArraySet<CastDevice>();
+        if (DEBUG) Log.d(TAG, "getCastDevices: " + (mProjection != null));
         synchronized (mProjectionLock) {
             if (mProjection != null) {
                 final CastDevice device = new CastDevice();
@@ -149,12 +184,16 @@ public class CastControllerImpl implements CastController {
                 final CastDevice device = new CastDevice();
                 device.id = route.getTag().toString();
                 final CharSequence name = route.getName(mContext);
-                device.name = name != null ? name.toString() : null;
+                // M: Show device address instead of empty name
+                device.name = TextUtils.isEmpty(name) ? route.getDeviceAddress() : name.toString();
                 final CharSequence description = route.getDescription();
                 device.description = description != null ? description.toString() : null;
+                /// M: Sync route status with WFD settings items {@
                 device.state = route.isConnecting() ? CastDevice.STATE_CONNECTING
-                        : route.isSelected() ? CastDevice.STATE_CONNECTED
+                        : route.isSelected() && (route.getStatusCode()
+                                  == RouteInfo.STATUS_CONNECTED) ? CastDevice.STATE_CONNECTED
                         : CastDevice.STATE_DISCONNECTED;
+                /// @}
                 device.tag = route;
                 devices.add(device);
             }
@@ -185,6 +224,61 @@ public class CastControllerImpl implements CastController {
             mMediaRouter.getDefaultRoute().select();
         }
     }
+
+    /// M: WFD sink support {@
+    @Override
+    public boolean isWfdSinkSupported() {
+        return mWfdSinkSupport;
+    }
+
+    @Override
+    public boolean isNeedShowWfdSink() {
+        boolean ret = false;
+        if (isWfdSinkSupported()) {
+            WifiDisplayStatus wifiDisplayStatus = mDisplayManager.getWifiDisplayStatus();
+            ret = wifiDisplayStatus != null
+                && (wifiDisplayStatus.getFeatureState() == WifiDisplayStatus.FEATURE_STATE_ON);
+        }
+        if (DEBUG) Log.d(TAG, "needAddWfdSink: " + ret);
+        return ret;
+    }
+
+    @Override
+    public void updateWfdFloatMenu(boolean start) {
+        if (DEBUG) Log.d(TAG, "updateWfdFloatMenu: " + start);
+        if (!isWfdSinkSupported() || !mWfdSinkUibcSupport) {
+            return;
+        }
+        Intent intent = new Intent();
+        intent.setClassName(FLOAT_MENU_PACKAGE, FLOAT_MENU_CLASS);
+        if (start) {
+            mContext.startServiceAsUser(intent, UserHandle.CURRENT);
+        } else {
+            mContext.stopServiceAsUser(intent, UserHandle.CURRENT);
+        }
+    }
+
+    @Override
+    public WifiP2pDevice getWifiP2pDev() {
+        return mP2pDevice;
+    }
+
+    @Override
+    public void setListening(boolean listening) {
+        if (DEBUG) Log.d(TAG, "register listener: " + listening);
+        if (!isWfdSinkSupported()) {
+            return;
+        }
+        if (listening) {
+            IntentFilter filter = new IntentFilter();
+            filter.addAction(DisplayManager.ACTION_WIFI_DISPLAY_STATUS_CHANGED);
+            filter.addAction(WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION);
+            mContext.registerReceiver(mWfdReceiver, filter);
+        } else {
+            mContext.unregisterReceiver(mWfdReceiver);
+        }
+    }
+    /// @}
 
     private void setProjection(MediaProjectionInfo projection, boolean started) {
         boolean changed = false;
@@ -226,6 +320,7 @@ public class CastControllerImpl implements CastController {
         synchronized(mRoutes) {
             mRoutes.clear();
             final int n = mMediaRouter.getRouteCount();
+            if (DEBUG) Log.d(TAG, "getRouteCount: " + n);
             for (int i = 0; i < n; i++) {
                 final RouteInfo route = mMediaRouter.getRouteAt(i);
                 if (!route.isEnabled()) continue;
@@ -257,6 +352,46 @@ public class CastControllerImpl implements CastController {
     private void fireOnCastDevicesChanged(Callback callback) {
         callback.onCastDevicesChanged();
     }
+
+    /// M: WFD sink support {@
+    private void fireOnWfdStatusChanged() {
+        for (Callback callback : mCallbacks) {
+            fireOnWfdStatusChanged(callback);
+        }
+    }
+
+    private void fireOnWfdStatusChanged(Callback callback) {
+        callback.onWfdStatusChanged(mDisplayManager.getWifiDisplayStatus(),
+                mDisplayManager.isSinkEnabled());
+    }
+
+    private void fireOnWifiP2pDeviceChanged() {
+        for (Callback callback : mCallbacks) {
+            fireOnWifiP2pDeviceChanged(callback);
+        }
+    }
+
+    private void fireOnWifiP2pDeviceChanged(Callback callback) {
+        callback.onWifiP2pDeviceChanged(mP2pDevice);
+    }
+
+    private final BroadcastReceiver mWfdReceiver = new BroadcastReceiver() {
+
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            if (DEBUG) Log.d(TAG, "onReceive(" + action + ")");
+            if (WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION
+                    .equals(action)) {
+                mP2pDevice = (WifiP2pDevice) intent
+                        .getParcelableExtra(WifiP2pManager.EXTRA_WIFI_P2P_DEVICE);
+                fireOnWifiP2pDeviceChanged();
+            } else if (DisplayManager.ACTION_WIFI_DISPLAY_STATUS_CHANGED.equals(action)) {
+                fireOnWfdStatusChanged();
+            }
+        }
+    };
+    /// @}
 
     private static String routeToString(RouteInfo route) {
         if (route == null) return null;

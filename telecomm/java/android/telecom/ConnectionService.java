@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,11 +31,18 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.Message;
+/// M: For Volte @{
+import android.os.Bundle;
+/// @}
 
 import com.android.internal.os.SomeArgs;
 import com.android.internal.telecom.IConnectionService;
 import com.android.internal.telecom.IConnectionServiceAdapter;
 import com.android.internal.telecom.RemoteServiceCallback;
+
+/// M: ALPS02136977. Prints debug logs at each differenct connectionService. (e.q. telephony).
+import com.mediatek.telecom.FormattedLog;
+import com.mediatek.telecom.TelecomManagerEx;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -106,6 +118,21 @@ public abstract class ConnectionService extends Service {
     private static final int MSG_PULL_EXTERNAL_CALL = 22;
     private static final int MSG_SEND_CALL_EVENT = 23;
     private static final int MSG_ON_EXTRAS_CHANGED = 24;
+
+    private static final int MTK_MSG_BASE = 1000;
+
+    /// M: CC: Interface for ECT
+    private static final int MSG_ECT = MTK_MSG_BASE + 0;
+    /// M: CC: HangupAll for FTA 31.4.4.2
+    private static final int MSG_HANGUP_ALL = MTK_MSG_BASE + 1;
+    /// M: For VoLTE @{
+    private static final int MSG_INVITE_CONFERENCE_PARTICIPANTS = MTK_MSG_BASE + 2;
+    private static final int MSG_CREATE_CONFERENCE = MTK_MSG_BASE + 3;
+    /// @}
+    /// M: CC: For DSDS/DSDA Two-action operation.
+    private static final int MSG_HANDLE_ORDERED_USER_OPERATION = MTK_MSG_BASE + 4;
+    /// M: CC: Interface for blind/assured ECT
+    private static final int MSG_BLIND_ASSURED_ECT = MTK_MSG_BASE + 5;
 
     private static Connection sNullConnection;
 
@@ -270,6 +297,70 @@ public abstract class ConnectionService extends Service {
             args.arg2 = extras;
             mHandler.obtainMessage(MSG_ON_EXTRAS_CHANGED, args).sendToTarget();
         }
+
+        /// M: CC: Interface for ECT @{
+        @Override
+        public void explicitCallTransfer(String callId) {
+            mHandler.obtainMessage(MSG_ECT, callId).sendToTarget();
+        }
+        /// @}
+
+        /// M: CC: Interface for blind/assured ECT @{
+        @Override
+        public void blindAssuredEct(String callId, String number, int type) {
+            SomeArgs args = SomeArgs.obtain();
+            args.arg1 = callId;
+            args.arg2 = number;
+            args.argi1 = type;
+            mHandler.obtainMessage(MSG_BLIND_ASSURED_ECT, args).sendToTarget();
+        }
+        /// @}
+
+        /// M: CC: HangupAll for FTA 31.4.4.2 @{
+        @Override
+        public void hangupAll(String callId) {
+            mHandler.obtainMessage(MSG_HANGUP_ALL, callId).sendToTarget();
+        }
+        /// @}
+
+        /// M: For VoLTE @{
+        @Override
+        public void inviteConferenceParticipants(String conferenceCallId, List<String> numbers) {
+            SomeArgs args = SomeArgs.obtain();
+            args.arg1 = conferenceCallId;
+            args.arg2 = numbers;
+            mHandler.obtainMessage(MSG_INVITE_CONFERENCE_PARTICIPANTS, args).sendToTarget();
+        }
+
+        @Override
+        public void createConference(
+                PhoneAccountHandle connectionManagerPhoneAccount,
+                String conferenceCallId,
+                ConnectionRequest request,
+                List<String> numbers,
+                boolean isIncoming) {
+            SomeArgs args = SomeArgs.obtain();
+            args.arg1 = connectionManagerPhoneAccount;
+            args.arg2 = conferenceCallId;
+            args.arg3 = request;
+            args.arg4 = numbers;
+            args.argi1 = isIncoming ? 1 : 0;
+            mHandler.obtainMessage(MSG_CREATE_CONFERENCE, args).sendToTarget();
+        }
+        /// @}
+
+        /// M: CC: For MSMS/MSMA ordered user operations.
+        @Override
+        public void handleOrderedOperation(
+                String callId, String currentOperation, String pendingOperation) {
+            //mHandler.obtainMessage(MSG_DISCONNECT, callId).sendToTarget();
+            SomeArgs args = SomeArgs.obtain();
+            args.arg1 = callId;
+            args.arg2 = currentOperation;
+            args.arg3 = pendingOperation;
+            mHandler.obtainMessage(MSG_HANDLE_ORDERED_USER_OPERATION, args).sendToTarget();
+        }
+        /// @}
     };
 
     private final Handler mHandler = new Handler(Looper.getMainLooper()) {
@@ -407,6 +498,7 @@ public abstract class ConnectionService extends Service {
                     }
                     break;
                 }
+
                 case MSG_PULL_EXTERNAL_CALL: {
                     pullExternalCall((String) msg.obj);
                     break;
@@ -434,6 +526,92 @@ public abstract class ConnectionService extends Service {
                     }
                     break;
                 }
+                /// M: CC: Interface for ECT @{
+                case MSG_ECT:
+                    explicitCallTransfer((String) msg.obj);
+                    break;
+                /// @}
+                /// M: CC: HangupAll for FTA 31.4.4.2 @{
+                case MSG_HANGUP_ALL:
+                    hangupAll((String) msg.obj);
+                    break;
+                /// @}
+                /// M: For VoLTE @{
+                case MSG_INVITE_CONFERENCE_PARTICIPANTS: {
+                    SomeArgs args = (SomeArgs) msg.obj;
+                    try {
+                        String conferenceCallId = (String) args.arg1;
+                        List<String> numbers = (List<String>) args.arg2;
+                        inviteConferenceParticipants(conferenceCallId, numbers);
+                    } finally {
+                        args.recycle();
+                    }
+                    break;
+                }
+                case MSG_CREATE_CONFERENCE: {
+                    SomeArgs args = (SomeArgs) msg.obj;
+                    try {
+                        final PhoneAccountHandle connectionManagerPhoneAccount =
+                                (PhoneAccountHandle) args.arg1;
+                        final String conferenceCallId = (String) args.arg2;
+                        final ConnectionRequest request = (ConnectionRequest) args.arg3;
+                        final List<String> numbers = (List<String>) args.arg4;
+                        final boolean isIncoming = args.argi1 == 1;
+                        if (!mAreAccountsInitialized) {
+                            Log.d(this, "Enqueueing pre-init request %s", conferenceCallId);
+                            mPreInitializationConnectionRequests.add(new Runnable() {
+                                @Override
+                                public void run() {
+                                    createConference(
+                                            connectionManagerPhoneAccount,
+                                            conferenceCallId,
+                                            request,
+                                            numbers,
+                                            isIncoming);
+                                }
+                            });
+                        } else {
+                            createConference(
+                                    connectionManagerPhoneAccount,
+                                    conferenceCallId,
+                                    request,
+                                    numbers,
+                                    isIncoming);
+                        }
+                    } finally {
+                        args.recycle();
+                    }
+                    break;
+                }
+                /// M: CC: For DSDS/DSDA Two-action operation @{
+                case MSG_HANDLE_ORDERED_USER_OPERATION: {
+                    SomeArgs args = (SomeArgs) msg.obj;
+                    try {
+                        String callId = (String) args.arg1;
+                        String currentOperation = (String) args.arg2;
+                        String pendingOperation = (String) args.arg3;
+                        if (TelecomManagerEx.OPERATION_DISCONNECT_CALL.equals(currentOperation)) {
+                            disconnect(callId, pendingOperation);
+                        }
+                    } finally {
+                        args.recycle();
+                    }
+                    break;
+                }
+                /// @}
+                /// M: CC: Interface for blind/assured ECT @{
+                case MSG_BLIND_ASSURED_ECT:
+                    SomeArgs args = (SomeArgs) msg.obj;
+                    try {
+                        String callId = (String) args.arg1;
+                        String number = (String) args.arg2;
+                        int type = args.argi1;
+                        explicitCallTransfer(callId, number, type);
+                    } finally {
+                        args.recycle();
+                    }
+                    break;
+                /// @}
                 default:
                     break;
             }
@@ -706,7 +884,6 @@ public abstract class ConnectionService extends Service {
             }
         }
 
-
         @Override
         public void onConnectionEvent(Connection connection, String event, Bundle extras) {
             String id = mIdByConnection.get(connection);
@@ -745,6 +922,26 @@ public abstract class ConnectionService extends Service {
                 isIncoming,
                 isUnknown);
 
+        /// M: ALPS02136977. Prints debug messages for MO. @{
+        if (!isIncoming) {
+            String callNumber = null;
+            if (request != null && request.getAddress() != null) {
+                callNumber = request.getAddress().getSchemeSpecificPart();
+            }
+            FormattedLog formattedLog = new FormattedLog.Builder()
+                    .setCategory("CC")
+                    .setServiceName(getConnectionServiceName())
+                    .setOpType(FormattedLog.OpType.OPERATION)
+                    .setActionName("Dial")
+                    .setCallNumber(callNumber)
+                    .setCallId("")
+                    .buildDebugMsg();
+            if (formattedLog != null) {
+                Log.d(this, formattedLog.toString());
+            }
+        }
+        /// @}
+
         Connection connection = isUnknown ? onCreateUnknownConnection(callManagerAccount, request)
                 : isIncoming ? onCreateIncomingConnection(callManagerAccount, request)
                 : onCreateOutgoingConnection(callManagerAccount, request);
@@ -768,11 +965,20 @@ public abstract class ConnectionService extends Service {
                 Connection.propertiesToString(connection.getConnectionProperties()));
 
         Log.d(this, "createConnection, calling handleCreateConnectionSuccessful %s", callId);
+        /// M: CC: Set PhoneAccountHandle for ECC @{
+        //[ALPS01794357]
+        PhoneAccountHandle handle = connection.getAccountHandle();
+        if (handle == null) {
+            handle = request.getAccountHandle();
+        } else {
+            Log.d(this, "createConnection, set back phone account:%s", handle);
+        }
+        //// @}
         mAdapter.handleCreateConnectionComplete(
                 callId,
                 request,
                 new ParcelableConnection(
-                        request.getAccountHandle(),
+                        handle,  /* M: CC: Set PhoneAccountHandle for ECC [ALPS01794357] */
                         connection.getState(),
                         connection.getConnectionCapabilities(),
                         connection.getConnectionProperties(),
@@ -793,8 +999,81 @@ public abstract class ConnectionService extends Service {
         if (isUnknown) {
             triggerConferenceRecalculate();
         }
+
+        /// M: CC: Proprietary CRSS handling @{
+        // [ALPS01956888] For FailureSignalingConnection, CastException JE will happen.
+        if (connection.getState() != Connection.STATE_DISCONNECTED) {
+            forceSuppMessageUpdate(connection);
+        }
+        /// @}
     }
 
+    /// M: CC: ECC Retry @{
+    /**
+     * createConnection for ECC Retry
+     *
+     * @param callId The Call Id.
+     * @param request The ConnectionRequest.
+     * @hide
+     */
+    public void createConnectionInternal(
+            final String callId,
+            final ConnectionRequest request) {
+        Log.d(this, "createConnectionInternal, callId: %s, request: %s", callId, request);
+
+        Connection connection = onCreateOutgoingConnection(null /* callManagerAccount */, request);
+        Log.d(this, "createConnectionInternal, connection: %s", connection);
+        if (connection == null) {
+            connection = Connection.createFailedConnection(
+                    new DisconnectCause(DisconnectCause.ERROR));
+        }
+
+        connection.setTelecomCallId(callId);
+        if (connection.getState() != Connection.STATE_DISCONNECTED) {
+            addConnection(callId, connection);
+        }
+
+        Uri address = connection.getAddress();
+        String number = address == null ? "null" : address.getSchemeSpecificPart();
+        Log.v(this, "createConnectionInternal, number:%s, state:%s, capabilities:%s, properties:%s",
+                Connection.toLogSafePhoneNumber(number),
+                Connection.stateToString(connection.getState()),
+                Connection.capabilitiesToString(connection.getConnectionCapabilities()),
+                Connection.propertiesToString(connection.getConnectionProperties()));
+
+
+        Log.d(this, "createConnectionInternal, calling handleCreateConnectionComplete %s", callId);
+        /// M: CC: Set PhoneAccountHandle for ECC @{
+        //[ALPS01794357]
+        PhoneAccountHandle handle = connection.getAccountHandle();
+        if (handle == null) {
+            handle = request.getAccountHandle();
+        }
+        //// @}
+        mAdapter.handleCreateConnectionComplete(
+                callId,
+                request,
+                new ParcelableConnection(
+                        handle,  /* M: CC: Set PhoneAccountHandle for ECC [ALPS01794357] */
+                        connection.getState(),
+                        connection.getConnectionCapabilities(),
+                        connection.getConnectionProperties(),
+                        connection.getAddress(),
+                        connection.getAddressPresentation(),
+                        connection.getCallerDisplayName(),
+                        connection.getCallerDisplayNamePresentation(),
+                        connection.getVideoProvider() == null ?
+                                null : connection.getVideoProvider().getInterface(),
+                        connection.getVideoState(),
+                        connection.isRingbackRequested(),
+                        connection.getAudioModeIsVoip(),
+                        connection.getConnectTimeMillis(),
+                        connection.getStatusHints(),
+                        connection.getDisconnectCause(),
+                        createIdList(connection.getConferenceables()),
+                        connection.getExtras()));
+    }
+    /// @}
     private void abort(String callId) {
         Log.d(this, "abort %s", callId);
         findConnectionForAction(callId, "abort").onAbort();
@@ -806,11 +1085,17 @@ public abstract class ConnectionService extends Service {
     }
 
     private void answer(String callId) {
+        /// M: ALPS02136977. Prints debug messages.
+        logDebugMsgWithOpFormat("CC", "Answer", callId, null);
+
         Log.d(this, "answer %s", callId);
         findConnectionForAction(callId, "answer").onAnswer();
     }
 
     private void reject(String callId) {
+        /// M: ALPS02136977. Prints debug messages.
+        logDebugMsgWithOpFormat("CC", "Reject", callId, null);
+
         Log.d(this, "reject %s", callId);
         findConnectionForAction(callId, "reject").onReject();
     }
@@ -826,6 +1111,15 @@ public abstract class ConnectionService extends Service {
     }
 
     private void disconnect(String callId) {
+        /// M: ALPS02136977. Prints debug messages. @{
+        if (mConnectionById.containsKey(callId) && mConnectionById.get(callId) != null
+                && mConnectionById.get(callId).getConference() != null) {
+            logDebugMsgWithOpFormat("CC", "RemoveMember", callId, null);
+        } else {
+            logDebugMsgWithOpFormat("CC", "Hangup", callId, null);
+        }
+        /// @}
+
         Log.d(this, "disconnect %s", callId);
         if (mConnectionById.containsKey(callId)) {
             findConnectionForAction(callId, "disconnect").onDisconnect();
@@ -835,6 +1129,9 @@ public abstract class ConnectionService extends Service {
     }
 
     private void hold(String callId) {
+        /// M: ALPS02136977. Prints debug messages.
+        logDebugMsgWithOpFormat("CC", "Hold", callId, null);
+
         Log.d(this, "hold %s", callId);
         if (mConnectionById.containsKey(callId)) {
             findConnectionForAction(callId, "hold").onHold();
@@ -844,6 +1141,9 @@ public abstract class ConnectionService extends Service {
     }
 
     private void unhold(String callId) {
+        /// M: ALPS02136977. Prints debug messages.
+        logDebugMsgWithOpFormat("CC", "Unhold", callId, null);
+
         Log.d(this, "unhold %s", callId);
         if (mConnectionById.containsKey(callId)) {
             findConnectionForAction(callId, "unhold").onUnhold();
@@ -882,6 +1182,9 @@ public abstract class ConnectionService extends Service {
     }
 
     private void conference(String callId1, String callId2) {
+        /// M: ALPS02136977. Prints debug messages.
+        logDebugMsgWithOpFormat("CC", "Conference", callId1, null);
+
         Log.d(this, "conference %s, %s", callId1, callId2);
 
         // Attempt to get second connection or conference.
@@ -1017,6 +1320,203 @@ public abstract class ConnectionService extends Service {
         Log.d(this, "onPostDialContinue(%s)", callId);
         findConnectionForAction(callId, "stopDtmfTone").onPostDialContinue(proceed);
     }
+
+
+    /// M: CC: Interface for ECT @{
+    private void explicitCallTransfer(String callId) {
+        if (!canTransfer(mConnectionById.get(callId))) {
+            Log.d(this, "explicitCallTransfer %s fail", callId);
+            return;
+        }
+        Log.d(this, "explicitCallTransfer %s", callId);
+        findConnectionForAction(callId, "explicitCallTransfer").onExplicitCallTransfer();
+    }
+    /// @}
+
+    /// M: CC: Interface for blind/assured ECT @{
+    private void explicitCallTransfer(String callId, String number, int type) {
+        if (!canBlindAssuredTransfer(mConnectionById.get(callId))) {
+            Log.d(this, "explicitCallTransfer %s fail", callId);
+            return;
+        }
+        Log.d(this, "explicitCallTransfer %s %s %d", callId, number, type);
+        findConnectionForAction(callId, "explicitCallTransfer").
+                onExplicitCallTransfer(number, type);
+    }
+    /// @}
+
+    /// M: CC: HangupAll for FTA 31.4.4.2 @{
+    private void hangupAll(String callId) {
+        Log.d(this, "hangupAll %s", callId);
+        if (mConnectionById.containsKey(callId)) {
+            findConnectionForAction(callId, "hangupAll").onHangupAll();
+        } else {
+            findConferenceForAction(callId, "hangupAll").onHangupAll();
+        }
+    }
+    /// @}
+
+    /// M: For VoLTE enhanced conference call. @{
+    private void inviteConferenceParticipants(String conferenceCallId, List<String> numbers) {
+        /// M: ALPS02136977. Prints debug messages. @{
+        StringBuilder sb = new StringBuilder();
+        for (String number : numbers) {
+            sb.append(number);
+        }
+        logDebugMsgWithOpFormat("CC", "AddMember", conferenceCallId,
+                " numbers=" + sb.toString());
+        /// @}
+
+        Log.d(this, "inviteConferenceParticipants %s", conferenceCallId);
+        if (mConferenceById.containsKey(conferenceCallId)) {
+            findConferenceForAction(conferenceCallId, "inviteConferenceParticipants")
+                .onInviteConferenceParticipants(numbers);
+        }
+    }
+
+    /**
+     * This can be used by telecom to either create a new outgoing conference
+     * call or attach to an existing incoming conference call.
+     */
+    private void createConference(
+            final PhoneAccountHandle callManagerAccount,
+            final String conferenceCallId,
+            final ConnectionRequest request,
+            final List<String> numbers,
+            boolean isIncoming) {
+        Log.d(this,
+            "createConference, callManagerAccount: %s, conferenceCallId: %s, request: %s, " +
+            "numbers: %s, isIncoming: %b", callManagerAccount, conferenceCallId, request, numbers,
+            isIncoming);
+
+        /// M: ALPS02136977. Prints debug messages for conference MO. @{
+        if (!isIncoming) {
+            StringBuilder sb = new StringBuilder();
+            for (String number : numbers) {
+                sb.append(number);
+            }
+
+            FormattedLog formattedLog = new FormattedLog.Builder()
+                    .setCategory("CC")
+                    .setServiceName(getConnectionServiceName())
+                    .setOpType(FormattedLog.OpType.OPERATION)
+                    .setActionName("DialConf")
+                    .setCallNumber("conferenceCall")
+                    .setCallId("")
+                    .setExtraMessage("numbers=" + sb.toString())
+                    .buildDebugMsg();
+            if (formattedLog != null) {
+                Log.d(this, formattedLog.toString());
+            }
+        }
+        /// @}
+
+        // Because the ConferenceController will be used when create Conference
+        Conference conference = onCreateConference(
+            callManagerAccount,
+            conferenceCallId,
+            request,
+            numbers,
+            isIncoming);
+
+        if (conference == null) {
+            Log.d(this, "Fail to create conference!");
+            conference = getNullConference();
+        } else if (conference.getState() != Connection.STATE_DISCONNECTED) {
+            if (mIdByConference.containsKey(conference)) {
+                Log.d(this, "Re-adding an existing conference: %s.", conference);
+            } else {
+                mConferenceById.put(conferenceCallId, conference);
+                mIdByConference.put(conference, conferenceCallId);
+                conference.addListener(mConferenceListener);
+            }
+        }
+
+        ParcelableConference parcelableConference = new ParcelableConference(
+                conference.getPhoneAccountHandle(),
+                conference.getState(),
+                conference.getConnectionCapabilities(),
+                conference.getConnectionProperties(),
+                null,
+                conference.getVideoProvider() == null ?
+                        null : conference.getVideoProvider().getInterface(),
+                conference.getVideoState(),
+                conference.getConnectTimeMillis(),
+                conference.getStatusHints(),
+                conference.getExtras(),
+                conference.getDisconnectCause());
+
+        mAdapter.handleCreateConferenceComplete(
+            conferenceCallId,
+            request,
+            parcelableConference);
+
+    }
+
+    /**
+     * the sub class should implement this function.
+     * @param callManagerAccount the PhoneAccountHandle
+     * @param conferenceCallId the id of the conference
+     * @param request connection request
+     * @param numbers the numbers(addresses) to be invited
+     * @param isIncoming MT or MO
+     * @return Conference created conference
+     * @hide
+     */
+    protected Conference onCreateConference(
+        final PhoneAccountHandle callManagerAccount,
+        final String conferenceCallId,
+        final ConnectionRequest request,
+        final List<String> numbers,
+        boolean isIncoming) {
+        return null;
+    }
+    /// @}
+
+    /// M: For VoLTE conference SRVCC. @{
+    /**
+     * When VoLTE conference SRVCC, it will be switched to TelephonyConference.
+     * Telecomm should be unware of this.
+     * @param oldConf the original ImsConference.
+     * @param newConf the new TelephonyConference.
+     * @hide
+     */
+    protected void replaceConference(Conference oldConf, Conference newConf) {
+        Log.d(this, "SRVCC: oldConf= %s , newConf= %s", oldConf, newConf);
+        if (oldConf == newConf) {
+            return;
+        }
+
+        if (mIdByConference.containsKey(oldConf)) {
+            Log.d(this, "SRVCC: start to do replacement");
+            oldConf.removeListener(mConferenceListener);
+
+            String id = mIdByConference.get(oldConf);
+            mConferenceById.remove(id);
+            mIdByConference.remove(oldConf);
+
+            mConferenceById.put(id, newConf);
+            mIdByConference.put(newConf, id);
+            newConf.addListener(mConferenceListener);
+            mConferenceListener.onConnectionCapabilitiesChanged(
+                  newConf, newConf.getConnectionCapabilities());
+
+        }
+    }
+    /// @}
+
+    /// M: CC: For MSMS/MSMA ordered user operations.
+    private void disconnect(String callId, String pendingOperation) {
+        Log.d(this, "disconnect %s, pending call action %s", callId, pendingOperation);
+        if (mConnectionById.containsKey(callId)) {
+            findConnectionForAction(callId,
+                    TelecomManagerEx.OPERATION_DISCONNECT_CALL).onDisconnect();
+        } else {
+            findConferenceForAction(callId,
+                    TelecomManagerEx.OPERATION_DISCONNECT_CALL).onDisconnect(pendingOperation);
+        }
+    }
+    /// @}
 
     private void onAdapterAttached() {
         if (mAreAccountsInitialized) {
@@ -1372,6 +1872,11 @@ public abstract class ConnectionService extends Service {
         mIdByConnection.put(connection, callId);
         connection.addConnectionListener(mConnectionListener);
         connection.setConnectionService(this);
+        /// M: CC: Force updateState for Connection once its ConnectionService is set @{
+        // Forcing call state update after ConnectionService is set
+        // to keep capabilities up-to-date.
+        connection.fireOnCallState();
+        /// @}
     }
 
     /** {@hide} */
@@ -1385,6 +1890,25 @@ public abstract class ConnectionService extends Service {
             mAdapter.removeCall(id);
         }
     }
+
+    /// M: CC: ECC Retry @{
+    /**
+     * Remove Connection without removing callId from Telecom
+     *
+     * @param connection The connection.
+     * @return String The callId mapped to the removed connection.
+     * @hide
+     */
+    protected String removeConnectionInternal(Connection connection) {
+        String id = mIdByConnection.get(connection);
+        connection.unsetConnectionService(this);
+        connection.removeConnectionListener(mConnectionListener);
+        mConnectionById.remove(mIdByConnection.get(connection));
+        mIdByConnection.remove(connection);
+        Log.d(this, "removeConnectionInternal, callId: %s, connection: %s", id, connection);
+        return id;
+    }
+    /// @}
 
     private String addConferenceInternal(Conference conference) {
         String originalId = null;
@@ -1513,4 +2037,128 @@ public abstract class ConnectionService extends Service {
             return ++mId;
         }
     }
+
+    /// M: CC: TelephonyConnectionService canDial check @{
+    /**
+      * Check whether an outgoing call can be made on a certain connection
+      * based on all call states.
+      * Default implementation, need to be overrided.
+      * @param accountHandle
+      * @param dialString
+      * @return true allowed false disallowed
+      * @hide
+      */
+    public boolean canDial(PhoneAccountHandle accountHandle, String dialString) {
+        // do more check in each connection service
+        return true;
+    }
+
+    /// M: CC: Interface for ECT @{
+    /**
+      * Check whether onExplicitCallTransfer() can be performed on a certain connection.
+      * Default implementation, need to be overrided.
+      * @param bgConnection
+      * @return true allowed false disallowed
+      * @hide
+      */
+    public boolean canTransfer(Connection bgConnection) {
+        // do more check in each connection service
+        return false;
+    }
+    /// @}
+
+    /// M: CC: Interface for blind/assured ECT @{
+    /**
+      * Check whether onExplicitCallTransfer() can be performed on a certain connection.
+      * Default implementation, need to be overrided.
+      * @param bgConnection
+      * @return true allowed false disallowed
+      * @hide
+      */
+    public boolean canBlindAssuredTransfer(Connection bgConnection) {
+        // do more check in each connection service
+        return false;
+    }
+    /// @}
+
+    /// M: CC: Proprietary CRSS handling @{
+    /**
+     * Base class for forcing SuppMessage update after ConnectionService is set,
+     * see {@link ConnectionService#addConnection}
+     * To be overrided by children classes.
+     * @hide
+     */
+    protected void forceSuppMessageUpdate(Connection conn) {}
+    /// @}
+
+    /// M: ALPS02136977. Prints debug logs at each connectionService. (e.q. telephony). @{
+    /**
+     * Logs formatted debug log messages, for "OP".
+     * Format: [category][Module][OP][Action][call-number][local-call-ID] Msg. String
+     *
+     * @param category currently we only have 'CC' category.
+     * @param action the action name. (e.q. Dial, Hold, MT, Onhold, etc.)
+     * @param callId as a local-call-ID, it is hash code of the object.
+     * @param msg the optional messages
+     * @hide
+     */
+    protected void logDebugMsgWithOpFormat(
+            String category, String action, String callId, String msg) {
+        if (category == null || action == null || callId == null) {
+            // return if no mandatory tags.
+            return;
+        }
+
+        // messages is optional.
+        if (msg == null) {
+            msg = "";
+        }
+
+        String callNumber = "null";
+        String localCallId = "null";
+
+        if (mConnectionById.containsKey(callId)) {
+            Connection conn = mConnectionById.get(callId);
+            if (conn != null && conn.getAddress() != null) {
+                callNumber = conn.getAddress().getSchemeSpecificPart();
+            }
+            localCallId = Integer.toString(System.identityHashCode(conn));
+        } else if (mConferenceById.containsKey(callId)) {
+            callNumber = "conferenceCall";
+            localCallId = Integer.toString(System.identityHashCode(mConferenceById.get(callId)));
+        }
+
+        FormattedLog formattedLog = new FormattedLog.Builder()
+                .setCategory(category)
+                .setServiceName(getConnectionServiceName())
+                .setOpType(FormattedLog.OpType.OPERATION)
+                .setActionName(action)
+                .setCallNumber(callNumber)
+                .setCallId(localCallId)
+                .setExtraMessage(msg)
+                .buildDebugMsg();
+
+        if (formattedLog != null) {
+            Log.d(this, formattedLog.toString());
+        }
+    }
+
+    /**
+     * Gets the name of current connectionService.
+     * Ex: "TelephonyConnectionService" -> return "Telephony"
+     *
+     * @return name of this connectionService.
+     * @hide
+     */
+    private String getConnectionServiceName() {
+        String className = this.getClass().getSimpleName();
+        int index = className.indexOf("ConnectionService");
+
+        if (index != -1) {
+            return className.substring(0, index);
+        } else {
+            return className;
+        }
+    }
+    /// @}
 }

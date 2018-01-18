@@ -32,7 +32,6 @@ import android.service.persistentdata.PersistentDataBlockManager;
 import android.util.Slog;
 
 import com.android.internal.R;
-import com.android.internal.annotations.GuardedBy;
 
 import libcore.io.IoUtils;
 
@@ -84,19 +83,21 @@ public class PersistentDataBlockService extends SystemService {
 
     private int mAllowedUid = -1;
     private long mBlockDeviceSize;
-
-    @GuardedBy("mLock")
     private boolean mIsWritable = true;
 
     public PersistentDataBlockService(Context context) {
         super(context);
+        Slog.i(TAG, "PersistentDataBlockService init");
         mContext = context;
         mDataBlockFile = SystemProperties.get(PERSISTENT_DATA_BLOCK_PROP);
         mBlockDeviceSize = -1; // Load lazily
         mAllowedUid = getAllowedUid(UserHandle.USER_SYSTEM);
+        Slog.i(TAG, "PersistentDataBlockService, mDataBlockFile=" + mDataBlockFile
+            + ", mAllowedUid=" + mAllowedUid);
     }
 
     private int getAllowedUid(int userHandle) {
+        Slog.i(TAG, "getAllowedUid, userHandle=" + userHandle);
         String allowedPackage = mContext.getResources()
                 .getString(R.string.config_persistentDataPackageName);
         PackageManager pm = mContext.getPackageManager();
@@ -108,17 +109,20 @@ public class PersistentDataBlockService extends SystemService {
             // not expected
             Slog.e(TAG, "not able to find package " + allowedPackage, e);
         }
+        Slog.i(TAG, "getAllowedUid, allowedUid=" + allowedUid);
         return allowedUid;
     }
 
     @Override
     public void onStart() {
+        Slog.i(TAG, "onStart");
         enforceChecksumValidity();
         formatIfOemUnlockEnabled();
         publishBinderService(Context.PERSISTENT_DATA_BLOCK_SERVICE, mService);
     }
 
     private void formatIfOemUnlockEnabled() {
+        Slog.i(TAG, "formatIfOemUnlockEnabled");
         boolean enabled = doGetOemUnlockEnabled();
         if (enabled) {
             synchronized (mLock) {
@@ -130,6 +134,7 @@ public class PersistentDataBlockService extends SystemService {
     }
 
     private void enforceOemUnlockReadPermission() {
+        Slog.i(TAG, "enforceOemUnlockReadPermission");
         if (mContext.checkCallingOrSelfPermission(Manifest.permission.READ_OEM_UNLOCK_STATE)
                 == PackageManager.PERMISSION_DENIED
                 && mContext.checkCallingOrSelfPermission(Manifest.permission.OEM_UNLOCK_STATE)
@@ -140,6 +145,7 @@ public class PersistentDataBlockService extends SystemService {
     }
 
     private void enforceOemUnlockWritePermission() {
+        Slog.i(TAG, "enforceOemUnlockWritePermission");
         mContext.enforceCallingOrSelfPermission(
                 Manifest.permission.OEM_UNLOCK_STATE,
                 "Can't modify OEM unlock state");
@@ -169,25 +175,30 @@ public class PersistentDataBlockService extends SystemService {
 
     private int getTotalDataSizeLocked(DataInputStream inputStream) throws IOException {
         // skip over checksum
+        Slog.i(TAG, "getTotalDataSizeLocked");
         inputStream.skipBytes(DIGEST_SIZE_BYTES);
 
         int totalDataSize;
         int blockId = inputStream.readInt();
+        Slog.i(TAG, "getTotalDataSizeLocked, blockId=" + blockId
+            + ", PARTITION_TYPE_MARKER=" + PARTITION_TYPE_MARKER);
         if (blockId == PARTITION_TYPE_MARKER) {
             totalDataSize = inputStream.readInt();
         } else {
             totalDataSize = 0;
         }
+        Slog.i(TAG, "getTotalDataSizeLocked, totalDataSize=" + totalDataSize);
         return totalDataSize;
     }
 
     private long getBlockDeviceSize() {
+        Slog.i(TAG, "getBlockDeviceSize");
         synchronized (mLock) {
             if (mBlockDeviceSize == -1) {
                 mBlockDeviceSize = nativeGetBlockDeviceSize(mDataBlockFile);
             }
         }
-
+        Slog.i(TAG, "getBlockDeviceSize, mBlockDeviceSize=" + mBlockDeviceSize);
         return mBlockDeviceSize;
     }
 
@@ -199,14 +210,16 @@ public class PersistentDataBlockService extends SystemService {
             if (digest == null || !Arrays.equals(storedDigest, digest)) {
                 Slog.i(TAG, "Formatting FRP partition...");
                 formatPartitionLocked(false);
+                Slog.i(TAG, "enforceChecksumValidity, return false");
                 return false;
             }
         }
-
+        Slog.i(TAG, "enforceChecksumValidity, return true");
         return true;
     }
 
     private boolean computeAndWriteDigestLocked() {
+        Slog.i(TAG, "computeAndWriteDigestLocked");
         byte[] digest = computeDigestLocked(null);
         if (digest != null) {
             DataOutputStream outputStream;
@@ -227,6 +240,7 @@ public class PersistentDataBlockService extends SystemService {
             } finally {
                 IoUtils.closeQuietly(outputStream);
             }
+            Slog.i(TAG, "computeAndWriteDigestLocked, return true");
             return true;
         } else {
             return false;
@@ -234,6 +248,7 @@ public class PersistentDataBlockService extends SystemService {
     }
 
     private byte[] computeDigestLocked(byte[] storedDigest) {
+        Slog.i(TAG, "computeDigestLocked in");
         DataInputStream inputStream;
         try {
             inputStream = new DataInputStream(new FileInputStream(new File(mDataBlockFile)));
@@ -242,6 +257,7 @@ public class PersistentDataBlockService extends SystemService {
             return null;
         }
 
+        Slog.i(TAG, "computeDigestLocked, get MessageDigest isnstance");
         MessageDigest md;
         try {
             md = MessageDigest.getInstance("SHA-256");
@@ -259,12 +275,14 @@ public class PersistentDataBlockService extends SystemService {
                 inputStream.skipBytes(DIGEST_SIZE_BYTES);
             }
 
+            Slog.i(TAG, "computeDigestLocked, start read partition");
             int read;
-            byte[] data = new byte[1024];
+            byte[] data = new byte[8192];
             md.update(data, 0, DIGEST_SIZE_BYTES); // include 0 checksum in digest
             while ((read = inputStream.read(data)) != -1) {
                 md.update(data, 0, read);
             }
+            Slog.i(TAG, "computeDigestLocked, end read partition");
         } catch (IOException e) {
             Slog.e(TAG, "failed to read partition", e);
             return null;
@@ -272,10 +290,14 @@ public class PersistentDataBlockService extends SystemService {
             IoUtils.closeQuietly(inputStream);
         }
 
-        return md.digest();
+        byte[] returnValue = md.digest();
+        Slog.i(TAG, "computeDigestLocked out");
+        return returnValue;
     }
 
+
     private void formatPartitionLocked(boolean setOemUnlockEnabled) {
+        Slog.i(TAG, "formatPartitionLocked");
         DataOutputStream outputStream;
         try {
             outputStream = new DataOutputStream(new FileOutputStream(new File(mDataBlockFile)));
@@ -290,6 +312,8 @@ public class PersistentDataBlockService extends SystemService {
             outputStream.writeInt(PARTITION_TYPE_MARKER);
             outputStream.writeInt(0); // data size
             outputStream.flush();
+            Slog.i(TAG, "formatPartitionLocked init data, "
+                + "PARTITION_TYPE_MARKER=" + PARTITION_TYPE_MARKER + ", size=0 ");
         } catch (IOException e) {
             Slog.e(TAG, "failed to format block", e);
             return;
@@ -302,6 +326,7 @@ public class PersistentDataBlockService extends SystemService {
     }
 
     private void doSetOemUnlockEnabledLocked(boolean enabled) {
+        Slog.i(TAG, "doSetOemUnlockEnabledLocked, enabled=" + enabled);
         FileOutputStream outputStream;
         try {
             outputStream = new FileOutputStream(new File(mDataBlockFile));
@@ -320,6 +345,7 @@ public class PersistentDataBlockService extends SystemService {
             data.flip();
             channel.write(data);
             outputStream.flush();
+            Slog.i(TAG, "doSetOemUnlockEnabledLocked out");
         } catch (IOException e) {
             Slog.e(TAG, "unable to access persistent partition", e);
             return;
@@ -330,6 +356,7 @@ public class PersistentDataBlockService extends SystemService {
     }
 
     private boolean doGetOemUnlockEnabled() {
+        Slog.i(TAG, "doGetOemUnlockEnabled in");
         DataInputStream inputStream;
         try {
             inputStream = new DataInputStream(new FileInputStream(new File(mDataBlockFile)));
@@ -341,7 +368,9 @@ public class PersistentDataBlockService extends SystemService {
         try {
             synchronized (mLock) {
                 inputStream.skip(getBlockDeviceSize() - 1);
-                return inputStream.readByte() != 0;
+                boolean returnValue = inputStream.readByte() != 0;
+                Slog.i(TAG, "doGetOemUnlockEnabled, return " + returnValue);
+                return returnValue;
             }
         } catch (IOException e) {
             Slog.e(TAG, "unable to access persistent partition", e);
@@ -357,6 +386,7 @@ public class PersistentDataBlockService extends SystemService {
     private final IBinder mService = new IPersistentDataBlockService.Stub() {
         @Override
         public int write(byte[] data) throws RemoteException {
+            Slog.i(TAG, "mService::write data");
             enforceUid(Binder.getCallingUid());
 
             // Need to ensure we don't write over the last byte
@@ -390,6 +420,7 @@ public class PersistentDataBlockService extends SystemService {
                     outputStream.write(checksum, 0, DIGEST_SIZE_BYTES);
                     outputStream.write(headerAndData.array());
                     outputStream.flush();
+                    Slog.i(TAG, "mService::write flush");
                 } catch (IOException e) {
                     Slog.e(TAG, "failed writing to the persistent data block", e);
                     return -1;
@@ -398,6 +429,7 @@ public class PersistentDataBlockService extends SystemService {
                 }
 
                 if (computeAndWriteDigestLocked()) {
+                    Slog.i(TAG, "mService::write return " + data.length);
                     return data.length;
                 } else {
                     return -1;
@@ -407,8 +439,10 @@ public class PersistentDataBlockService extends SystemService {
 
         @Override
         public byte[] read() {
+            Slog.i(TAG, "mService::read");
             enforceUid(Binder.getCallingUid());
             if (!enforceChecksumValidity()) {
+                Slog.i(TAG, "mService::read, enforceChecksumValidity is false, return byte[0]");
                 return new byte[0];
             }
 
@@ -425,6 +459,7 @@ public class PersistentDataBlockService extends SystemService {
                     int totalDataSize = getTotalDataSizeLocked(inputStream);
 
                     if (totalDataSize == 0) {
+                        Slog.i(TAG, "mService::read, totalDataSize == 0, return byte[0]");
                         return new byte[0];
                     }
 
@@ -436,6 +471,7 @@ public class PersistentDataBlockService extends SystemService {
                                 read + "/" + totalDataSize);
                         return null;
                     }
+                    Slog.i(TAG, "mService::read out");
                     return data;
                 }
             } catch (IOException e) {
@@ -452,6 +488,7 @@ public class PersistentDataBlockService extends SystemService {
 
         @Override
         public void wipe() {
+            Slog.i(TAG, "mService::wipe");
             enforceOemUnlockWritePermission();
 
             synchronized (mLock) {
@@ -468,6 +505,7 @@ public class PersistentDataBlockService extends SystemService {
 
         @Override
         public void setOemUnlockEnabled(boolean enabled) throws SecurityException {
+            Slog.i(TAG, "mService::setOemUnlockEnabled, enabled=" + enabled);
             // do not allow monkey to flip the flag
             if (ActivityManager.isUserAMonkey()) {
                 return;
@@ -489,6 +527,7 @@ public class PersistentDataBlockService extends SystemService {
 
         @Override
         public boolean getOemUnlockEnabled() {
+            Slog.i(TAG, "mService::getOemUnlockEnabled");
             enforceOemUnlockReadPermission();
             return doGetOemUnlockEnabled();
         }
@@ -497,6 +536,7 @@ public class PersistentDataBlockService extends SystemService {
         public int getFlashLockState() {
             enforceOemUnlockReadPermission();
             String locked = SystemProperties.get(FLASH_LOCK_PROP);
+            Slog.i(TAG, "getFlashLockState, ro.boot.flash.locked=" + locked);
             switch (locked) {
                 case FLASH_LOCK_LOCKED:
                     return PersistentDataBlockManager.FLASH_LOCK_LOCKED;
@@ -510,7 +550,6 @@ public class PersistentDataBlockService extends SystemService {
         @Override
         public int getDataBlockSize() {
             enforcePersistentDataBlockAccess();
-
             DataInputStream inputStream;
             try {
                 inputStream = new DataInputStream(new FileInputStream(new File(mDataBlockFile)));
@@ -521,6 +560,7 @@ public class PersistentDataBlockService extends SystemService {
 
             try {
                 synchronized (mLock) {
+                    Slog.i(TAG, "mService::getDataBlockSize, call getTotalDataSizeLocked");
                     return getTotalDataSizeLocked(inputStream);
                 }
             } catch (IOException e) {

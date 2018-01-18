@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2015 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -62,6 +67,48 @@ public class GeocoderProxy {
     private boolean bind () {
         return mServiceWatcher.start();
     }
+
+    //MTK add start
+    public static GeocoderProxy createAndBind(Context context,
+            int overlaySwitchResId, int defaultServicePackageNameResId,
+            int initialPackageNamesResId, int vendorPackageNamesResId, int preferPackageNamesResId,
+            Handler handler) {
+        GeocoderProxy proxy = new GeocoderProxy(context, overlaySwitchResId,
+            defaultServicePackageNameResId, initialPackageNamesResId,
+            vendorPackageNamesResId, preferPackageNamesResId, handler);
+        if (proxy.bind()) {
+            return proxy;
+        } else {
+            return null;
+        }
+    }
+
+    private GeocoderProxy(Context context,
+            int overlaySwitchResId, int defaultServicePackageNameResId,
+            int initialPackageNamesResId, int vendorPackageNamesResId, int preferPackageNamesResId,
+            Handler handler) {
+        mContext = context;
+
+        mServiceWatcher = new ServiceWatcher(mContext, TAG, SERVICE_ACTION, overlaySwitchResId,
+                defaultServicePackageNameResId, initialPackageNamesResId, vendorPackageNamesResId,
+                preferPackageNamesResId, null, handler);
+    }
+
+    public void unbind() {
+        if (mServiceWatcher != null) {
+            mServiceWatcher.stop();
+        }
+    }
+
+    public boolean isServiceBinded() {
+        IGeocodeProvider provider = getService();
+        if (provider != null) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+    //MTK add end
 
     private IGeocodeProvider getService() {
         return IGeocodeProvider.Stub.asInterface(mServiceWatcher.getBinder());

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -1198,6 +1203,40 @@ public interface IMountService extends IInterface {
                     _data.recycle();
                 }
             }
+            /**
+             * set default path.
+             */
+            public void setDefaultPath(String path) throws RemoteException {
+                Parcel _data = Parcel.obtain();
+                Parcel _reply = Parcel.obtain();
+                try {
+                    _data.writeInterfaceToken(DESCRIPTOR);
+                    _data.writeString(path);
+                    mRemote.transact(Stub.TRANSACTION_setDefaultPath, _data, _reply, 0);
+                    _reply.readException();
+                } finally {
+                    _reply.recycle();
+                    _data.recycle();
+                }
+            }
+
+            public boolean isSetPrimaryStorageUuidFinished() throws RemoteException {
+                Parcel _data = Parcel.obtain();
+                Parcel _reply = Parcel.obtain();
+                boolean _result;
+                try {
+                    _data.writeInterfaceToken(DESCRIPTOR);
+                    mRemote.transact(Stub.TRANSACTION_isSetPrimaryStorageUuidFinished,
+                                     _data, _reply, 0);
+                    _reply.readException();
+                    _result = 0 != _reply.readInt();
+                } finally {
+                    _reply.recycle();
+                    _data.recycle();
+                }
+                return _result;
+            }
+            /// @}
 
             @Override
             public void createUserKey(int userId, int serialNumber, boolean ephemeral)
@@ -1225,6 +1264,26 @@ public interface IMountService extends IInterface {
                     _data.writeInterfaceToken(DESCRIPTOR);
                     _data.writeInt(userId);
                     mRemote.transact(Stub.TRANSACTION_destroyUserKey, _data, _reply, 0);
+                    _reply.readException();
+                } finally {
+                    _reply.recycle();
+                    _data.recycle();
+                }
+            }
+
+            @Override
+            public void changeUserKey(int userId, int serialNumber,
+                    byte[] token, byte[] oldSecret, byte[] newSecret) throws RemoteException {
+                Parcel _data = Parcel.obtain();
+                Parcel _reply = Parcel.obtain();
+                try {
+                    _data.writeInterfaceToken(DESCRIPTOR);
+                    _data.writeInt(userId);
+                    _data.writeInt(serialNumber);
+                    _data.writeByteArray(token);
+                    _data.writeByteArray(oldSecret);
+                    _data.writeByteArray(newSecret);
+                    mRemote.transact(Stub.TRANSACTION_changeUserKey, _data, _reply, 0);
                     _reply.readException();
                 } finally {
                     _reply.recycle();
@@ -1506,6 +1565,14 @@ public interface IMountService extends IInterface {
         static final int TRANSACTION_addUserKeyAuth = IBinder.FIRST_CALL_TRANSACTION + 70;
 
         static final int TRANSACTION_fixateNewestUserKeyAuth = IBinder.FIRST_CALL_TRANSACTION + 71;
+
+        static final int TRANSACTION_changeUserKey = IBinder.FIRST_CALL_TRANSACTION + 72;
+
+        /// M: Add  some APIs for new feature or bug fix @{
+        static final int TRANSACTION_setDefaultPath = IBinder.FIRST_CALL_TRANSACTION + 91;
+        static final int TRANSACTION_isSetPrimaryStorageUuidFinished =
+            IBinder.FIRST_CALL_TRANSACTION + 92;
+        /// @}
 
         /**
          * Cast an IBinder object into an IMountService interface, generating a
@@ -2085,6 +2152,17 @@ public interface IMountService extends IInterface {
                     reply.writeNoException();
                     return true;
                 }
+                 case TRANSACTION_changeUserKey: {
+                    data.enforceInterface(DESCRIPTOR);
+                    int userId = data.readInt();
+                    int serialNumber = data.readInt();
+                    byte[] token = data.createByteArray();
+                    byte[] oldSecret = data.createByteArray();
+                    byte[] newSecret = data.createByteArray();
+                    changeUserKey(userId, serialNumber, token, oldSecret, newSecret);
+                    reply.writeNoException();
+                    return true;
+                }
                 case TRANSACTION_addUserKeyAuth: {
                     data.enforceInterface(DESCRIPTOR);
                     int userId = data.readInt();
@@ -2152,6 +2230,21 @@ public interface IMountService extends IInterface {
                     ParcelFileDescriptor fd = mountAppFuse(name);
                     reply.writeNoException();
                     reply.writeParcelable(fd, Parcelable.PARCELABLE_WRITE_RETURN_VALUE);
+                    return true;
+                }
+                case TRANSACTION_setDefaultPath: {
+                    data.enforceInterface(DESCRIPTOR);
+                    String path;
+                    path = data.readString();
+                    setDefaultPath(path);
+                    reply.writeNoException();
+                    return true;
+                }
+                case TRANSACTION_isSetPrimaryStorageUuidFinished: {
+                    data.enforceInterface(DESCRIPTOR);
+                    boolean result = isSetPrimaryStorageUuidFinished();
+                    reply.writeNoException();
+                    reply.writeInt(result ? 1 : 0);
                     return true;
                 }
             }
@@ -2474,6 +2567,18 @@ public interface IMountService extends IInterface {
     public void createUserKey(int userId, int serialNumber, boolean ephemeral)
             throws RemoteException;
     public void destroyUserKey(int userId) throws RemoteException;
+    public void changeUserKey(int userId, int serialNumber,
+            byte[] token, byte[] oldSecret, byte[] newSecret) throws RemoteException;
+    /**
+     * set default path.
+     * @param path default path to set
+     */
+    public void setDefaultPath(String Path) throws RemoteException;
+    /**
+    * Check is set primary storage uuid finished.
+    */
+    public boolean isSetPrimaryStorageUuidFinished() throws RemoteException;
+
     public void addUserKeyAuth(int userId, int serialNumber,
             byte[] token, byte[] secret) throws RemoteException;
     public void fixateNewestUserKeyAuth(int userId) throws RemoteException;

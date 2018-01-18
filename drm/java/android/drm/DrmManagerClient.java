@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -222,7 +227,10 @@ public class DrmManagerClient implements AutoCloseable {
                 case DrmInfoEvent.TYPE_RIGHTS_INSTALLED:
                 case DrmInfoEvent.TYPE_WAIT_FOR_RIGHTS:
                 case DrmInfoEvent.TYPE_ACCOUNT_ALREADY_REGISTERED:
-                case DrmInfoEvent.TYPE_RIGHTS_REMOVED: {
+                case DrmInfoEvent.TYPE_RIGHTS_REMOVED:
+                /// M: add cta5 call back type @{
+                case DrmInfoEvent.TYPE_CTA5_CALLBACK: {
+                /// @}
                     info = new DrmInfoEvent(uniqueId, infoType, message);
                     break;
                 }
@@ -252,6 +260,8 @@ public class DrmManagerClient implements AutoCloseable {
      */
     public DrmManagerClient(Context context) {
         mContext = context;
+        /// M: Added for debug.
+        Log.d(TAG, "create DrmManagerClient instance & create event threads.");
         createEventThreads();
 
         // save the unique id
@@ -261,6 +271,8 @@ public class DrmManagerClient implements AutoCloseable {
 
     @Override
     protected void finalize() throws Throwable {
+        /// M: Added for debug.
+        Log.d(TAG, "finalize DrmManagerClient instance.");
         try {
             mCloseGuard.warnIfOpen();
             close();
@@ -278,13 +290,18 @@ public class DrmManagerClient implements AutoCloseable {
      */
     @Override
     public void close() {
+        Log.d(TAG, "close DrmManagerClient instance & quit event/info thread.");
         mCloseGuard.close();
         if (mClosed.compareAndSet(false, true)) {
             if (mEventHandler != null) {
+                /// M: Added for debug.
+                Log.v(TAG, "quit event handler thread.");
                 mEventThread.quit();
                 mEventThread = null;
             }
             if (mInfoHandler != null) {
+                /// M: Added for debug.
+                Log.v(TAG, "quit info handler thread.");
                 mInfoThread.quit();
                 mInfoThread = null;
             }
@@ -616,6 +633,8 @@ public class DrmManagerClient implements AutoCloseable {
             }
             mime = _getOriginalMimeType(mUniqueId, path, fd);
         } catch (IOException ioe) {
+            /// M: Added for debug.
+            Log.d(TAG, "getOriginalMimeType: File I/O exception: " + ioe.getMessage());
         } finally {
             if (is != null) {
                 try {
@@ -909,10 +928,12 @@ public class DrmManagerClient implements AutoCloseable {
 
     private void createEventThreads() {
         if (mEventHandler == null && mInfoHandler == null) {
+            Log.v(TAG, "create info handler thread.");
             mInfoThread = new HandlerThread("DrmManagerClient.InfoHandler");
             mInfoThread.start();
             mInfoHandler = new InfoHandler(mInfoThread.getLooper());
 
+            Log.v(TAG, "create event handler thread.");
             mEventThread = new HandlerThread("DrmManagerClient.EventHandler");
             mEventThread.start();
             mEventHandler = new EventHandler(mEventThread.getLooper());

@@ -26,6 +26,13 @@
 namespace android {
 namespace uirenderer {
 
+#if DEBUG_FONT_RENDERER
+    #ifdef ALOGD
+    #undef ALOGD
+    #endif
+    #define ALOGD(...) ALOGD_IF(CC_UNLIKELY(g_HWUI_DEBUG_FONT_RENDERER), __VA_ARGS__);
+#endif
+
 ///////////////////////////////////////////////////////////////////////////////
 // CacheBlock
 ///////////////////////////////////////////////////////////////////////////////
@@ -202,6 +209,9 @@ bool CacheTexture::upload() {
     mPixelBuffer->upload(x, y, width, height);
     setDirty(false);
 
+    ALOGD("CacheTexture %d upload: x, y, width height = %d, %d, %d, %d",
+            getTextureId(), x, y, width, height);
+
     return mHasUnpackRowLength;
 }
 
@@ -311,7 +321,7 @@ bool CacheTexture::fitBitmap(const SkGlyph& glyph, uint32_t* retOriginX, uint32_
 
 #if DEBUG_FONT_RENDERER
             ALOGD("fitBitmap: current block list:");
-            mCacheBlocks->output();
+            if (g_HWUI_DEBUG_FONT_RENDERER) mCacheBlocks->output();
 #endif
 
             return true;

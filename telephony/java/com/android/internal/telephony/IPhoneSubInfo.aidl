@@ -16,6 +16,10 @@
 
 package com.android.internal.telephony;
 
+// MTK-START
+import android.os.Message;
+// MTK-END
+
 /**
  * Interface used to retrieve various phone-related subscriber information.
  *
@@ -201,4 +205,178 @@ interface IPhoneSubInfo {
      * @return challenge response
      */
     String getIccSimChallengeResponse(int subId, int appType, int authType, String data);
+
+     // MTK-START
+    /**
+     * Returns the IMS private user identity (IMPI) that was loaded from the ISIM for particular subId.
+     * @param subId subscription ID to be queried
+     * @return the IMPI, or null if not present or not loaded
+     */
+    String getIsimImpiForSubscriber(int subId);
+
+    /**
+     * Returns the IMS home network domain name that was loaded from the ISIM for particular subId.
+     * @param subId subscription ID to be queried
+     * @return the IMS domain name, or null if not present or not loaded
+     */
+    String getIsimDomainForSubscriber(int subId);
+
+    /**
+     * Returns the IMS public user identities (IMPU) that were loaded from the ISIM for particular subId.
+     * @param subId subscription ID to be queried
+     * @return an array of IMPU strings, with one IMPU per string, or null if
+     *      not present or not loaded
+     */
+    String[] getIsimImpuForSubscriber(int subId);
+
+    /**
+     * Returns the IMS Service Table (IST) that was loaded from the ISIM for particular subId.
+     * @param subId subscription ID to be queried
+     * @return IMS Service Table or null if not present or not loaded
+     */
+    String getIsimIstForSubscriber(int subId);
+
+    /**
+     * Returns the IMS Proxy Call Session Control Function(PCSCF) that were loaded from the ISIM for particular subId.
+     * @param subId subscription ID to be queried
+     * @return an array of PCSCF strings with one PCSCF per string, or null if
+     *      not present or not loaded
+     */
+    String[] getIsimPcscfForSubscriber(int subId);
+
+    /**
+     * Returns the GBA bootstrapping parameters (GBABP) that was loaded from the ISIM.
+     * @return GBA bootstrapping parameters or null if not present or not loaded
+     */
+    String getIsimGbabp();
+
+    /**
+     * Returns the GBA bootstrapping parameters (GBABP) that was loaded from the ISIM for particular subId.
+     * @param subId subscription ID to be queried
+     * @return GBA bootstrapping parameters or null if not present or not loaded
+     */
+    String getIsimGbabpForSubscriber(int subId);
+
+    /**
+     * Set the GBA bootstrapping parameters (GBABP) value into the ISIM.
+     * @param gbabp a GBA bootstrapping parameters value in String type
+     * @param onComplete
+     *        onComplete.obj will be an AsyncResult
+     *        ((AsyncResult)onComplete.obj).exception == null on success
+     *        ((AsyncResult)onComplete.obj).exception != null on fail
+     */
+    void setIsimGbabp(String gbabp, in Message onComplete);
+
+    /**
+     * Set the GBA bootstrapping parameters (GBABP) value into the ISIM for particular subId.
+     * @param subId subscription ID to be queried
+     * @param gbabp a GBA bootstrapping parameters value in String type
+     * @param onComplete
+     *        onComplete.obj will be an AsyncResult
+     *        ((AsyncResult)onComplete.obj).exception == null on success
+     *        ((AsyncResult)onComplete.obj).exception != null on fail
+     */
+    void setIsimGbabpForSubscriber(int subId, String gbabp, in Message onComplete);
+
+    /**
+     * Returns the USIM Service Table (UST) that was loaded from the USIM.
+     * @param service service index on UST
+     * @return  the indicated service is supported or not
+     */
+    boolean getUsimService(int service, String callingPackage);
+
+    /**
+     * Returns the USIM Service Table (UST) that was loaded from the USIM for particular subId.
+     * @param subId subscription ID to be queried
+     * @param service service index on UST
+     * @return  the indicated service is supported or not
+     */
+    boolean getUsimServiceForSubscriber(int subId, int service, String callingPackage);
+
+    /**
+     * Returns the GBA bootstrapping parameters (GBABP) that was loaded from the USIM.
+     * @return GBA bootstrapping parameters or null if not present or not loaded
+     */
+    String getUsimGbabp();
+
+    /**
+     * Returns the GBA bootstrapping parameters (GBABP) that was loaded from the USIM for particular subId.
+     * @param subId subscription ID to be queried
+     * @return GBA bootstrapping parameters or null if not present or not loaded
+     */
+    String getUsimGbabpForSubscriber(int subId);
+
+    /**
+     * Set the GBA bootstrapping parameters (GBABP) value into the USIM.
+     * @param gbabp a GBA bootstrapping parameters value in String type
+     * @param onComplete
+     *        onComplete.obj will be an AsyncResult
+     *        ((AsyncResult)onComplete.obj).exception == null on success
+     *        ((AsyncResult)onComplete.obj).exception != null on fail
+     */
+    void setUsimGbabp(String gbabp, in Message onComplete);
+
+    /**
+     * Set the GBA bootstrapping parameters (GBABP) value into the USIM for particular subId.
+     * @param subId subscription ID to be queried
+     * @param gbabp a GBA bootstrapping parameters value in String type
+     * @param onComplete
+     *        onComplete.obj will be an AsyncResult
+     *        ((AsyncResult)onComplete.obj).exception == null on success
+     *        ((AsyncResult)onComplete.obj).exception != null on fail
+     */
+    void setUsimGbabpForSubscriber(int subId, String gbabp, in Message onComplete);
+
+    /**
+     * Returns the Public Service Identity of the SM-SC (PSISMSC) that was loaded from the ISIM.
+     * @return PSISMSC or null if not present or not loaded
+     */
+    byte[] getIsimPsismsc();
+
+    /**
+     * Returns the Public Service Identity of the SM-SC (PSISMSC) that was loaded from the ISIM for particular subId.
+     * @param subId subscription ID to be queried
+     * @return PSISMSC or null if not present or not loaded
+     */
+    byte[] getIsimPsismscForSubscriber(int subId);
+
+    /**
+     * Returns the Public Service Identity of the SM-SC (PSISMSC) that was loaded from the USIM.
+     * @return PSISMSC or null if not present or not loaded
+     */
+    byte[] getUsimPsismsc();
+
+    /**
+     * Returns the Public Service Identity of the SM-SC (PSISMSC) that was loaded from the USIM for particular subId.
+     * @param subId subscription ID to be queried
+     * @return PSISMSC or null if not present or not loaded
+     */
+    byte[] getUsimPsismscForSubscriber(int subId);
+
+    /**
+     * Returns the Short message parameter (SMSP) that was loaded from the USIM.
+     * @return SMSP or null if not present or not loaded
+     */
+    byte[] getUsimSmsp();
+
+    /**
+     * Returns the Short message parameter (SMSP) that was loaded from the USIM for particular subId.
+     * @param subId subscription ID to be queried
+     * @return SMSP or null if not present or not loaded
+     */
+    byte[] getUsimSmspForSubscriber(int subId);
+
+    /**
+     * Returns the MCC+MNC length that was loaded from the USIM.
+     * @return MCC+MNC length or 0 if not present or not loaded
+     */
+    int getMncLength();
+
+    /**
+     * Returns the MCC+MNC length that was loaded from the USIM for particular subId.
+     * @param subId subscription ID to be queried
+     * @return MCC+MNC length or 0 if not present or not loaded
+     */
+    int getMncLengthForSubscriber(int subId);
+     // MTK-END
 }

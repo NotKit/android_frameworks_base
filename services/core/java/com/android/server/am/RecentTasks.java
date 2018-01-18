@@ -152,8 +152,10 @@ class RecentTasks extends ArrayList<TaskRecord> {
                 // Set of persisted taskIds for task.userId should not be null here
                 // TODO Investigate why it can happen. For now initialize with an empty set
                 if (mPersistedTaskIds.get(task.userId) == null) {
-                    Slog.wtf(TAG, "No task ids found for userId " + task.userId + ". task=" + task
+                    /// M: Remove WTF when the user is deleting multi-user account @{
+                    Slog.e(TAG, "No task ids found for userId " + task.userId + ". task=" + task
                             + " mPersistedTaskIds=" + mPersistedTaskIds);
+                    /// M: @}
                     mPersistedTaskIds.put(task.userId, new SparseBooleanArray());
                 }
                 mPersistedTaskIds.get(task.userId).put(task.taskId, true);
@@ -251,7 +253,10 @@ class RecentTasks extends ArrayList<TaskRecord> {
                 if(DEBUG_TASKS) Slog.i(TAG_TASKS,
                         "remove RecentTask " + tr + " when finishing user" + userId);
                 remove(i);
-                tr.removedFromRecents();
+                //tr.removedFromRecents();
+                /// M: ALPS02841085. Need to write PersistedTaskIds into file
+                /// before switching guest to owner
+                tr.removedFromRecentsImmediatly();
             }
         }
     }

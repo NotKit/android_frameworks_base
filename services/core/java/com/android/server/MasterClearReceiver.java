@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2008 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -55,6 +60,7 @@ public class MasterClearReceiver extends BroadcastReceiver {
             @Override
             public void run() {
                 try {
+                    Slog.d(TAG, "Call mtehod: rebootWipeUserData");
                     RecoverySystem.rebootWipeUserData(context, shutdown, reason, forceWipe);
                     Log.wtf(TAG, "Still running after master clear?!");
                 } catch (IOException e) {

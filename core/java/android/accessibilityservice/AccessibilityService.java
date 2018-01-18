@@ -26,6 +26,7 @@ import android.content.Intent;
 import android.content.pm.ParceledListSlice;
 import android.graphics.Region;
 import android.os.Handler;
+import android.os.Build;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.Message;
@@ -359,6 +360,8 @@ public abstract class AccessibilityService extends Service {
     public static final int GLOBAL_ACTION_TOGGLE_SPLIT_SCREEN = 7;
 
     private static final String LOG_TAG = "AccessibilityService";
+
+    private static final boolean IS_ENG_BUILD = "eng".equals(Build.TYPE);
 
     /**
      * @hide
@@ -1603,11 +1606,17 @@ public abstract class AccessibilityService extends Service {
                             (IAccessibilityServiceConnection) args.arg1;
                     IBinder windowToken = (IBinder) args.arg2;
                     args.recycle();
+                    if (IS_ENG_BUILD) {
+                        Log.d(LOG_TAG, "DO_INIT");
+                    }
                     if (connection != null) {
                         AccessibilityInteractionClient.getInstance().addConnection(mConnectionId,
                                 connection);
                         mCallback.init(mConnectionId, windowToken);
                         mCallback.onServiceConnected();
+                        if (IS_ENG_BUILD) {
+                            Log.d(LOG_TAG, "DO_INIT: mConnectionId=" + mConnectionId);
+                        }
                     } else {
                         AccessibilityInteractionClient.getInstance().removeConnection(
                                 mConnectionId);

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,7 +36,9 @@ import java.io.File;
 public class Environment {
     private static final String TAG = "Environment";
 
+
     private static final String ENV_EXTERNAL_STORAGE = "EXTERNAL_STORAGE";
+    private static final String ENV_USBOTG_STORAGE = "USBOTG_STORAGE";
     private static final String ENV_ANDROID_ROOT = "ANDROID_ROOT";
     private static final String ENV_ANDROID_DATA = "ANDROID_DATA";
     private static final String ENV_ANDROID_EXPAND = "ANDROID_EXPAND";
@@ -53,6 +60,12 @@ public class Environment {
     @Deprecated
     public static final String DIRECTORY_ANDROID = DIR_ANDROID;
 
+    /**
+     * @hide
+     * @internal
+     */
+    public static final String DIRECTORY_USBOTG = System.getenv(ENV_USBOTG_STORAGE);
+
     private static final File DIR_ANDROID_ROOT = getDirectory(ENV_ANDROID_ROOT, "/system");
     private static final File DIR_ANDROID_DATA = getDirectory(ENV_ANDROID_DATA, "/data");
     private static final File DIR_ANDROID_EXPAND = getDirectory(ENV_ANDROID_EXPAND, "/mnt/expand");
@@ -64,6 +77,9 @@ public class Environment {
 
     private static UserEnvironment sCurrentUser;
     private static boolean sUserRequired;
+
+    ///usbotg:
+    private static final String USBOTG_PATH_ZONE = "usbotg-sd";
 
     static {
         initForCurrentUser();
@@ -843,7 +859,11 @@ public class Environment {
         if (volume != null) {
             return volume.isRemovable();
         } else {
-            throw new IllegalArgumentException("Failed to find storage device at " + path);
+            // just workround solution, return false instead throw exception
+            Log.d(TAG, "isExternalStorageRemovable, Failed to find storage device at " + path);
+            return false;
+            //throw new IllegalArgumentException("Failed to find storage device at " + path);
+            // end
         }
     }
 
@@ -887,7 +907,11 @@ public class Environment {
         if (volume != null) {
             return volume.isEmulated();
         } else {
-            throw new IllegalArgumentException("Failed to find storage device at " + path);
+            // just workround solution, return false instead throw exception
+            Log.d(TAG, "isExternalStorageEmulated, Failed to find storage device at " + path);
+            return false;
+            //throw new IllegalArgumentException("Failed to find storage device at " + path);
+            // end
         }
     }
 
@@ -936,6 +960,38 @@ public class Environment {
             }
         }
         return cur;
+    }
+
+    ///usbotg:
+    /**
+     * Judge if the storagevolume with the specified path is a usbotg storagevolume.
+     *
+     * @param path :the path of the specified StorageVolume.
+     * @return true if is a usbotg storagevolume ,otherwise false .
+     * @hide
+     * @internal
+     */
+    public static boolean isUsbotg(String path) {
+        if (path.length() <= USBOTG_PATH_ZONE.length()) {
+            return false;
+        } else {
+            return path.contains(USBOTG_PATH_ZONE);
+        }
+    }
+
+    ///usbotg:
+    /**
+     * @param path :the path of the specified StorageVolume.
+     * @return the otg storage name.
+     * @hide
+     */
+    public static String getOtgDescription(String path) {
+        if (path.length() <= USBOTG_PATH_ZONE.length()) {
+            return null;
+        } else {
+            String[] splited = path.split("/");
+            return splited[splited.length - 1];
+        }
     }
 
     private static boolean isStorageDisabled() {

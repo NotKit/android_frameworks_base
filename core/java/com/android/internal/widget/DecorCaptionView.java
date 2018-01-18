@@ -31,7 +31,12 @@ import android.view.ViewOutlineProvider;
 import android.view.Window;
 
 import com.android.internal.R;
+/// M: BMW
+import com.android.internal.policy.DecorView;
 import com.android.internal.policy.PhoneWindow;
+/// M: BMW
+import com.mediatek.multiwindow.MultiWindowManager;
+
 
 import java.util.ArrayList;
 
@@ -92,6 +97,12 @@ public class DecorCaptionView extends ViewGroup implements View.OnTouchListener,
     private View mMaximize;
     private View mClose;
 
+    /// M: BMW @{
+    private View mStick;
+    public boolean mSticked = false;
+    private final Rect mStickRect = new Rect();
+    /// @}
+
     // Fields for detecting drag events.
     private int mTouchDownX;
     private int mTouchDownY;
@@ -148,6 +159,12 @@ public class DecorCaptionView extends ViewGroup implements View.OnTouchListener,
         mOwner.getDecorView().setOutlineProvider(ViewOutlineProvider.BOUNDS);
         mMaximize = findViewById(R.id.maximize_window);
         mClose = findViewById(R.id.close_window);
+        /// M: BMW @{
+        if (MultiWindowManager.isSupported()) {
+            mStick = findViewById(com.mediatek.internal.R.id.stick_window);
+            updateStickView(isStickyByMtk());
+        }
+        /// @}
     }
 
     @Override
@@ -163,6 +180,12 @@ public class DecorCaptionView extends ViewGroup implements View.OnTouchListener,
             if (mCloseRect.contains(x, y)) {
                 mClickTarget = mClose;
             }
+            /// M: BMW @{
+            if (MultiWindowManager.isSupported() && mStickRect.contains(x, y)) {
+                mClickTarget = mStick;
+            }
+            /// @}
+
         }
         return mClickTarget != null;
     }
@@ -308,10 +331,20 @@ public class DecorCaptionView extends ViewGroup implements View.OnTouchListener,
             captionHeight = mCaption.getBottom() - mCaption.getTop();
             mMaximize.getHitRect(mMaximizeRect);
             mClose.getHitRect(mCloseRect);
+            /// M: BMW @{
+            if (MultiWindowManager.isSupported()) {
+                mStick.getHitRect(mStickRect);
+            }
+            /// @}
         } else {
             captionHeight = 0;
             mMaximizeRect.setEmpty();
             mCloseRect.setEmpty();
+            /// M: BMW @{
+            if (MultiWindowManager.isSupported()) {
+            mStickRect.setEmpty();
+            }
+            /// @}
         }
 
         if (mContent != null) {
@@ -323,9 +356,17 @@ public class DecorCaptionView extends ViewGroup implements View.OnTouchListener,
             }
         }
 
+        /// M: BMW @{
         // This assumes that the caption bar is at the top.
-        mOwner.notifyRestrictedCaptionAreaCallback(mMaximize.getLeft(), mMaximize.getTop(),
-                mClose.getRight(), mClose.getBottom());
+        if (MultiWindowManager.isSupported()) {
+            mOwner.notifyRestrictedCaptionAreaCallback(mStick.getLeft(), mStick.getTop(),
+                    mClose.getRight(), mClose.getBottom());
+        } else {
+            mOwner.notifyRestrictedCaptionAreaCallback(mMaximize.getLeft(), mMaximize.getTop(),
+                    mClose.getRight(), mClose.getBottom());
+        }
+        /// @}
+
     }
     /**
      * Determine if the workspace is entirely covered by the window.
@@ -359,6 +400,53 @@ public class DecorCaptionView extends ViewGroup implements View.OnTouchListener,
                 Log.e(TAG, "Cannot change task workspace.");
             }
         }
+    }
+
+    /**
+     * M: BMW
+     * Stick the window whick in Freeform workspace stack.
+     **/
+    private void stickWindow() {
+        if (MultiWindowManager.DEBUG) Log.d(TAG, "stickWindow, mSticked = " + mSticked);
+        updateStickView(!mSticked);
+        Window.WindowControllerCallback callback = mOwner.getWindowControllerCallback();
+        if (callback != null) {
+            try {
+                callback.stickWindow(mSticked);
+            } catch (RemoteException ex) {
+                Log.e(TAG, "Cannot stick this window.");
+            }
+        }
+    }
+
+    /**
+     * M: BMW
+     * isStickyByMtk.
+     **/
+    public boolean isStickyByMtk() {
+        Window.WindowControllerCallback callback = mOwner.getWindowControllerCallback();
+        if (callback != null) {
+            try {
+                return callback.isStickyByMtk();
+            } catch (RemoteException ex) {
+                Log.e(TAG, "Cannot stick this window.");
+            }
+        }
+        return false;
+    }
+
+
+    /**
+     * M: BMW
+     * updateStickView.
+     **/
+    public void updateStickView(boolean isSticky) {
+        if (MultiWindowManager.DEBUG) Log.d(TAG, "updateStickView, isSticky = " + isSticky);
+        if (mStick== null) {
+            return;
+        }
+        mSticked = isSticky;
+        ((DecorView)mOwner.getDecorView()).updateDecorCaptionShadeFromUpdateStickView();
     }
 
     public boolean isCaptionShowing() {
@@ -417,6 +505,10 @@ public class DecorCaptionView extends ViewGroup implements View.OnTouchListener,
             maximizeWindow();
         } else if (mClickTarget == mClose) {
             mOwner.dispatchOnWindowDismissed(true /*finishTask*/);
+        /// M: BMW @{
+        } else if (MultiWindowManager.isSupported() && mClickTarget == mStick) {
+            stickWindow();
+        /// @}
         }
         return true;
     }

@@ -77,7 +77,7 @@ import java.util.TreeSet;
  */
 public class VoiceInteractionManagerService extends SystemService {
     static final String TAG = "VoiceInteractionManagerService";
-    static final boolean DEBUG = false;
+    static final boolean DEBUG = true;
 
     final Context mContext;
     final ContentResolver mResolver;
@@ -1149,17 +1149,35 @@ public class VoiceInteractionManagerService extends SystemService {
                 ComponentName curInteractor = getCurInteractor(userHandle);
                 ComponentName curRecognizer = getCurRecognizer(userHandle);
                 boolean hit = false;
+                /// M: variable to check for Force stop API call is due to IPO reboot.
+                boolean changed = false;
+
                 for (String pkg : packages) {
                     if (curInteractor != null && pkg.equals(curInteractor.getPackageName())) {
+                        /// M: Check for IPO reboot case to set changed variable. @{
+                        int change = isPackageDisappearing(pkg);
+                        if (DEBUG) Slog.d(TAG, "Interactor. change =" + change + " pkg =" + pkg);
+                        if (change == PACKAGE_PERMANENT_CHANGE) {
+                            changed = true;
+                        }
+                        /// @}
                         hit = true;
                         break;
                     } else if (curRecognizer != null
                             && pkg.equals(curRecognizer.getPackageName())) {
+                        /// M: Check for IPO reboot case to set changed variable. @{
+                        int change = isPackageDisappearing(pkg);
+                        if (DEBUG) Slog.d(TAG, "Recognizer. change =" + change + " pkg =" + pkg);
+                        if (change == PACKAGE_PERMANENT_CHANGE) {
+                            changed = true;
+                        }
+                        /// @}
                         hit = true;
                         break;
                     }
                 }
-                if (hit && doit) {
+
+                if (hit && doit && changed) {
                     // The user is force stopping our current interactor/recognizer.
                     // Clear the current settings and restore default state.
                     synchronized (VoiceInteractionManagerServiceStub.this) {

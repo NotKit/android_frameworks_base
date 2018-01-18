@@ -38,6 +38,11 @@ oneway interface IVideoCallback {
 
     void changePeerDimensions(int width, int height);
 
+    /* M: ViLTE part start */
+    /* Different from AOSP, additional parameter "rotation" is added. */
+    void changePeerDimensionsWithAngle(int width, int height, int rotation);
+    /* M: ViLTE part end */
+
     void changeCallDataUsage(long dataUsage);
 
     void changeCameraCapabilities(in VideoProfile.CameraCapabilities cameraCapabilities);

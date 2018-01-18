@@ -61,12 +61,11 @@ interface INotificationManager
     // INotificationListener method.
     StatusBarNotification[] getActiveNotifications(String callingPkg);
     StatusBarNotification[] getHistoricalNotifications(String callingPkg, int count);
-
     void registerListener(in INotificationListener listener, in ComponentName component, int userid);
     void unregisterListener(in INotificationListener listener, int userid);
-
-    void cancelNotificationFromListener(in INotificationListener token, String pkg, String tag, int id);
+    void removeAllNotifications(String pkg, int userId);
     void cancelNotificationsFromListener(in INotificationListener token, in String[] keys);
+    void cancelNotificationFromListener(in INotificationListener token, String pkg, String tag, int id);
 
     void requestBindListener(in ComponentName component);
     void requestUnbindListener(in INotificationListener token);
@@ -110,4 +109,8 @@ interface INotificationManager
     void applyRestore(in byte[] payload, int user);
 
     ParceledListSlice getAppActiveNotifications(String callingPkg, int userId);
+    
+    //guohuajun add
+    boolean openLed(int id,int r,int g,int b);
+    boolean openLedSpeed(int id,int r,int g,int b,int speed);
 }

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -35,6 +40,9 @@ import android.text.style.ParagraphStyle;
  *  Canvas.drawText()} directly.</p>
  */
 public class BoringLayout extends Layout implements TextUtils.EllipsizeCallback {
+
+    static final String TAG = "BoringLayout";
+
     public static BoringLayout make(CharSequence source,
                         TextPaint paint, int outerwidth,
                         Alignment align,
@@ -402,6 +410,9 @@ public class BoringLayout extends Layout implements TextUtils.EllipsizeCallback 
     public void draw(Canvas c, Path highlight, Paint highlightpaint,
                      int cursorOffset) {
         if (mDirect != null && highlight == null) {
+            if (TextUtils.DEBUG_LOG) {
+                TextUtils.printDebugLog(TAG, "[draw] " + mDirect);
+            }
             c.drawText(mDirect, 0, mBottom - mDesc, mPaint);
         } else {
             super.draw(c, highlight, highlightpaint, cursorOffset);

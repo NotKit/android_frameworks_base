@@ -48,6 +48,7 @@ import android.util.Log;
 public final class ClientSession extends ObexSession {
 
     private static final String TAG = "ClientSession";
+    private static final boolean V = ObexHelper.VDBG;
 
     private boolean mOpen;
 
@@ -498,6 +499,7 @@ public final class ClientSession extends ObexSession {
             out.write(head);
         }
 
+        if(V) Log.d(TAG, "start to write socket");
         if (!skipSend) {
             // Write the request to the output stream and flush the stream
             mOutput.write(out.toByteArray());
@@ -507,9 +509,12 @@ public final class ClientSession extends ObexSession {
             //  Consider offloading to another thread (async action)
             mOutput.flush();
         }
+        if(V) Log.d(TAG, "end of writing socket");
 
         if (!skipReceive) {
+            if(V) Log.d(TAG, "start to read input");
             header.responseCode = mInput.read();
+            if(V) Log.d(TAG, "end to reading input. response code = " + header.responseCode);
 
             int length = ((mInput.read() << 8) | (mInput.read()));
 

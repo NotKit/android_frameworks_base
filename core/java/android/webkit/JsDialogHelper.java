@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -166,8 +171,9 @@ public class JsDialogHelper {
             try {
                 URL alertUrl = new URL(mUrl);
                 // For example: "The page at 'http://www.mit.edu' says:"
+                /// M: Remove scheme for workground for dialog issue.
                 title = context.getString(com.android.internal.R.string.js_dialog_title,
-                        alertUrl.getProtocol() + "://" + alertUrl.getHost());
+                        /* alertUrl.getProtocol() + "://" + */ alertUrl.getHost());
             } catch (MalformedURLException ex) {
                 // do nothing. just use the url as the title
             }

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,15 +24,20 @@ package android.net;
 import android.annotation.SdkConstant;
 import android.annotation.SdkConstant.SdkConstantType;
 import android.content.Context;
+import android.os.ServiceManager;
+import android.os.SystemProperties;
 import android.text.TextUtils;
 import android.util.Log;
 
+// import java.net.HttpNotifyHandler;
 import java.net.InetSocketAddress;
 import java.net.ProxySelector;
 import java.net.URI;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+
 
 /**
  * A convenience class for accessing the user and default proxy
@@ -246,6 +256,14 @@ public final class Proxy {
             pacFileUrl = p.getPacFileUrl();
         }
         setHttpProxySystemProperty(host, port, exclList, pacFileUrl);
+
+        ///M: Support Telcel Requirement @{
+        if ("1".equals(SystemProperties.get("ro.mtk_pre_sim_wo_bal_support", "0"))) {
+          Log.d(TAG, "setHttpRedirectNotifyHandler");
+          // java.net.Socket.setHttpRedirectNotifyHandler(new DefaultHttpNotifyHandler());
+        }
+        ///@}
+
     }
 
     /** @hide */
@@ -280,4 +298,25 @@ public final class Proxy {
             ProxySelector.setDefault(sDefaultProxySelector);
         }
     }
+
+/*
+    private static class DefaultHttpNotifyHandler implements HttpNotifyHandler {
+        DefaultHttpNotifyHandler() {
+            super();
+        }
+
+        public void notifyHttpRedirect(String location) {
+            try {
+                Log.v(TAG, "[NetworkHttpMonitor] call cm.monitorHttpRedirect");
+                IConnectivityManager cm = IConnectivityManager.Stub.asInterface(
+                    ServiceManager.getService(Context.CONNECTIVITY_SERVICE));
+                cm.monitorHttpRedirect(location);
+            } catch (Exception e) {
+                Log.v(TAG, "[NetworkHttpMonitor] call cm.monitorHttpRedirect failed");
+                e.printStackTrace();
+            }
+        }
+    }
+*/
+
 }

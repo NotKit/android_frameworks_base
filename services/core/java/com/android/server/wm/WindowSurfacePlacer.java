@@ -73,6 +73,9 @@ import android.view.WindowManager.LayoutParams;
 import android.view.animation.Animation;
 
 import com.android.server.wm.WindowManagerService.H;
+/// M: BMW restore Window
+import com.mediatek.multiwindow.MultiWindowManager;
+
 
 import java.io.PrintWriter;
 import java.util.ArrayList;
@@ -254,7 +257,9 @@ class WindowSurfacePlacer {
             }
         } catch (RuntimeException e) {
             mInLayout = false;
-            Slog.wtf(TAG, "Unhandled exception while laying out windows", e);
+            /// M: remove wtf
+            //Slog.wtf(TAG, "Unhandled exception while laying out windows", e);
+            Slog.e(TAG, "Unhandled exception while laying out windows", e);
         }
 
         Trace.traceEnd(Trace.TRACE_TAG_WINDOW_MANAGER);
@@ -516,7 +521,8 @@ class WindowSurfacePlacer {
             if (mService.mAllowTheaterModeWakeFromLayout
                     || Settings.Global.getInt(mService.mContext.getContentResolver(),
                         Settings.Global.THEATER_MODE_ON, 0) == 0) {
-                if (DEBUG_VISIBILITY || DEBUG_POWER) {
+                /// M: Add more log at WMS
+                if (!WindowManagerService.IS_USER_BUILD || DEBUG_VISIBILITY || DEBUG_POWER) {
                     Slog.v(TAG, "Turning screen on after layout!");
                 }
                 mService.mPowerManager.wakeUp(SystemClock.uptimeMillis(),
@@ -572,6 +578,12 @@ class WindowSurfacePlacer {
             mService.mInputMonitor.updateInputWindowsLw(false /*force*/);
         }
         mService.setFocusTaskRegionLocked();
+        /// M: BMW restore button @{
+        if (MultiWindowManager.isSupported() && mService.mCurrentFocus != null
+                && mService.mCurrentFocus.getTask() != null) {
+            mService.showOrHideRestoreButton(mService.mCurrentFocus);
+        }
+        /// @}
 
         // Check to see if we are now in a state where the screen should
         // be enabled, because the window obscured flags have changed.
@@ -1076,9 +1088,12 @@ class WindowSurfacePlacer {
         if (!transitionGoodToGo(appsCount)) {
             return 0;
         }
-        Trace.traceBegin(Trace.TRACE_TAG_WINDOW_MANAGER, "AppTransitionReady");
 
-        if (DEBUG_APP_TRANSITIONS) Slog.v(TAG, "**** GOOD TO GO");
+        Trace.traceBegin(Trace.TRACE_TAG_WINDOW_MANAGER
+                    | Trace.TRACE_TAG_PERF, "AppTransitionReady");
+
+        if (DEBUG_APP_TRANSITIONS) Slog.v(TAG, "**** GOOD TO GO, Callers=" + Debug.getCallers(6));
+
         int transit = mService.mAppTransition.getAppTransition();
         if (mService.mSkipAppTransitionAnimation) {
             transit = AppTransition.TRANSIT_UNSET;
@@ -1233,7 +1248,7 @@ class WindowSurfacePlacer {
         mService.mFocusMayChange = false;
         mService.notifyActivityDrawnForKeyguard();
 
-        Trace.traceEnd(Trace.TRACE_TAG_WINDOW_MANAGER);
+        Trace.traceEnd(Trace.TRACE_TAG_WINDOW_MANAGER | Trace.TRACE_TAG_PERF);
 
         return FINISH_LAYOUT_REDO_LAYOUT | FINISH_LAYOUT_REDO_CONFIG;
     }

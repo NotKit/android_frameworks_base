@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,6 +27,9 @@ import android.annotation.SystemApi;
 import android.os.Bundle;
 import android.telecom.Connection.VideoProvider;
 import android.util.ArraySet;
+
+/// M: ALPS02136977. Prints debug logs at each differenct connectionService. (e.q. telephony).
+import com.mediatek.telecom.FormattedLog;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -84,6 +92,11 @@ public abstract class Conference extends Conferenceable {
     private Bundle mExtras;
     private Set<String> mPreviousExtraKeys;
     private final Object mExtrasLock = new Object();
+
+    /// M: For ViLTE @{
+    private int mVideoState;
+    private VideoProvider mVideoProvider;
+    /// @}
 
     private final Connection.Listener mConnectionDeathListener = new Connection.Listener() {
         @Override
@@ -245,14 +258,23 @@ public abstract class Conference extends Conferenceable {
      * Returns VideoProvider of the primary call. This can be null.
      */
     public VideoProvider getVideoProvider() {
+        /// M: For ViLTE @{
+        /* Oringal Code:
         return null;
+        */
+        return mVideoProvider;
     }
 
     /**
      * Returns video state of the primary call.
      */
     public int getVideoState() {
+        /// M: For ViLTE @{
+        /* Oringal Code:
         return VideoProfile.STATE_AUDIO_ONLY;
+        */
+        return mVideoState;
+        /// @}
     }
 
     /**
@@ -344,6 +366,14 @@ public abstract class Conference extends Conferenceable {
         setState(Connection.STATE_HOLDING);
     }
 
+    /// M: CC: HangupAll for FTA 31.4.4.2 @{
+    /**
+     * To hang up all connections.
+     * @hide
+     */
+    public void onHangupAll() {}
+    /// @}
+
     /**
      * Sets state to be dialing.
      */
@@ -371,6 +401,20 @@ public abstract class Conference extends Conferenceable {
             l.onDisconnected(this, mDisconnectCause);
         }
     }
+
+    /// M: Not allow mute in ECBM and update after exit ECBM @{
+    /** @hide */
+    protected int buildConnectionCapabilities() {
+        // for nullConference object, it needs a default implementation
+        return 0;
+    };
+
+    /** @hide */
+    public final void updateConnectionCapabilities() {
+        int newConnectionCapabilities = buildConnectionCapabilities();
+        setConnectionCapabilities(newConnectionCapabilities);
+    }
+    /// @}
 
     /**
      * @return The {@link DisconnectCause} for this connection.
@@ -477,6 +521,9 @@ public abstract class Conference extends Conferenceable {
     public final void setVideoState(Connection c, int videoState) {
         Log.d(this, "setVideoState Conference: %s Connection: %s VideoState: %s",
                 this, c, videoState);
+        /// M: For ViLTE @{
+        mVideoState = videoState;
+        /// @}
         for (Listener l : mListeners) {
             l.onVideoStateChanged(this, videoState);
         }
@@ -490,6 +537,9 @@ public abstract class Conference extends Conferenceable {
     public final void setVideoProvider(Connection c, Connection.VideoProvider videoProvider) {
         Log.d(this, "setVideoProvider Conference: %s Connection: %s VideoState: %s",
                 this, c, videoProvider);
+        /// M: For ViLTE @{
+        mVideoProvider = videoProvider;
+        /// @}
         for (Listener l : mListeners) {
             l.onVideoProviderChanged(this, videoProvider);
         }
@@ -514,10 +564,38 @@ public abstract class Conference extends Conferenceable {
     public final void destroy() {
         Log.d(this, "destroying conference : %s", this);
         // Tear down the children.
+        /// M: set correct remove order. @{
+        // [ALPS01884124] The call being hung up is still shown in the "Manage conference" view.
+        // Conference Management UI requires the sequence of updating connection's removal.
+        // Remove disconnected calls first to avoid temporary incorrect UI.
+
+        /*
         for (Connection connection : mChildConnections) {
             Log.d(this, "removing connection %s", connection);
             removeConnection(connection);
         }
+        */
+        List<Connection> disconnectedChild = new ArrayList<>(mChildConnections.size());
+        List<Connection> activeChild = new ArrayList<>(mChildConnections.size());
+
+        for (Connection connection : mChildConnections) {
+            if (connection.getState() != Connection.STATE_ACTIVE) {
+                disconnectedChild.add(connection);
+            } else {
+                activeChild.add(connection);
+            }
+        }
+
+        for (Connection connection : disconnectedChild) {
+            Log.d(this, "removing connection for disconnectedChild %s", connection);
+            removeConnection(connection);
+        }
+
+        for (Connection connection : activeChild) {
+            Log.d(this, "removing connection for activeChild %s", connection);
+            removeConnection(connection);
+        }
+        /// @}
 
         // If not yet disconnected, set the conference call as disconnected first.
         if (mState != Connection.STATE_DISCONNECTED) {
@@ -624,9 +702,13 @@ public abstract class Conference extends Conferenceable {
     }
 
     private void setState(int newState) {
+        /// M: For VoLTE conference dial @{
+        // add Connection.STATE_DIALING. The conference for conference-dial maybe dialing state.
         if (newState != Connection.STATE_ACTIVE &&
                 newState != Connection.STATE_HOLDING &&
-                newState != Connection.STATE_DISCONNECTED) {
+                newState != Connection.STATE_DISCONNECTED &&
+                newState != Connection.STATE_DIALING) {
+        /// @}
             Log.w(this, "Unsupported state transition for Conference call.",
                     Connection.stateToString(newState));
             return;
@@ -635,6 +717,17 @@ public abstract class Conference extends Conferenceable {
         if (mState != newState) {
             int oldState = mState;
             mState = newState;
+
+            /// M: ALPS02136977. Prints debug logs at connectionService. (e.q. telephony). @{
+            FormattedLog.Builder builder = configDumpLogBuilder(new FormattedLog.Builder());
+            if (builder != null) {
+                FormattedLog formattedLog = builder.buildDumpInfo();
+                if (formattedLog != null) {
+                    Log.d(this, formattedLog.toString());
+                }
+            }
+            /// @}
+
             for (Listener l : mListeners) {
                 l.onStateChanged(this, oldState, newState);
             }
@@ -873,4 +966,62 @@ public abstract class Conference extends Conferenceable {
         }
         onExtrasChanged(b);
     }
+
+    /// M: For VoLTE @{
+    /**
+     * This function used to invite conference participant(s) for VoLTE conference host.
+     * see android.telecom.PhoneCapabilities.INVITE_PARTICIPANTS.
+     * @param numbers the participant(s) to be invited.
+     * @hide
+     */
+    public void onInviteConferenceParticipants(List<String> numbers) {}
+
+    /**
+     * For oneKey MT conference, it will have ringing state.
+     * @hide
+     */
+    protected final void setRinging() {
+        setState(Connection.STATE_RINGING);
+    }
+    /// @}
+
+
+    /// M: ALPS02136977. Prints debug logs at each connectionService. (e.q. telephony). @{
+    /**
+     * Configure the formatted dump log builder for basic information.
+     * format:
+     * [category][Module][Dump][conferenceCall][localCallID]-[name:value],[name:value]-Msg. String
+     * Sub-class should override it.
+     *
+     * @param builder given a FormattedLog Builder
+     * @return FormattedLog.Builder
+     * @hide
+     */
+    protected FormattedLog.Builder configDumpLogBuilder(FormattedLog.Builder builder) {
+        if (builder == null) {
+            return null;
+        }
+
+        builder.setCategory("CC");
+        builder.setOpType(FormattedLog.OpType.DUMP);
+        builder.setCallNumber("conferenceCall");
+        builder.setCallId(Integer.toString(System.identityHashCode(this)));
+        builder.setStatusInfo("isConfCall", "Yes");
+
+        builder.setStatusInfo("state", Connection.callStateToFormattedDumpString(mState));
+        builder.setStatusInfo("isConfChildCall", "No");
+        builder.setStatusInfo("capabilities",
+                Connection.capabilitiesToString(getConnectionCapabilities()));
+
+        return builder;
+    }
+    /// @}
+
+    /**
+     * Invoked when the Conference and all it's {@link Connection}s should be disconnected,
+     * with pending call action, answer?
+     * @param pendingCallAction The pending call action.
+     * @hide
+     */
+    public void onDisconnect(String pendingCallAction) {}
 }

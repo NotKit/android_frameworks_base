@@ -17,6 +17,7 @@
 package com.android.keyguard;
 
 import android.content.Context;
+import android.media.AudioSystem;
 import android.util.AttributeSet;
 import android.view.View;
 import android.view.ViewGroup;
@@ -67,7 +68,16 @@ public class KeyguardPINView extends KeyguardPinBasedInputView {
     @Override
     protected void resetState() {
         super.resetState();
-        mSecurityMessageDisplay.setMessage(R.string.kg_pin_instructions, false);
+
+        if (KeyguardUpdateMonitor.getInstance(mContext).getMaxBiometricUnlockAttemptsReached()) {
+            ///M: use different prompt message in face unlock or voice unlock
+            if (mLockPatternUtils.usingVoiceWeak()) {
+                mSecurityMessageDisplay.setMessage(R.string.voiceunlock_multiple_failures, true);
+            }
+        } else {
+            /// M: [ALPS00581890] Indicate the user to input pin.
+            mSecurityMessageDisplay.setMessage(R.string.kg_pin_instructions, true);
+        }
     }
 
     @Override
@@ -169,5 +179,20 @@ public class KeyguardPINView extends KeyguardPinBasedInputView {
     @Override
     public boolean hasOverlappingRendering() {
         return false;
+    }
+
+    /**
+     * M: add for voice unlock
+     *    display prompt message when voice unlock is disabled because of
+     *    media is playing in background.
+    **/
+    @Override
+    public void onResume(int reason) {
+        super.onResume(reason);
+        final boolean mediaPlaying = AudioSystem.isStreamActive(AudioSystem.STREAM_MUSIC, 0) ;
+//                || AudioSystem.isStreamActive(AudioSystem.STREAM_FM, 0);
+        if (mLockPatternUtils.usingVoiceWeak() && mediaPlaying) {
+            mSecurityMessageDisplay.setMessage(R.string.voice_unlock_media_playing, true);
+        }
     }
 }

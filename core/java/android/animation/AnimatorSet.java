@@ -807,6 +807,7 @@ public final class AnimatorSet extends Animator {
                     start(children.get(i));
                 }
             }
+
             // Listeners are already notified of the AnimatorSet ending in cancel() or
             // end(); the logic below only kicks in when animations end normally
             boolean allDone = true;

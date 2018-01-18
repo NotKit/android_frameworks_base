@@ -796,8 +796,13 @@ public class MediaSessionRecord implements IBinder.DeathRecipient {
             synchronized (mLock) {
                 mPlaybackState = state;
             }
-            mService.onSessionPlaystateChange(MediaSessionRecord.this, oldState, newState);
+
+            ///M:ALPS02823078, make sure play stats change before active session change.
+            //mService.onSessionPlaystateChange(MediaSessionRecord.this, oldState, newState);
             mHandler.post(MessageHandler.MSG_UPDATE_PLAYBACK_STATE);
+            mHandler.post(MessageHandler.MSG_ACTIVE_SESSION_CHANGED,
+                    null, oldState, newState);
+            //M.
         }
 
         @Override
@@ -1337,6 +1342,9 @@ public class MediaSessionRecord implements IBinder.DeathRecipient {
         private static final int MSG_UPDATE_SESSION_STATE = 7;
         private static final int MSG_UPDATE_VOLUME = 8;
         private static final int MSG_DESTROYED = 9;
+        ///M:ALPS02823078, make sure play stats change before active session change.
+        private static final int MSG_ACTIVE_SESSION_CHANGED = 10;
+        ///M.
 
         public MessageHandler(Looper looper) {
             super(looper);
@@ -1370,6 +1378,12 @@ public class MediaSessionRecord implements IBinder.DeathRecipient {
                     break;
                 case MSG_DESTROYED:
                     pushSessionDestroyed();
+                ///M:ALPS02823078, make sure play stats change before active session change.
+                    break;
+                case MSG_ACTIVE_SESSION_CHANGED:
+                    mService.onSessionPlaystateChange(MediaSessionRecord.this,
+                        msg.arg1, msg.arg2);
+                ///M
             }
         }
 
@@ -1386,6 +1400,13 @@ public class MediaSessionRecord implements IBinder.DeathRecipient {
             msg.setData(data);
             msg.sendToTarget();
         }
+
+        ///M:ALPS02823078, make sure play stats change before active session change.
+        public void post(int what, Object obj, int arg1, int arg2) {
+            Message msg = obtainMessage(what, arg1, arg2, obj);
+            msg.sendToTarget();
+        }
+        ///M.
     }
 
 }

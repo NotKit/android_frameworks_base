@@ -29,6 +29,9 @@ import android.database.MatrixCursor;
 import android.database.MergeCursor;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.Message;
 import android.provider.DocumentsContract;
 import android.provider.DocumentsContract.Document;
 import android.text.format.DateUtils;
@@ -51,6 +54,9 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+
+/// M: Add to support drm
+import com.mediatek.omadrm.OmaDrmStore;
 
 public class RecentsLoader extends AsyncTaskLoader<DirectoryResult> {
     // TODO: clean up cursor ownership so background thread doesn't traverse
@@ -89,10 +95,36 @@ public class RecentsLoader extends AsyncTaskLoader<DirectoryResult> {
 
     private DirectoryResult mResult;
 
+    /// M: add to support drm
+    private int mDrmLevel;
+
+    /// M: FOR ALPS01480274 @{
+    private static final int CONTENT_CHANGE = 1;
+    private Handler mUiHandler = new Handler(Looper.getMainLooper()) {
+        public void handleMessage(Message msg) {
+            Log.d(TAG, "onContentChanged");
+            onContentChanged();
+        }
+    };
+    /// @}
+
     public RecentsLoader(Context context, RootsCache roots, State state) {
         super(context);
         mRoots = roots;
         mState = state;
+
+        /// M: add to support drm
+        //mDrmLevel = ((FilesActivity) context).getIntent().getIntExtra
+      //(OmaDrmStore.DrmExtra.EXTRA_DRM_LEVEL, -1);
+
+        try {
+                        mDrmLevel = ((FilesActivity) context).getIntent().getIntExtra
+                          (OmaDrmStore.DrmIntentExtra.EXTRA_DRM_LEVEL, -1);
+        } catch (ClassCastException e) {
+                e.printStackTrace();
+                mDrmLevel = ((DocumentsActivity) context).getIntent().getIntExtra
+                  (OmaDrmStore.DrmIntentExtra.EXTRA_DRM_LEVEL, -1);
+        }
 
         // Keep clients around on high-RAM devices, since we'd be spinning them
         // up moments later to fetch thumbnails anyway.
@@ -157,6 +189,11 @@ public class RecentsLoader extends AsyncTaskLoader<DirectoryResult> {
                     throw new RuntimeException(e);
                 } catch (ExecutionException e) {
                     // We already logged on other side
+                } catch (IllegalStateException e) {
+                    /// M: cursor get from task may have been closed, this happen when recent loader have been
+                    /// reset(cursor will be closed now on main thread) but loader thread still loading(may access
+                    /// this have been closed cursor), so we need catch this type IllegalStateException.
+                    Log.w(TAG, "cursor may have been closed when recent loader reset", e);
                 } catch (Exception e) {
                     Log.e(TAG, "Failed to query Recents for authority: " + task.authority
                         + ". Skip this authority in Recents.", e);
@@ -187,7 +224,15 @@ public class RecentsLoader extends AsyncTaskLoader<DirectoryResult> {
         extras.putBoolean(DocumentsContract.EXTRA_LOADING, !allDone);
         merged.setExtras(extras);
 
-        result.cursor = merged;
+        final FilteringCursorWrapper drmFiltered = new FilteringCursorWrapper(
+                merged, mDrmLevel) {
+            @Override
+            public void close() {
+                // Ignored, since we manage cursor lifecycle internally
+            }
+        };
+
+        result.cursor = drmFiltered;
 
         return result;
     }
@@ -303,9 +348,11 @@ public class RecentsLoader extends AsyncTaskLoader<DirectoryResult> {
             set(mWithRoot);
 
             mFirstPassLatch.countDown();
-            if (mFirstPassDone) {
-                onContentChanged();
+            /// M: onContentChanged move to UI thread @{
+            if (mFirstPassDone && !mUiHandler.hasMessages(CONTENT_CHANGE)) {
+                mUiHandler.sendEmptyMessage(CONTENT_CHANGE);
             }
+            /// @}
         }
 
         @Override

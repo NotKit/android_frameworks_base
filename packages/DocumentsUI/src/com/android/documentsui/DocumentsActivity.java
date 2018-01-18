@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -40,6 +45,7 @@ import android.os.Parcelable;
 import android.provider.DocumentsContract;
 import android.support.design.widget.Snackbar;
 import android.util.Log;
+import android.view.inputmethod.InputMethodManager;
 import android.view.Menu;
 import android.view.MenuItem;
 
@@ -63,7 +69,7 @@ import java.util.List;
 
 public class DocumentsActivity extends BaseActivity {
     private static final int CODE_FORWARD = 42;
-    private static final String TAG = "DocumentsActivity";
+    public static final String TAG = "DocumentsActivity";
 
     public DocumentsActivity() {
         super(R.layout.documents_activity, TAG);
@@ -114,7 +120,55 @@ public class DocumentsActivity extends BaseActivity {
                 new LoadLastUsedStackTask(this).execute();
             }
         }
+        /// M: update action bar when roots are reloaded @{
+        mRoots.addCallback(mRootUpdatedListener);
     }
+
+    @Override
+    protected void onRestoreInstanceState(Bundle state) {
+        super.onRestoreInstanceState(state);
+        Log.d(TAG, "onRestoreInstanceState mState.action = " + mState.action);
+        if (mState.action == ACTION_OPEN_TREE ||
+            mState.action == ACTION_PICK_COPY_DESTINATION) {
+            final PickFragment pick = PickFragment.get(getFragmentManager());
+            if (pick != null) {
+                pick.setPickTarget(mState.action, mState.copyOperationSubType,
+                    getCurrentDirectory());
+            }
+        }
+    }
+
+
+    @Override
+    protected void onDestroy() {
+        mRoots.removeCallBack(mRootUpdatedListener);
+        super.onDestroy();
+    }
+
+    private RootsCache.RootUpdatedListener mRootUpdatedListener = new RootsCallback();
+
+    private class RootsCallback implements RootsCache.RootUpdatedListener {
+        @Override
+        public void callback() {
+            final RootInfo root = mState.stack.root;
+            if (root != null) {
+                final RootInfo newRoot = mRoots.getRootOneshot(root.authority, root.rootId);
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        Log.w(TAG, "RootsCallback root: " + root + ", newRoot: " + newRoot);
+                        if (newRoot != null) {
+                            mState.stack.root = newRoot;
+                        }
+                        mDrawer.update();
+                        mNavigator.update();
+                    }
+                });
+            }
+        }
+    }
+     /// @}
+
 
     @Override
     void includeState(State state) {
@@ -153,6 +207,8 @@ public class DocumentsActivity extends BaseActivity {
                     FileOperationService.OPERATION_COPY);
         }
     }
+
+
 
     public void onAppPicked(ResolveInfo info) {
         final Intent intent = new Intent(getIntent());
@@ -247,7 +303,13 @@ public class DocumentsActivity extends BaseActivity {
 
         if (mState.action == ACTION_CREATE) {
             final FragmentManager fm = getFragmentManager();
-            SaveFragment.get(fm).prepareForDirectory(cwd);
+            /// M: add to avoid seldom NullPointerException
+            SaveFragment saveFragment = SaveFragment.get(fm);
+            if (null != saveFragment) {
+                saveFragment.prepareForDirectory(cwd);
+            } else {
+                Log.e(TAG, "onPrepareOptionsMenu, SaveFragment is null");
+            }
         }
 
         Menus.disableHiddenItems(menu);
@@ -277,6 +339,17 @@ public class DocumentsActivity extends BaseActivity {
                 boolean visualMimes = MimePredicate.mimeMatches(
                         MimePredicate.VISUAL_MIMES, mState.acceptMimes);
                 mState.derivedMode = visualMimes ? State.MODE_GRID : State.MODE_LIST;
+                /// M: When state has stored, we need use store state to init fragment(this may happen when activity
+                /// re-create, in this case we need use the userMode store in saveInstance, and only when activity
+                /// first created we need follow the below design. {@
+                if (!mState.restored) {
+                    // Start recents in grid when requesting visual things
+                    //final boolean visualMimes = MimePredicate.mimeMatches(
+                            //MimePredicate.VISUAL_MIMES, mState.acceptMimes);
+                    //mState.derivedMode = mState.userMode;
+                }
+                /// @}
+
             }
         } else {
                 // Normal boring directory
@@ -423,6 +496,7 @@ public class DocumentsActivity extends BaseActivity {
 
         setResult(Activity.RESULT_OK, intent);
         finish();
+        Log.d(TAG, "onFinished: uri=" + Arrays.toString(uris) + ", data=" + intent);
     }
 
 
@@ -592,4 +666,5 @@ public class DocumentsActivity extends BaseActivity {
             mOwner.setPending(false);
         }
     }
+
 }

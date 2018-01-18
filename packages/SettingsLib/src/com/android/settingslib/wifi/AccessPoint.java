@@ -46,12 +46,13 @@ import android.util.Log;
 import android.util.LruCache;
 
 import com.android.settingslib.R;
+import com.mediatek.settingslib.wifi.AccessPointExt;
 
 import java.util.ArrayList;
 import java.util.Map;
 
 
-public class AccessPoint implements Comparable<AccessPoint> {
+public class AccessPoint implements Comparable<AccessPoint>, Cloneable {
     static final String TAG = "SettingsLib.AccessPoint";
 
     /**
@@ -125,10 +126,15 @@ public class AccessPoint implements Comparable<AccessPoint> {
     private NetworkInfo mNetworkInfo;
     private AccessPointListener mAccessPointListener;
 
+    /// M: add mtk feature
+    public AccessPointExt mAccessPointExt;
+
     private Object mTag;
 
     public AccessPoint(Context context, Bundle savedState) {
         mContext = context;
+        /// M: add mtk feature
+        mAccessPointExt = new AccessPointExt(context);
         mConfig = savedState.getParcelable(KEY_CONFIG);
         if (mConfig != null) {
             loadConfig(mConfig);
@@ -161,13 +167,29 @@ public class AccessPoint implements Comparable<AccessPoint> {
 
     AccessPoint(Context context, ScanResult result) {
         mContext = context;
+        /// M: add mtk feature
+        mAccessPointExt = new AccessPointExt(context);
         initWithScanResult(result);
     }
 
     AccessPoint(Context context, WifiConfiguration config) {
         mContext = context;
+        /// M: add mtk feature
+        mAccessPointExt = new AccessPointExt(context);
         loadConfig(config);
     }
+
+    /// M: add for Google original code shallow copy issue @{
+    public Object clone() {
+        AccessPoint object = null;
+        try {
+            object = (AccessPoint)super.clone();
+        } catch (CloneNotSupportedException e) {
+            Log.e(TAG, "CloneNotSupportedException happens in clone()");
+        }
+        return object;
+    }
+    /// @}
 
     @Override
     public int compareTo(@NonNull AccessPoint other) {
@@ -190,6 +212,11 @@ public class AccessPoint implements Comparable<AccessPoint> {
                 - WifiManager.calculateSignalLevel(mRssi, SIGNAL_LEVELS);
         if (difference != 0) {
             return difference;
+        }
+        /// M: sort by security
+        int securityDiff = other.security - security;
+        if (securityDiff != 0) {
+            return securityDiff;
         }
         // Sort by ssid.
         return ssid.compareToIgnoreCase(other.ssid);
@@ -254,6 +281,8 @@ public class AccessPoint implements Comparable<AccessPoint> {
     public void clearConfig() {
         mConfig = null;
         networkId = WifiConfiguration.INVALID_NETWORK_ID;
+        /// M: ALPS02810141, set AP rssi as default value when updateAccessPoints
+        mRssi = Integer.MAX_VALUE;
     }
 
     public WifiInfo getInfo() {
@@ -299,6 +328,12 @@ public class AccessPoint implements Comparable<AccessPoint> {
 
     public String getSecurityString(boolean concise) {
         Context context = mContext;
+        /// M: add mtk feature @{
+        String securityString = mAccessPointExt.getSecurityString(security, context);
+        if (securityString != null) {
+            return securityString;
+        }
+        /// @}
         if (mConfig != null && mConfig.isPasspoint()) {
             return concise ? context.getString(R.string.wifi_security_short_eap) :
                 context.getString(R.string.wifi_security_eap);
@@ -845,6 +880,12 @@ public class AccessPoint implements Comparable<AccessPoint> {
     }
 
     private static int getSecurity(ScanResult result) {
+        ///M: add mtk feature@{
+        int security = AccessPointExt.getSecurity(result);
+        if (security != -1) {
+            return security;
+        }
+        ///@}
         if (result.capabilities.contains("WEP")) {
             return SECURITY_WEP;
         } else if (result.capabilities.contains("PSK")) {
@@ -856,6 +897,12 @@ public class AccessPoint implements Comparable<AccessPoint> {
     }
 
     static int getSecurity(WifiConfiguration config) {
+        ///M: add mtk feature@{
+        int security = AccessPointExt.getSecurity(config);
+        if (security != -1) {
+            return security;
+        }
+        ///@}
         if (config.allowedKeyManagement.get(KeyMgmt.WPA_PSK)) {
             return SECURITY_PSK;
         }

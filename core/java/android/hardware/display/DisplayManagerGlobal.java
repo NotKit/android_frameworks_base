@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2012 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -422,6 +427,48 @@ public final class DisplayManagerGlobal {
             mDm.releaseVirtualDisplay(token);
         } catch (RemoteException ex) {
             throw ex.rethrowFromSystemServer();
+        }
+    }
+
+    public boolean isSinkEnabled() {
+        boolean enabled = false;
+        try {
+            enabled = mDm.isSinkEnabled();
+        } catch (RemoteException ex) {
+            Log.w(TAG, "Failed to get sink status.", ex);
+        }
+        return enabled;
+    }
+
+    public void enableSink(boolean enable) {
+        try {
+            mDm.enableSink(enable);
+        } catch (RemoteException ex) {
+            Log.w(TAG, "Failed to request sink", ex);
+        }
+    }
+
+    public void waitWifiDisplayConnection(Surface surface) {
+        try {
+            mDm.waitWifiDisplayConnection(surface);
+        } catch (RemoteException ex) {
+            Log.w(TAG, "Failed to request wait connection", ex);
+        }
+    }
+
+    public void suspendWifiDisplay(boolean suspend, Surface surface) {
+        try {
+            mDm.suspendWifiDisplay(suspend, surface);
+        } catch (RemoteException ex) {
+            Log.w(TAG, "Failed to request suspend display", ex);
+        }
+    }
+
+    public void sendUibcInputEvent(String input) {
+        try {
+            mDm.sendUibcInputEvent(input);
+        } catch (RemoteException ex) {
+            Log.w(TAG, "Failed to send uibc input event", ex);
         }
     }
 

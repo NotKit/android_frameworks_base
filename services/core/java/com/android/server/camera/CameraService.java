@@ -19,6 +19,9 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.UserInfo;
+import android.hardware.camera2.CameraAccessException;
+import android.hardware.camera2.CameraManager;
 import android.hardware.ICameraService;
 import android.hardware.ICameraServiceProxy;
 import android.nfc.INfcAdapter;
@@ -97,6 +100,8 @@ public class CameraService extends SystemService
             final String action = intent.getAction();
             if (action == null) return;
 
+            /* M:Check IPO and ShutDown Filter*/
+            processCustomBroadcastActions(action);
             switch (action) {
                 case Intent.ACTION_USER_ADDED:
                 case Intent.ACTION_USER_REMOVED:
@@ -169,6 +174,8 @@ public class CameraService extends SystemService
         filter.addAction(Intent.ACTION_USER_INFO_CHANGED);
         filter.addAction(Intent.ACTION_MANAGED_PROFILE_ADDED);
         filter.addAction(Intent.ACTION_MANAGED_PROFILE_REMOVED);
+        /* M:Add ipo and shutdown filter*/
+        addCustomActionsToFilter(filter);
         mContext.registerReceiver(mIntentReceiver, filter);
 
         publishBinderService(CAMERA_SERVICE_PROXY_BINDER_NAME, mCameraServiceProxy);
@@ -335,4 +342,40 @@ public class CameraService extends SystemService
         }
         return "CAMERA_STATE_UNKNOWN";
     }
+    // /M:add for close flashlight when shutdown @{
+    private static final String ACTION_SHUTDOWN_IPO = "android.intent.action.ACTION_SHUTDOWN_IPO";
+
+    private void addCustomActionsToFilter(IntentFilter filter) {
+        filter.addAction(Intent.ACTION_SHUTDOWN);
+        filter.addAction(ACTION_SHUTDOWN_IPO);
+    }
+
+    private void processCustomBroadcastActions(String action) {
+        switch (action) {
+        case Intent.ACTION_SHUTDOWN:
+        case ACTION_SHUTDOWN_IPO:
+            synchronized (mLock) {
+                closeAllFlash();
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
+    private void closeAllFlash() {
+        try {
+            CameraManager cameraManager =
+                    (CameraManager) mContext.getSystemService(Context.CAMERA_SERVICE);
+            String[] cameraIdList = cameraManager.getCameraIdList();
+            for (String cameraId:cameraIdList) {
+                cameraManager.setTorchMode(cameraId, false);
+            }
+        } catch (CameraAccessException e) {
+            Slog.w(TAG, "Could not close flash, camera access exception: " + e);
+        } catch (IllegalArgumentException e) {
+            Slog.w(TAG, "Could not close flash, IllegalArgument exception: " + e);
+        }
+    }
+    // /@}
 }

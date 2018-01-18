@@ -38,6 +38,10 @@ interface ITelephonyRegistry {
             boolean notifyNow);
     void notifyCallState(int state, String incomingNumber);
     void notifyCallStateForPhoneId(in int phoneId, in int subId, int state, String incomingNumber);
+    /// M: CC: Notify Call state with phoneType @{
+    void notifyCallStateForPhoneInfo(in int phoneType,
+            in int phoneId, in int subId, int state, String incomingNumber);
+    /// @}
     void notifyServiceStateForPhoneId(in int phoneId, in int subId, in ServiceState state);
     void notifySignalStrengthForPhoneId(in int phoneId, in int subId,
             in SignalStrength signalStrength);
@@ -66,6 +70,11 @@ interface ITelephonyRegistry {
     void notifyCellInfoForSubscriber(in int subId, in List<CellInfo> cellInfo);
     void notifyVoLteServiceStateChanged(in VoLteServiceState lteState);
     void notifyOemHookRawEventForSubscriber(in int subId, in byte[] rawData);
+    // M: [LTE][Low Power][UL traffic shaping] Start
+    void notifyLteAccessStratumChanged(String state);
+    void notifyPsNetworkTypeChanged(int nwType);
+    void notifySharedDefaultApnStateChanged(boolean isSharedDefaultApn);
+    // M: [LTE][Low Power][UL traffic shaping] End
     void notifySubscriptionInfoChanged();
     void notifyCarrierNetworkChange(in boolean active);
 }

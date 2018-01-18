@@ -16,6 +16,8 @@
 
 package com.android.keyguard;
 
+import android.os.Bundle;
+
 /**
  * The callback used by the keyguard view to tell the {@link KeyguardViewMediator}
  * various things.
@@ -92,4 +94,74 @@ public interface ViewMediatorCallback {
      *         {@link KeyguardSecurityView#PROMPT_REASON_TIMEOUT}.
      */
     int getBouncerPromptReason();
+
+    /**
+     * Return is keyguard showing or not.
+     * @return showing or not
+     */
+    boolean isShowing();
+
+    /**
+     * Ask to show keyguard.
+     * @param options bring some info
+     */
+    void showLocked(Bundle options);
+
+    /**
+     * Ask to reset lock view.
+     */
+    void resetStateLocked();
+
+    /**
+     * Ask to dismiss keyguard.
+     */
+    void dismiss();
+
+    /**
+     * Ask to dismiss keyguard with authentication info.
+     * @param authenticated verified or not.
+     */
+    void dismiss(boolean authenticated);
+
+    /**
+     * Ask to adjust status bar.
+     */
+    void adjustStatusBarLocked();
+
+    /**
+     * Ask to hide keyguard.
+     */
+    void hideLocked();
+
+    /**
+     * Return keyguard is secure or not.
+     * @return keyguard is secure or not.
+     */
+    boolean isSecure();
+
+    /**
+     * Ask to supress keyguard lock/unlock sound.
+     */
+    void setSuppressPlaySoundFlag();
+
+    /**
+     * M: Force to update navi-bar status.
+     */
+    void updateNavbarStatus();
+    /**
+     * M: keyguard done on going or not.
+     * @return keyguard done on going or not
+     */
+     boolean isKeyguardDoneOnGoing();
+
+    /**
+      * M: Update antitheft lock status.
+      */
+     void updateAntiTheftLocked();
+
+     /**
+      * M: Added for VOW. Return is keyguard is enabled externally.
+      * @return externally enabled or not.
+      */
+     boolean isKeyguardExternallyEnabled();
 }

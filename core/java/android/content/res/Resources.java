@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -45,6 +50,9 @@ import android.graphics.drawable.Drawable.ConstantState;
 import android.graphics.drawable.DrawableInflater;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.SystemProperties;
+import android.os.Trace;
+import android.util.ArrayMap;
 import android.util.AttributeSet;
 import android.util.DisplayMetrics;
 import android.util.Log;
@@ -66,6 +74,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
+
+/// M: Log specified resource Id @{
+import android.util.Slog;
+/// @}
 
 /**
  * Class for accessing an application's resources.  This sits on top of the
@@ -95,6 +107,8 @@ import java.util.ArrayList;
 public class Resources {
     static final String TAG = "Resources";
 
+    private static final boolean DEBUG_RESOURCE_ID = false; /// M: Debug for specified resource ID
+
     private static final Object sSync = new Object();
 
     // Used by BridgeResources in layoutlib
@@ -110,6 +124,8 @@ public class Resources {
 
     /** Lock object used to protect access to {@link #mTmpValue}. */
     private final Object mTmpValueLock = new Object();
+
+    private static int sLogId = 0;      /// M: Remember the resource ID that we want to log it.
 
     /** Single-item pool used to minimize TypedValue allocations. */
     private TypedValue mTmpValue = new TypedValue();
@@ -328,6 +344,12 @@ public class Resources {
      *         possibly styled text information.
      */
     @NonNull public CharSequence getText(@StringRes int id) throws NotFoundException {
+        /// M: Log specified resource Id @{
+        if(DEBUG_RESOURCE_ID && (id == sLogId)) {
+            Slog.i(TAG, "**** getText id:" + id);
+            Slog.i(TAG, "config is " + getConfiguration());
+        }
+        /// @}
         CharSequence res = mResourcesImpl.getAssets().getResourceText(id);
         if (res != null) {
             return res;
@@ -359,6 +381,12 @@ public class Resources {
     @NonNull
     public CharSequence getQuantityText(@PluralsRes int id, int quantity)
             throws NotFoundException {
+        /// M: Log specified resource Id @{
+        if(DEBUG_RESOURCE_ID && (id == sLogId)) {
+            Slog.i(TAG, "**** getQuantityText id:" + id);
+            Slog.i(TAG, "config is " + getConfiguration());
+        }
+        /// @}
         return mResourcesImpl.getQuantityText(id, quantity);
     }
 
@@ -378,6 +406,12 @@ public class Resources {
      */
     @NonNull
     public String getString(@StringRes int id) throws NotFoundException {
+        /// M: Log specified resource Id @{
+        if(DEBUG_RESOURCE_ID && (id == sLogId)) {
+            Slog.i(TAG, "**** getString id:" + id);
+            Slog.i(TAG, "config is " + getConfiguration());
+        }
+        /// @}
         return getText(id).toString();
     }
 
@@ -402,6 +436,12 @@ public class Resources {
      */
     @NonNull
     public String getString(@StringRes int id, Object... formatArgs) throws NotFoundException {
+        /// M: Log specified resource Id @{
+        if(DEBUG_RESOURCE_ID && (id == sLogId)) {
+            Slog.i(TAG, "**** getString id:" + id);
+            Slog.i(TAG, "config is " + getConfiguration());
+        }
+        /// @}
         final String raw = getString(id);
         return String.format(mResourcesImpl.getConfiguration().getLocales().get(0), raw,
                 formatArgs);
@@ -435,6 +475,12 @@ public class Resources {
     @NonNull
     public String getQuantityString(@PluralsRes int id, int quantity, Object... formatArgs)
             throws NotFoundException {
+        /// M: Log specified resource Id @{
+        if(DEBUG_RESOURCE_ID && (id == sLogId)) {
+            Slog.i(TAG, "**** getQuantityString id:" + id);
+            Slog.i(TAG, "config is " + getConfiguration());
+        }
+        /// @}
         String raw = getQuantityText(id, quantity).toString();
         return String.format(mResourcesImpl.getConfiguration().getLocales().get(0), raw,
                 formatArgs);
@@ -462,6 +508,12 @@ public class Resources {
      */
     @NonNull
     public String getQuantityString(@PluralsRes int id, int quantity) throws NotFoundException {
+        /// M: Log specified resource Id @{
+        if(DEBUG_RESOURCE_ID && (id == sLogId)) {
+            Slog.i(TAG, "**** getQuantityString id:" + id);
+            Slog.i(TAG, "config is " + getConfiguration());
+        }
+        /// @}
         return getQuantityText(id, quantity).toString();
     }
 
@@ -480,6 +532,12 @@ public class Resources {
      *         possibly styled text information, or def if id is 0 or not found.
      */
     public CharSequence getText(@StringRes int id, CharSequence def) {
+        /// M: Log specified resource Id @{
+        if(DEBUG_RESOURCE_ID && (id == sLogId)) {
+            Slog.i(TAG, "**** getText id:" + id);
+            Slog.i(TAG, "config is " + getConfiguration());
+        }
+        /// @}
         CharSequence res = id != 0 ? mResourcesImpl.getAssets().getResourceText(id) : null;
         return res != null ? res : def;
     }
@@ -497,6 +555,12 @@ public class Resources {
      */
     @NonNull
     public CharSequence[] getTextArray(@ArrayRes int id) throws NotFoundException {
+        /// M: Log specified resource Id @{
+        if(DEBUG_RESOURCE_ID && (id == sLogId)) {
+            Slog.i(TAG, "**** getTextArray id:" + id);
+            Slog.i(TAG, "config is " + getConfiguration());
+        }
+        /// @}
         CharSequence[] res = mResourcesImpl.getAssets().getResourceTextArray(id);
         if (res != null) {
             return res;
@@ -518,6 +582,12 @@ public class Resources {
     @NonNull
     public String[] getStringArray(@ArrayRes int id)
             throws NotFoundException {
+        /// M: Log specified resource Id @{
+        if(DEBUG_RESOURCE_ID && (id == sLogId)) {
+            Slog.i(TAG, "**** getStringArray id:" + id);
+            Slog.i(TAG, "config is " + getConfiguration());
+        }
+        /// @}
         String[] res = mResourcesImpl.getAssets().getResourceStringArray(id);
         if (res != null) {
             return res;
@@ -538,6 +608,12 @@ public class Resources {
      */
     @NonNull
     public int[] getIntArray(@ArrayRes int id) throws NotFoundException {
+        /// M: Log specified resource Id @{
+        if(DEBUG_RESOURCE_ID && (id == sLogId)) {
+            Slog.i(TAG, "**** getIntArray id:" + id);
+            Slog.i(TAG, "config is " + getConfiguration());
+        }
+        /// @}
         int[] res = mResourcesImpl.getAssets().getArrayIntResource(id);
         if (res != null) {
             return res;
@@ -561,6 +637,12 @@ public class Resources {
     @NonNull
     public TypedArray obtainTypedArray(@ArrayRes int id) throws NotFoundException {
         final ResourcesImpl impl = mResourcesImpl;
+        /// M: Log specified resource Id @{
+        if(DEBUG_RESOURCE_ID && (id == sLogId)) {
+            Slog.i(TAG, "**** obtainTypedArray id:" + id);
+            Slog.i(TAG, "config is " + getConfiguration());
+        }
+        /// @}
         int len = impl.getAssets().getArraySize(id);
         if (len < 0) {
             throw new NotFoundException("Array resource ID #0x" + Integer.toHexString(id));
@@ -591,6 +673,12 @@ public class Resources {
      * @see #getDimensionPixelSize
      */
     public float getDimension(@DimenRes int id) throws NotFoundException {
+        /// M: Log specified resource Id @{
+        if(DEBUG_RESOURCE_ID && (id == sLogId)) {
+            Slog.i(TAG, "**** getDimension id:" + id);
+            Slog.i(TAG, "config is " + getConfiguration());
+        }
+        /// @}
         final TypedValue value = obtainTempTypedValue();
         try {
             final ResourcesImpl impl = mResourcesImpl;
@@ -625,6 +713,12 @@ public class Resources {
      * @see #getDimensionPixelSize
      */
     public int getDimensionPixelOffset(@DimenRes int id) throws NotFoundException {
+        /// M: Log specified resource Id @{
+        if(DEBUG_RESOURCE_ID && (id == sLogId)) {
+            Slog.i(TAG, "**** getDimensionPixelOffset id:" + id);
+            Slog.i(TAG, "config is " + getConfiguration());
+        }
+        /// @}
         final TypedValue value = obtainTempTypedValue();
         try {
             final ResourcesImpl impl = mResourcesImpl;
@@ -661,6 +755,12 @@ public class Resources {
      * @see #getDimensionPixelOffset
      */
     public int getDimensionPixelSize(@DimenRes int id) throws NotFoundException {
+        /// M: Log specified resource Id @{
+        if(DEBUG_RESOURCE_ID && (id == sLogId)) {
+            Slog.i(TAG, "**** getDimensionPixelSize id:" + id);
+            Slog.i(TAG, "config is " + getConfiguration());
+        }
+        /// @}
         final TypedValue value = obtainTempTypedValue();
         try {
             final ResourcesImpl impl = mResourcesImpl;
@@ -693,6 +793,12 @@ public class Resources {
      * @throws NotFoundException Throws NotFoundException if the given ID does not exist.
      */
     public float getFraction(@FractionRes int id, int base, int pbase) {
+        /// M: Log specified resource Id @{
+        if(DEBUG_RESOURCE_ID && (id == sLogId)) {
+            Slog.i(TAG, "**** getFraction id:" + id);
+            Slog.i(TAG, "config is " + getConfiguration());
+        }
+        /// @}
         final TypedValue value = obtainTempTypedValue();
         try {
             mResourcesImpl.getValue(id, value, true);
@@ -764,6 +870,12 @@ public class Resources {
      */
     public Drawable getDrawable(@DrawableRes int id, @Nullable Theme theme)
             throws NotFoundException {
+        /// M: Log specified resource Id @{
+        if(DEBUG_RESOURCE_ID && (id == sLogId)) {
+            Slog.i(TAG, "**** getDrawable id:" + id);
+            Slog.i(TAG, "config is " + getConfiguration());
+        }
+        /// @}
         final TypedValue value = obtainTempTypedValue();
         try {
             final ResourcesImpl impl = mResourcesImpl;
@@ -821,6 +933,12 @@ public class Resources {
      *             not exist.
      */
     public Drawable getDrawableForDensity(@DrawableRes int id, int density, @Nullable Theme theme) {
+        /// M: Log specified resource Id @{
+        if(DEBUG_RESOURCE_ID && (id == sLogId)) {
+            Slog.i(TAG, "**** getDrawableForDensity id:" + id);
+            Slog.i(TAG, "config is " + getConfiguration());
+        }
+        /// @}
         final TypedValue value = obtainTempTypedValue();
         try {
             final ResourcesImpl impl = mResourcesImpl;
@@ -867,6 +985,12 @@ public class Resources {
      * 
      */
     public Movie getMovie(@RawRes int id) throws NotFoundException {
+        /// M: Log specified resource Id @{
+        if(DEBUG_RESOURCE_ID && (id == sLogId)) {
+            Slog.i(TAG, "**** getMovie id:" + id);
+            Slog.i(TAG, "config is " + getConfiguration());
+        }
+        /// @}
         final InputStream is = openRawResource(id);
         final Movie movie = Movie.decodeStream(is);
         try {
@@ -916,6 +1040,11 @@ public class Resources {
      */
     @ColorInt
     public int getColor(@ColorRes int id, @Nullable Theme theme) throws NotFoundException {
+        /// M: Log specified resource Id @{
+        if(DEBUG_RESOURCE_ID && (id == sLogId)) {
+            Slog.i(TAG, "**** getColor id:" + id);
+            Slog.i(TAG, "config is " + getConfiguration());
+        }
         final TypedValue value = obtainTempTypedValue();
         try {
             final ResourcesImpl impl = mResourcesImpl;
@@ -986,6 +1115,12 @@ public class Resources {
     @Nullable
     public ColorStateList getColorStateList(@ColorRes int id, @Nullable Theme theme)
             throws NotFoundException {
+        /// M: Log specified resource Id @{
+        if(DEBUG_RESOURCE_ID && (id == sLogId)) {
+            Slog.i(TAG, "**** getColorStateList id:" + id);
+            Slog.i(TAG, "config is " + getConfiguration());
+        }
+        /// @}
         final TypedValue value = obtainTempTypedValue();
         try {
             final ResourcesImpl impl = mResourcesImpl;
@@ -1024,6 +1159,12 @@ public class Resources {
      * @return Returns the boolean value contained in the resource.
      */
     public boolean getBoolean(@BoolRes int id) throws NotFoundException {
+        /// M: Log specified resource Id @{
+        if(DEBUG_RESOURCE_ID && (id == sLogId)) {
+            Slog.i(TAG, "**** getBoolean id:" + id);
+            Slog.i(TAG, "config is " + getConfiguration());
+        }
+        /// @}
         final TypedValue value = obtainTempTypedValue();
         try {
             mResourcesImpl.getValue(id, value, true);
@@ -1050,6 +1191,12 @@ public class Resources {
      * @return Returns the integer value contained in the resource.
      */
     public int getInteger(@IntegerRes int id) throws NotFoundException {
+        /// M: Log specified resource Id @{
+        if(DEBUG_RESOURCE_ID && (id == sLogId)) {
+            Slog.i(TAG, "**** getInteger id:" + id);
+            Slog.i(TAG, "config is " + getConfiguration());
+        }
+        /// @}
         final TypedValue value = obtainTempTypedValue();
         try {
             mResourcesImpl.getValue(id, value, true);
@@ -1112,6 +1259,12 @@ public class Resources {
      * @see #getXml
      */
     public XmlResourceParser getLayout(@LayoutRes int id) throws NotFoundException {
+        /// M: Log specified resource Id @{
+        if(DEBUG_RESOURCE_ID && (id == sLogId)) {
+            Slog.i(TAG, "**** getLayout id:" + id);
+            Slog.i(TAG, "config is " + getConfiguration());
+        }
+        /// @}
         return loadXmlResourceParser(id, "layout");
     }
 
@@ -1136,6 +1289,12 @@ public class Resources {
      * @see #getXml
      */
     public XmlResourceParser getAnimation(@AnimRes int id) throws NotFoundException {
+        /// M: Log specified resource Id @{
+        if(DEBUG_RESOURCE_ID && (id == sLogId)) {
+            Slog.i(TAG, "**** getAnimation id:" + id);
+            Slog.i(TAG, "config is " + getConfiguration());
+        }
+        /// @}
         return loadXmlResourceParser(id, "anim");
     }
 
@@ -1161,6 +1320,12 @@ public class Resources {
      * @see android.util.AttributeSet
      */
     public XmlResourceParser getXml(@XmlRes int id) throws NotFoundException {
+        /// M: Log specified resource Id @{
+        if(DEBUG_RESOURCE_ID && (id == sLogId)) {
+            Slog.i(TAG, "**** getXml id:" + id);
+            Slog.i(TAG, "config is " + getConfiguration());
+        }
+        /// @}
         return loadXmlResourceParser(id, "xml");
     }
 
@@ -1179,6 +1344,12 @@ public class Resources {
      * 
      */
     public InputStream openRawResource(@RawRes int id) throws NotFoundException {
+        /// M: Log specified resource Id @{
+        if(DEBUG_RESOURCE_ID && (id == sLogId)) {
+            Slog.i(TAG, "**** openRawResource id:" + id);
+            Slog.i(TAG, "config is " + getConfiguration());
+        }
+        /// @}
         final TypedValue value = obtainTempTypedValue();
         try {
             return openRawResource(id, value);
@@ -1236,6 +1407,12 @@ public class Resources {
      */
     public InputStream openRawResource(@RawRes int id, TypedValue value)
             throws NotFoundException {
+        /// M: Log specified resource Id @{
+        if(DEBUG_RESOURCE_ID && (id == sLogId)) {
+            Slog.i(TAG, "**** openRawResource id:" + id);
+            Slog.i(TAG, "config is " + getConfiguration());
+        }
+        /// @}
         return mResourcesImpl.openRawResource(id, value);
     }
 
@@ -1262,6 +1439,12 @@ public class Resources {
      */
     public AssetFileDescriptor openRawResourceFd(@RawRes int id)
             throws NotFoundException {
+        /// M: Log specified resource Id @{
+        if(DEBUG_RESOURCE_ID && (id == sLogId)) {
+            Slog.i(TAG, "**** openRawResourceFd id:" + id);
+            Slog.i(TAG, "config is " + getConfiguration());
+        }
+        /// @}
         final TypedValue value = obtainTempTypedValue();
         try {
             return mResourcesImpl.openRawResourceFd(id, value);
@@ -1287,6 +1470,12 @@ public class Resources {
      */
     public void getValue(@AnyRes int id, TypedValue outValue, boolean resolveRefs)
             throws NotFoundException {
+        /// M: Log specified resource Id @{
+        if(DEBUG_RESOURCE_ID && (id == sLogId)) {
+            Slog.i(TAG, "**** getValue id:" + id);
+            Slog.i(TAG, "config is " + getConfiguration());
+        }
+        /// @}
         mResourcesImpl.getValue(id, outValue, resolveRefs);
     }
 
@@ -1305,6 +1494,12 @@ public class Resources {
      */
     public void getValueForDensity(@AnyRes int id, int density, TypedValue outValue,
             boolean resolveRefs) throws NotFoundException {
+        /// M: Log specified resource Id @{
+        if(DEBUG_RESOURCE_ID && (id == sLogId)) {
+            Slog.i(TAG, "**** getValueForDensity id:" + id);
+            Slog.i(TAG, "config is " + getConfiguration());
+        }
+        /// @}
         mResourcesImpl.getValueForDensity(id, density, outValue, resolveRefs);
     }
 
@@ -1779,6 +1974,21 @@ public class Resources {
      */
     public void updateConfiguration(Configuration config, DisplayMetrics metrics,
                                     CompatibilityInfo compat) {
+        /// M: Log specified resource Id @{
+        if (DEBUG_RESOURCE_ID) {
+            int orgLogId = sLogId;
+            sLogId = SystemProperties.getInt("debug.rms.logid", 0);
+            if(orgLogId != sLogId) {
+                Slog.i(TAG, "**** Updating config, sLogId: " + sLogId);
+            }
+            if (0 != sLogId) {
+                Slog.i(TAG, "**** Updating config of " + this + ": old config is "
+                       + getConfiguration() + " old compat is " + getCompatibilityInfo());
+                Slog.i(TAG, "**** Updating config of " + this + ": new config is "
+                       + config + " new compat is " + compat);
+            }
+        }
+        /// @}
         mResourcesImpl.updateConfiguration(config, metrics, compat);
     }
 
@@ -2095,6 +2305,12 @@ public class Resources {
     @NonNull
     XmlResourceParser loadXmlResourceParser(@AnyRes int id, @NonNull String type)
             throws NotFoundException {
+        /// M: Log specified resource Id @{
+        if(DEBUG_RESOURCE_ID && (id == sLogId)) {
+            Slog.i(TAG, "**** loadXmlResourceParser id:" + id);
+            Slog.i(TAG, "config is " + getConfiguration());
+        }
+        /// @}
         final TypedValue value = obtainTempTypedValue();
         try {
             final ResourcesImpl impl = mResourcesImpl;

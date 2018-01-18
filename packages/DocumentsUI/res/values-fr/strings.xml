@@ -99,6 +99,7 @@
     <string name="notification_touch_for_details" msgid="6268189413228855582">"Appuyez pour afficher plus d\'informations."</string>
     <string name="close" msgid="3043722427445528732">"Fermer"</string>
     <string name="copy_failure_alert_content" msgid="4563147454522476183">"Les fichiers suivants n\'ont pas été copiés : <xliff:g id="LIST">%1$s</xliff:g>."</string>
+    <string name="mode_selected_count">"<xliff:g id="COUNT">%1$d</xliff:g> élément(s) sélectionné(s)"</string>
     <string name="move_failure_alert_content" msgid="2635075788682922861">"Les fichiers suivants n\'ont pas été déplacés : <xliff:g id="LIST">%1$s</xliff:g>."</string>
     <string name="delete_failure_alert_content" msgid="892393767207938353">"Les fichiers suivants n\'ont pas été supprimés : <xliff:g id="LIST">%1$s</xliff:g>."</string>
     <string name="copy_converted_warning_content" msgid="5753861488218674361">"Ces fichiers ont été convertis dans un autre format : <xliff:g id="LIST">%1$s</xliff:g>."</string>
@@ -140,4 +141,6 @@
     </plurals>
     <string name="too_many_selected" msgid="6781456208116966753">"Désolé, vous ne pouvez sélectionner qu\'un maximum de 1 000 éléments à la fois."</string>
     <string name="too_many_in_select_all" msgid="8281987479885307456">"Seuls 1 000 éléments ont pu être sélectionnés."</string>
+		<string name="drm_file_cannot_move">Certains fichiers protégés ne peuvent pas être déplacés</string>
+		<string name="drm_file_cannot_copy">Certains fichiers protégés ne peuvent pas être copiés</string>
 </resources>

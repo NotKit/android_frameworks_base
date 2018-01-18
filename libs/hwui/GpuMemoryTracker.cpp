@@ -60,11 +60,14 @@ void GpuMemoryTracker::startTrackingObject() {
 }
 
 void GpuMemoryTracker::stopTrackingObject() {
-    size_t removed = gObjectSet.erase(this);
-    LOG_ALWAYS_FATAL_IF(removed != 1,
-            "stopTrackingObject removed %zd, is %p not being tracked?",
-            removed, this);
-    gObjectStats[static_cast<int>(mType)].count--;
+    if (!mRemoved) {
+        size_t removed = gObjectSet.erase(this);
+        LOG_ALWAYS_FATAL_IF(removed != 1,
+                "stopTrackingObject removed %zd, is %p not being tracked?",
+                removed, this);
+        gObjectStats[static_cast<int>(mType)].count--;
+        mRemoved = true;
+    }
 }
 
 void GpuMemoryTracker::onGLContextCreated() {

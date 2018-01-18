@@ -53,7 +53,7 @@ uint32_t FboCache::getMaxSize() {
 void FboCache::clear() {
     for (size_t i = 0; i < mCache.size(); i++) {
         const GLuint fbo = mCache.itemAt(i);
-        glDeleteFramebuffers(1, &fbo);
+        TIME_LOG("glDeleteFramebuffers", glDeleteFramebuffers(1, &fbo));
     }
     mCache.clear();
 }
@@ -75,7 +75,7 @@ bool FboCache::put(GLuint fbo) {
         return true;
     }
 
-    glDeleteFramebuffers(1, &fbo);
+    TIME_LOG("glDeleteFramebuffers", glDeleteFramebuffers(1, &fbo));
     return false;
 }
 

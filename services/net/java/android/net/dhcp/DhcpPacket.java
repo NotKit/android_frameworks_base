@@ -173,6 +173,11 @@ abstract class DhcpPacket {
     protected Inet4Address mBroadcastAddress;
 
     /**
+     * DHCP Optional Type: DHCP Static Route
+     */
+    protected static final byte DHCP_STATIC_ROUTE = 33;
+    protected Inet4Address mStaticGateway;
+    /**
      * DHCP Optional Type: Vendor specific information
      */
     protected static final byte DHCP_VENDOR_INFO = 43;
@@ -847,7 +852,11 @@ abstract class DhcpPacket {
         }
 
         // We need to check the length even for ENCAP_L3 because the IPv4 header is variable-length.
-        if (pktType > ENCAP_BOOTP || packet.remaining() < MIN_PACKET_LENGTH_BOOTP) {
+        ///M: ALPS03012271: to fit packet from dhcp server isn't well-formed.
+        ///                 add more 4 bytes prevention for magic cookie field  @{
+        //if (pktType > ENCAP_BOOTP || packet.remaining() < MIN_PACKET_LENGTH_BOOTP) {
+        if (pktType > ENCAP_BOOTP || packet.remaining() < MIN_PACKET_LENGTH_BOOTP + 4) {
+        /// @}
             throw new ParseException(DhcpErrorEvent.BOOTP_TOO_SHORT,
                         "Invalid type or BOOTP packet too short, %d < %d",
                         packet.remaining(), MIN_PACKET_LENGTH_BOOTP);
@@ -875,6 +884,16 @@ abstract class DhcpPacket {
         } catch (UnknownHostException ex) {
             throw new ParseException(DhcpErrorEvent.L3_INVALID_IP,
                     "Invalid IPv4 address: %s", Arrays.toString(ipv4addr));
+        }
+
+        // Some DHCP servers have been known to announce invalid client hardware address values such
+        // as 0xff. The legacy DHCP client accepted these becuause it does not check the length at
+        // all but only checks that the interface MAC address matches the first bytes of the address
+        // in the packets. We're a bit stricter: if the length is obviously invalid (i.e., bigger
+        // than the size of the field), we fudge it to 6 (Ethernet). http://b/23725795
+        // TODO: evaluate whether to make this test more liberal.
+        if (addrLen > HWADDR_LEN) {
+            addrLen = ETHER_BROADCAST.length;
         }
 
         // Some DHCP servers have been known to announce invalid client hardware address values such

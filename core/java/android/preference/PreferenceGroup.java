@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,9 +26,11 @@ import java.util.Collections;
 import java.util.List;
 import android.content.Context;
 import android.content.res.TypedArray;
+import android.os.Build;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.util.AttributeSet;
+import android.util.Log;
 
 /**
  * A container for multiple
@@ -40,6 +47,12 @@ import android.util.AttributeSet;
  * @attr ref android.R.styleable#PreferenceGroup_orderingFromXml
  */
 public abstract class PreferenceGroup extends Preference implements GenericInflater.Parent<Preference> {
+    /**
+     * M: MTK debug logs
+     */
+    private static final String TAG = "PreferenceGroup";
+    private static final boolean DBG = "eng".equals(Build.TYPE);
+
     /**
      * The container for child {@link Preference}s. This is sorted based on the
      * ordering, please use {@link #addPreference(Preference)} instead of adding
@@ -131,6 +144,12 @@ public abstract class PreferenceGroup extends Preference implements GenericInfla
      * @return Whether the preference is now in this group.
      */
     public boolean addPreference(Preference preference) {
+        if (DBG) {
+            Log.d(TAG, "addPreference, child key = " + preference.getKey() +
+                    ", child title = " + preference.getTitle() +
+                    ", key = " + getKey() + ", title = " + getTitle());
+        }
+
         if (mPreferenceList.contains(preference)) {
             // Exists
             return true;
@@ -153,10 +172,16 @@ public abstract class PreferenceGroup extends Preference implements GenericInfla
         }
 
         synchronized(this) {
+            // M: Preference allows APP to add or remove preferences from worker
+            // threads. We should put the binary search of 'insertionIndex' in
+            // the synchronized block, too. Otherwise, because of thread's race
+            // condition, the 'insertionIndex' might become out of bound before
+            // we use it. Please refer to ALPS01382919 for details.
             int insertionIndex = Collections.binarySearch(mPreferenceList, preference);
             if (insertionIndex < 0) {
                 insertionIndex = insertionIndex * -1 - 1;
             }
+
             mPreferenceList.add(insertionIndex, preference);
         }
 
@@ -184,6 +209,12 @@ public abstract class PreferenceGroup extends Preference implements GenericInfla
     }
 
     private boolean removePreferenceInt(Preference preference) {
+        if (DBG) {
+            Log.d(TAG, "removePreferenceInt, child key = " + preference.getKey() +
+                    ", child title = " + preference.getTitle() +
+                    ", key = " + getKey() + ", title = " + getTitle());
+        }
+
         synchronized(this) {
             preference.onPrepareForRemoval();
             return mPreferenceList.remove(preference);
@@ -194,6 +225,11 @@ public abstract class PreferenceGroup extends Preference implements GenericInfla
      * Removes all {@link Preference Preferences} from this group.
      */
     public void removeAll() {
+        if (DBG) {
+            Log.d(TAG, "removeAll, size = " + getPreferenceCount() +
+                    ", key = " + getKey() + ", title = " + getTitle());
+        }
+
         synchronized(this) {
             List<Preference> preferenceList = mPreferenceList;
             for (int i = preferenceList.size() - 1; i >= 0; i--) {

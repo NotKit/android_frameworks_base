@@ -40,6 +40,48 @@
              android:layout_height="wrap_content"
             />
     <LinearLayout
+            android:id="@+id/sim_info_message"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_gravity="center_horizontal"
+            android:visibility="gone"
+            >
+        <TextView
+                android:id="@+id/for_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:ellipsize="marquee"
+                android:singleLine="true"
+                android:textDirection = "locale"
+                android:textAppearance="?android:attr/textAppearanceLarge"
+                android:textColor="?android:attr/textColorPrimary"
+                android:textSize="16sp"
+                />
+        <ImageView
+                android:id="@+id/sub_icon"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="4dp"
+                android:paddingRight="8dp"
+                />
+        <TextView
+                android:id="@+id/sim_card_name"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:ellipsize="middle"
+                android:maxWidth="110dip"
+                android:singleLine="true"
+                android:textDirection = "locale"
+                android:textAppearance="?android:attr/textAppearanceLarge"
+                android:textColor="?android:attr/textColorPrimary"
+                android:textSize="16sp"
+                />
+    </LinearLayout>
+    <LinearLayout
+            android:id="@+id/keyguard_bouncer_frame"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:orientation="vertical"

@@ -136,12 +136,41 @@ ifeq (true, $(HWUI_NEW_OPS))
 
 endif
 
+# --- MediaTek ---------------------------------------------------------------
+
+hwui_c_includes += \
+    vendor/mediatek/proprietary/frameworks/opt/ProgramBinaryServer/core \
+    $(MTK_PATH_SOURCE)/hardware/perfservice/perfservicenative
+
+hwui_src_files += \
+    mediatek/MTKDebug.cpp \
+    mediatek/MTKDumper.cpp \
+    mediatek/MTKMonitorThread.cpp \
+    mediatek/MTKDisplayListRecorder.cpp \
+    mediatek/MTKProgramAtlas.cpp
+
+ifeq ($(strip $(MTK_GMO_RAM_OPTIMIZE)), yes)
+    hwui_cflags += -DMTK_HWUI_RAM_OPTIMIZE
+endif
+
+ifeq ($(strip $(TARGET_BUILD_VARIANT)), user)
+    hwui_cflags += -DMTK_USER_BUILD -DIS_USER_BUILD=true -DIS_USERDEBUG_BUILD=false -DIS_ENG_BUILD=false
+else
+    hwui_cflags += -DMTK_DEBUG_RENDERER
+    ifeq ($(strip $(TARGET_BUILD_VARIANT)), eng)
+        hwui_cflags += -DMTK_ENG_BUILD -DIS_USER_BUILD=false -DIS_USERDEBUG_BUILD=false -DIS_ENG_BUILD=true
+    else
+        hwui_cflags += -DMTK_USERDEBUG_BUILD -DIS_USER_BUILD=false -DIS_USERDEBUG_BUILD=true -DIS_ENG_BUILD=false
+    endif
+endif
+
+# ----------------------------------------------------------------------------
+
 ifeq (true, $(BUGREPORT_FONT_CACHE_USAGE))
     hwui_src_files += \
         font/FontCacheHistoryTracker.cpp
     hwui_cflags += -DBUGREPORT_FONT_CACHE_USAGE
 endif
-
 
 ifndef HWUI_COMPILE_SYMBOLS
     hwui_cflags += -fvisibility=hidden

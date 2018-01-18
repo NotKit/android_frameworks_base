@@ -30,6 +30,9 @@ import android.widget.Space;
 import com.android.systemui.R;
 import com.android.systemui.statusbar.policy.KeyButtonView;
 import com.android.systemui.tuner.TunerService;
+/// M: BMW
+import com.mediatek.multiwindow.MultiWindowManager;
+
 
 import java.util.Objects;
 
@@ -46,6 +49,9 @@ public class NavigationBarInflaterView extends FrameLayout implements TunerServi
     public static final String NAVSPACE = "space";
     public static final String CLIPBOARD = "clipboard";
     public static final String KEY = "key";
+    /// M: BMW @{
+    public static final String RESTORE = "restore";
+    /// @}
 
     public static final String GRAVITY_SEPARATOR = ";";
     public static final String BUTTON_SEPARATOR = ",";
@@ -108,10 +114,10 @@ public class NavigationBarInflaterView extends FrameLayout implements TunerServi
 
     private void inflateChildren() {
         removeAllViews();
-        mRot0 = (FrameLayout) mLayoutInflater.inflate(R.layout.navigation_layout, this, false);
+        mRot0 = (FrameLayout) mLayoutInflater.inflate(R.layout.navigation_layout_rot90, this, false);
         mRot0.setId(R.id.rot0);
         addView(mRot0);
-        mRot90 = (FrameLayout) mLayoutInflater.inflate(R.layout.navigation_layout_rot90, this,
+        mRot90 = (FrameLayout) mLayoutInflater.inflate(R.layout.navigation_layout, this,
                 false);
         mRot90.setId(R.id.rot90);
         addView(mRot90);
@@ -122,6 +128,11 @@ public class NavigationBarInflaterView extends FrameLayout implements TunerServi
     }
 
     protected String getDefaultLayout() {
+        /// M: BMW @{
+        if (MultiWindowManager.isSupported()) {
+            return mContext.getString(R.string.config_navBarLayout_float);
+        }
+        /// @}
         return mContext.getString(R.string.config_navBarLayout);
     }
 
@@ -261,8 +272,20 @@ public class NavigationBarInflaterView extends FrameLayout implements TunerServi
             v = inflater.inflate(R.layout.menu_ime, parent, false);
         } else if (NAVSPACE.equals(button)) {
             v = inflater.inflate(R.layout.nav_key_space, parent, false);
+            /// M: BMW @{
+            if (MultiWindowManager.isSupported() && landscape && isSw600Dp()) {
+                setupLandButton(v);
+            }
+            /// @}
         } else if (CLIPBOARD.equals(button)) {
             v = inflater.inflate(R.layout.clipboard, parent, false);
+        /// M: BMW @{
+        } else if (MultiWindowManager.isSupported() && RESTORE.equals(button)) {
+            v = inflater.inflate(R.layout.restore, parent, false);
+            if (landscape && isSw600Dp()) {
+                setupLandButton(v);
+            }
+        /// @}
         } else if (button.startsWith(KEY)) {
             String uri = extractImage(button);
             int code = extractKeycode(button);

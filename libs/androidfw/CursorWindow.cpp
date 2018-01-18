@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006-2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -48,12 +53,14 @@ status_t CursorWindow::create(const String8& name, size_t size, CursorWindow** o
     status_t result;
     int ashmemFd = ashmem_create_region(ashmemName.string(), size);
     if (ashmemFd < 0) {
+        ALOG(LOG_ERROR,LOG_TAG,"CursorWindow::create, ashmem_create_region return errno = %d",errno);
         result = -errno;
     } else {
         result = ashmem_set_prot_region(ashmemFd, PROT_READ | PROT_WRITE);
         if (result >= 0) {
             void* data = ::mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, ashmemFd, 0);
             if (data == MAP_FAILED) {
+                ALOG(LOG_ERROR,LOG_TAG,"CursorWindow::create, mmap return errno = %d",errno);
                 result = -errno;
             } else {
                 result = ashmem_set_prot_region(ashmemFd, PROT_READ);
@@ -71,7 +78,10 @@ status_t CursorWindow::create(const String8& name, size_t size, CursorWindow** o
                         *outCursorWindow = window;
                         return OK;
                     }
+                    ALOG(LOG_ERROR,LOG_TAG,"CursorWindow::create, window->clear return errno = %d",errno);
                     delete window;
+                } else {
+                    ALOG(LOG_ERROR,LOG_TAG,"CursorWindow::create, ashmeme_set_prot_region return errno = %d",errno);
                 }
             }
             ::munmap(data, size);
@@ -89,20 +99,24 @@ status_t CursorWindow::createFromParcel(Parcel* parcel, CursorWindow** outCursor
     int ashmemFd = parcel->readFileDescriptor();
     if (ashmemFd == int(BAD_TYPE)) {
         result = BAD_TYPE;
+        ALOG(LOG_ERROR,LOG_TAG,"CursorWindow::createFromParcel, BAD_TYPE:%d",result);
     } else {
         ssize_t size = ashmem_get_size_region(ashmemFd);
         if (size < 0) {
             result = UNKNOWN_ERROR;
+            ALOG(LOG_ERROR,LOG_TAG,"CursorWindow::createFromParcel, UNKNOWN_ERROR:%d",result);
         } else {
             int dupAshmemFd = ::dup(ashmemFd);
             if (dupAshmemFd < 0) {
                 result = -errno;
+                ALOG(LOG_ERROR,LOG_TAG,"CursorWindow::createFromParcel, dup return errno = %d",errno);
             } else {
                 // the size of the ashmem descriptor can be modified between ashmem_get_size_region
                 // call and mmap, so we'll check again immediately after memory is mapped
                 void* data = ::mmap(NULL, size, PROT_READ, MAP_SHARED, dupAshmemFd, 0);
                 if (data == MAP_FAILED) {
                     result = -errno;
+                    ALOG(LOG_ERROR,LOG_TAG,"CursorWindow::createFromParcel, mmap return errno = %d",errno);
                 } else if (ashmem_get_size_region(dupAshmemFd) != size) {
                     ::munmap(data, size);
                     result = BAD_VALUE;

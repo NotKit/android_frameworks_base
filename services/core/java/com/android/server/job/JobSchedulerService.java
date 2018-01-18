@@ -63,6 +63,7 @@ import android.os.RemoteException;
 import android.os.ResultReceiver;
 import android.os.ServiceManager;
 import android.os.SystemClock;
+import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.provider.Settings;
 import android.util.KeyValueListParser;
@@ -104,7 +105,9 @@ import libcore.util.EmptyArray;
 public final class JobSchedulerService extends com.android.server.SystemService
         implements StateChangedListener, JobCompletedListener {
     static final String TAG = "JobSchedulerService";
-    public static final boolean DEBUG = false;
+    /// M: turn on/off log feature
+    public static final boolean DEBUG =
+            SystemProperties.getBoolean("log.tag.JobScheduler", false);
 
     /** The maximum number of concurrent jobs we run at one time. */
     private static final int MAX_JOB_CONTEXTS_COUNT = 16;
@@ -585,7 +588,12 @@ public final class JobSchedulerService extends com.android.server.SystemService
 
             toCancel = mJobs.getJobByUidAndJobId(uId, job.getId());
             if (toCancel != null) {
-                cancelJobImpl(toCancel, jobStatus);
+                //Err hanle for using the same job with different app.
+                //It will cancel the old job with same app package.
+                Slog.d(TAG, "new job pkgname = " + jobStatus.getSourcePackageName());
+                Slog.d(TAG, "old job pkgname = " + toCancel.getSourcePackageName());
+                if (jobStatus.getSourcePackageName().equals(toCancel.getSourcePackageName()))
+                    cancelJobImpl(toCancel, jobStatus);
             }
             startTrackingJob(jobStatus, toCancel);
         }
@@ -1544,6 +1552,17 @@ public final class JobSchedulerService extends com.android.server.SystemService
                 });
                 return pendingJobs;
             }
+        }
+
+        /**
+         * Cancel jobs scheduled by process with uid.
+         */
+        @Override
+        public void cancelJobsForUid(int uid) {
+            if (DEBUG) {
+                Slog.i(TAG, "cancelJobsForUid by SYSTEM! uid = " + uid);
+            }
+            JobSchedulerService.this.cancelJobsForUid(uid, true);
         }
     }
 

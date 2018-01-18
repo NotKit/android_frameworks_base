@@ -31,7 +31,7 @@ namespace uirenderer {
 
 // Debug
 #if DEBUG_RENDER_BUFFERS
-    #define RENDER_BUFFER_LOGD(...) ALOGD(__VA_ARGS__)
+    #define RENDER_BUFFER_LOGD(...) MLOGD(DEBUG_RENDER_BUFFERS, __VA_ARGS__)
 #else
     #define RENDER_BUFFER_LOGD(...)
 #endif

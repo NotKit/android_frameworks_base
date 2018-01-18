@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -242,7 +247,6 @@ public class PdfDocument {
     private native void nativeFinishPage(long nativeDocument);
 
     private native void nativeWriteTo(long nativeDocument, OutputStream out, byte[] chunk);
-
     private static native long nativeStartPage(long nativeDocument, int pageWidth, int pageHeight,
             int contentLeft, int contentTop, int contentRight, int contentBottom);
 
@@ -330,7 +334,7 @@ public class PdfDocument {
                     throw new IllegalArgumentException("page width must be positive");
                 }
                 if (pageHeight <= 0) {
-                    throw new IllegalArgumentException("page width must be positive");
+                    throw new IllegalArgumentException("page height must be positive");
                 }
                 if (pageNumber < 0) {
                     throw new IllegalArgumentException("pageNumber must be non negative");

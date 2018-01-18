@@ -278,6 +278,11 @@ public class StatusBarWindowManager implements RemoteInputController.Callback {
         apply(mCurrentState);
     }
 
+    public void setKeyguardUserActivityTimeout(long timeout) {
+        // mCurrentState.keyguardUserActivityTimeout = timeout;
+        apply(mCurrentState);
+    }
+
     public void setBouncerShowing(boolean showing) {
         mCurrentState.bouncerShowing = showing;
         apply(mCurrentState);

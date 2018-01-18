@@ -508,4 +508,15 @@ public class MediaFocusControl {
         }
     }
 
+    /// M: Add for MTK_DOLBY_DAP_SUPPORT @{
+    protected boolean isAppInFocus(String name) {
+        boolean isInFocus = false;
+        synchronized (mAudioFocusLock) {
+            if (!mFocusStack.empty()) {
+                isInFocus = mFocusStack.peek().hasSamePackage(name);
+            }
+        }
+        return isInFocus;
+    }
+    /// @}
 }

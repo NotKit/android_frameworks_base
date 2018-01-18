@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -189,8 +194,31 @@ public final class NetworkCapabilities implements Parcelable {
      */
     public static final int NET_CAPABILITY_FOREGROUND = 18;
 
+
+
+    /** M: start */
+    /** {@hide} */
+    public static final int NET_CAPABILITY_DM = 20;
+    /** {@hide} */
+    public static final int NET_CAPABILITY_WAP = 21;
+    /** {@hide} */
+    public static final int NET_CAPABILITY_NET = 22;
+    /** {@hide} */
+    public static final int NET_CAPABILITY_CMMAIL = 23;
+    /** {@hide} */
+    public static final int NET_CAPABILITY_TETHERING = 24;
+    /** {@hide} */
+    public static final int NET_CAPABILITY_RCSE = 25;
+    /** {@hide} */
+    public static final int NET_CAPABILITY_VSIM = 26;
+    /** {@hide} */
+    public static final int NET_CAPABILITY_BIP = 27;
+    /** M: end */
+
     private static final int MIN_NET_CAPABILITY = NET_CAPABILITY_MMS;
-    private static final int MAX_NET_CAPABILITY = NET_CAPABILITY_FOREGROUND;
+
+    /** M: modify from NET_CAPABILITY_CAPTIVE_PORTAL to NET_CAPABILITY_BIP */
+    private static final int MAX_NET_CAPABILITY = NET_CAPABILITY_BIP;
 
     /**
      * Network capabilities that are expected to be mutable, i.e., can change while a particular
@@ -418,8 +446,12 @@ public final class NetworkCapabilities implements Parcelable {
      */
     public static final int TRANSPORT_VPN = 4;
 
+    ///M@add for 3Gdongle
+     /** {@hide} */
+    public static final int TRANSPORT_TEDONGLE = 5;
+
     private static final int MIN_TRANSPORT = TRANSPORT_CELLULAR;
-    private static final int MAX_TRANSPORT = TRANSPORT_VPN;
+    private static final int MAX_TRANSPORT = TRANSPORT_TEDONGLE;
 
     /**
      * Adds the given transport type to this {@code NetworkCapability} instance.
@@ -860,6 +892,18 @@ public final class NetworkCapabilities implements Parcelable {
                 case NET_CAPABILITY_VALIDATED:      capabilities += "VALIDATED"; break;
                 case NET_CAPABILITY_CAPTIVE_PORTAL: capabilities += "CAPTIVE_PORTAL"; break;
                 case NET_CAPABILITY_FOREGROUND:     capabilities += "FOREGROUND"; break;
+
+
+                /** M: start */
+                case NET_CAPABILITY_DM:             capabilities += "DM"; break;
+                case NET_CAPABILITY_WAP:            capabilities += "WAP"; break;
+                case NET_CAPABILITY_NET:            capabilities += "NET"; break;
+                case NET_CAPABILITY_CMMAIL:         capabilities += "CMMAIL"; break;
+                case NET_CAPABILITY_TETHERING:      capabilities += "TETHERING"; break;
+                case NET_CAPABILITY_RCSE:           capabilities += "RCSE"; break;
+                case NET_CAPABILITY_VSIM:           capabilities += "VSIM"; break;
+                case NET_CAPABILITY_BIP:            capabilities += "BIP"; break;
+                /** M: end */
             }
             if (++i < types.length) capabilities += "&";
         }

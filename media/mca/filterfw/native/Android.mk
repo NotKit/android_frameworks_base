@@ -1,3 +1,8 @@
+#
+# Copyright (C) 2014 MediaTek Inc.
+# Modification based on code covered by the mentioned copyright
+# and/or permission notice(s).
+#
 # Copyright (C) 2011 The Android Open Source Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,6 +37,8 @@ LOCAL_SRC_FILES += core/geometry.cpp \
                    core/shader_program.cpp \
                    core/vertex_frame.cpp \
                    core/value.cpp
+
+LOCAL_C_INCLUDES += $(TOP)/$(MTK_ROOT)/frameworks-ext/native/include
 
 # add local includes
 include $(LOCAL_PATH)/libfilterfw.mk

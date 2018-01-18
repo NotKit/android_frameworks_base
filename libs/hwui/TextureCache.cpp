@@ -71,7 +71,7 @@ void TextureCache::operator()(uint32_t&, Texture*& texture) {
     if (texture) {
         mSize -= texture->bitmapSize;
         TEXTURE_LOGD("TextureCache::callback: name, removed size, mSize = %d, %d, %d",
-                texture->id, texture->bitmapSize, mSize);
+                texture->id(), texture->bitmapSize, mSize);
         if (mDebugEnabled) {
             ALOGD("Texture deleted, size = %d", texture->bitmapSize);
         }
@@ -143,7 +143,7 @@ Texture* TextureCache::getCachedTexture(const SkBitmap* bitmap, AtlasUsageType a
 
             mSize += size;
             TEXTURE_LOGD("TextureCache::get: create texture(%p): name, size, mSize = %d, %d, %d",
-                     bitmap, texture->id, size, mSize);
+                     bitmap, texture->id(), size, mSize);
             if (mDebugEnabled) {
                 ALOGD("Texture created, size = %d", size);
             }

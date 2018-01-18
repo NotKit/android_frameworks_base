@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,6 +23,7 @@ package android.net.wifi.p2p;
 
 import android.os.Parcelable;
 import android.os.Parcel;
+import android.util.Log;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,6 +40,7 @@ import java.util.regex.Matcher;
  * {@see WifiP2pManager}
  */
 public class WifiP2pGroup implements Parcelable {
+    private static final String TAG = "WifiP2pGroup";
 
     /** The temporary network id.
      * {@hide} */
@@ -60,6 +67,9 @@ public class WifiP2pGroup implements Parcelable {
     /** The passphrase used for WPA2-PSK */
     private String mPassphrase;
 
+    /** Channel */
+    private int mFreq;
+
     private String mInterface;
 
     /** The network id in the wpa_supplicant */
@@ -71,6 +81,12 @@ public class WifiP2pGroup implements Parcelable {
         "freq=(\\d+) " +
         "(?:psk=)?([0-9a-fA-F]{64})?" +
         "(?:passphrase=)?(?:\"(.{0,63})\")? " +
+        "go_dev_addr=((?:[0-9a-f]{2}:){5}[0-9a-f]{2})" +
+        " ?(\\[PERSISTENT\\])?"
+    );
+
+    /** P2P group started string pattern2 */
+    private static final Pattern groupStartedPattern2 = Pattern.compile(
         "go_dev_addr=((?:[0-9a-f]{2}:){5}[0-9a-f]{2})" +
         " ?(\\[PERSISTENT\\])?"
     );
@@ -108,20 +124,37 @@ public class WifiP2pGroup implements Parcelable {
             mIsGroupOwner = tokens[2].equals("GO");
 
             Matcher match = groupStartedPattern.matcher(supplicantEvent);
-            if (!match.find()) {
-                return;
-            }
+            Matcher match2 = groupStartedPattern2.matcher(supplicantEvent);
 
-            mNetworkName = match.group(1);
-            //freq and psk are unused right now
-            //int freq = Integer.parseInt(match.group(2));
-            //String psk = match.group(3);
-            mPassphrase = match.group(4);
-            mOwner = new WifiP2pDevice(match.group(5));
-            if (match.group(6) != null) {
-                mNetId = PERSISTENT_NET_ID;
+            if (null != match && match.find()) {
+                mNetworkName = match.group(1);
+                //freq and psk are unused right now
+                mFreq = Integer.parseInt(match.group(2));
+                //String psk = match.group(3);
+                mPassphrase = match.group(4);
+                mOwner = new WifiP2pDevice(match.group(5));
+                if (match.group(6) != null) {
+                    mNetId = PERSISTENT_NET_ID;
+                } else {
+                    mNetId = TEMPORARY_NET_ID;
+                }
+                Log.d(TAG, "Normal match! frequency = " + mFreq);
+            } else if (null != match2 && match2.find()) {
+                mNetworkName = "";
+                mPassphrase = "";
+                mOwner = new WifiP2pDevice(match2.group(1));
+                if (match2.group(2) != null) {
+                    mNetId = PERSISTENT_NET_ID;
+                } else {
+                    mNetId = TEMPORARY_NET_ID;
+                }
+                Log.d(TAG, "Not matched SSID, but matched device address!");
             } else {
+                mNetworkName = "";
+                mPassphrase = "";
+                mOwner = new WifiP2pDevice();
                 mNetId = TEMPORARY_NET_ID;
+                Log.d(TAG, "Match nothing!");
             }
         } else if (tokens[0].equals("P2P-INVITATION-RECEIVED")) {
             String sa = null;
@@ -216,6 +249,11 @@ public class WifiP2pGroup implements Parcelable {
         return mClients.size() == 0;
     }
 
+    /** @hide */
+    public int getClientAmount() {
+        return mClients.size();
+    }
+
     /** @hide Returns {@code true} if the device is part of the group */
     public boolean contains(WifiP2pDevice device) {
         if (mOwner.equals(device) || mClients.contains(device)) return true;
@@ -261,6 +299,20 @@ public class WifiP2pGroup implements Parcelable {
         this.mNetId = netId;
     }
 
+    /**
+     * @hide
+     */
+    public int getFrequency() {
+        return mFreq;
+    }
+
+    /**
+     * @hide
+     */
+    public void setFrequency(int mFreq) {
+        this.mFreq = mFreq;
+    }
+
     public String toString() {
         StringBuffer sbuf = new StringBuffer();
         sbuf.append("network: ").append(mNetworkName);
@@ -271,6 +323,7 @@ public class WifiP2pGroup implements Parcelable {
         }
         sbuf.append("\n interface: ").append(mInterface);
         sbuf.append("\n networkId: ").append(mNetId);
+        sbuf.append("\n frequency: ").append(mFreq);
         return sbuf.toString();
     }
 
@@ -289,6 +342,7 @@ public class WifiP2pGroup implements Parcelable {
             mPassphrase = source.getPassphrase();
             mInterface = source.getInterface();
             mNetId = source.getNetworkId();
+            mFreq = source.getFrequency();
         }
     }
 
@@ -304,6 +358,7 @@ public class WifiP2pGroup implements Parcelable {
         dest.writeString(mPassphrase);
         dest.writeString(mInterface);
         dest.writeInt(mNetId);
+        dest.writeInt(mFreq);
     }
 
     /** Implement the Parcelable interface */
@@ -321,6 +376,7 @@ public class WifiP2pGroup implements Parcelable {
                 group.setPassphrase(in.readString());
                 group.setInterface(in.readString());
                 group.setNetworkId(in.readInt());
+                group.setFrequency(in.readInt());
                 return group;
             }
 

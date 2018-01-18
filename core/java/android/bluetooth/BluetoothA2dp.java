@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2008 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -51,7 +56,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 public final class BluetoothA2dp implements BluetoothProfile {
     private static final String TAG = "BluetoothA2dp";
     private static final boolean DBG = true;
-    private static final boolean VDBG = false;
+    private static final boolean VDBG = true;
 
     /**
      * Intent used to broadcast the change in connection state of the A2DP
@@ -121,6 +126,8 @@ public final class BluetoothA2dp implements BluetoothProfile {
     @GuardedBy("mServiceLock") private IBluetoothA2dp mService;
     private BluetoothAdapter mAdapter;
 
+    private boolean mNeedNotifyServiceDisconnect = false;
+
     final private IBluetoothStateChangeCallback mBluetoothStateChangeCallback =
             new IBluetoothStateChangeCallback.Stub() {
                 public void onBluetoothStateChange(boolean up) {
@@ -131,6 +138,22 @@ public final class BluetoothA2dp implements BluetoothProfile {
                             mServiceLock.writeLock().lock();
                             mService = null;
                             mContext.unbindService(mConnection);
+                            // M: we need to call onServiceDisconnected to notify the
+                            // the listener that A2DP service exits.
+                            // Do it here because A2dpService#onServiceDisconnected
+                            // may not be called in some specail case if unbindService is
+                            // called before A2dpService's onServiceDisconnected.
+                            // This is a seldom issue(see issue ALPS02273604).
+                            // Notice: Do not do any time consuming work in this callback
+                            // @{
+                            if (mServiceListener != null && mNeedNotifyServiceDisconnect) {
+                                if (DBG) {
+                                    Log.d(TAG, "onBluetoothStateChange: A2DP proxy disconnect");
+                                }
+                                mServiceListener.onServiceDisconnected(BluetoothProfile.A2DP);
+                            }
+                            mNeedNotifyServiceDisconnect = false;
+                            // M: @}
                         } catch (Exception re) {
                             Log.e(TAG, "", re);
                         } finally {
@@ -163,6 +186,7 @@ public final class BluetoothA2dp implements BluetoothProfile {
         IBluetoothManager mgr = mAdapter.getBluetoothManager();
         if (mgr != null) {
             try {
+                if (VDBG) Log.d(TAG, "Register mBluetoothStateChangeCallback = " + mBluetoothStateChangeCallback);
                 mgr.registerStateChangeCallback(mBluetoothStateChangeCallback);
             } catch (RemoteException e) {
                 Log.e(TAG,"",e);
@@ -189,6 +213,7 @@ public final class BluetoothA2dp implements BluetoothProfile {
         IBluetoothManager mgr = mAdapter.getBluetoothManager();
         if (mgr != null) {
             try {
+                if (VDBG) Log.d(TAG, "Unregister mBluetoothStateChangeCallback = " + mBluetoothStateChangeCallback);
                 mgr.unregisterStateChangeCallback(mBluetoothStateChangeCallback);
             } catch (Exception e) {
                 Log.e(TAG,"",e);
@@ -580,6 +605,7 @@ public final class BluetoothA2dp implements BluetoothProfile {
             if (mServiceListener != null) {
                 mServiceListener.onServiceConnected(BluetoothProfile.A2DP, BluetoothA2dp.this);
             }
+            mNeedNotifyServiceDisconnect = true;
         }
         public void onServiceDisconnected(ComponentName className) {
             if (DBG) Log.d(TAG, "Proxy object disconnected");
@@ -592,6 +618,7 @@ public final class BluetoothA2dp implements BluetoothProfile {
             if (mServiceListener != null) {
                 mServiceListener.onServiceDisconnected(BluetoothProfile.A2DP);
             }
+            mNeedNotifyServiceDisconnect = false;
         }
     };
 

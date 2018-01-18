@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -71,7 +76,7 @@ public class PackageInfo implements Parcelable {
      * attribute.
      */
     public String sharedUserId;
-    
+
     /**
      * The shared user ID label of this package, as specified by the &lt;manifest&gt;
      * tag's {@link android.R.styleable#AndroidManifest_sharedUserLabel sharedUserLabel}
@@ -262,6 +267,48 @@ public class PackageInfo implements Parcelable {
 
     /** @hide */
     public String requiredAccountType;
+
+    /**
+     * M: [ALPS00091751] Add api for check apk signature
+     *
+     * @hide
+     */
+    public static final int KEY_ERROR = 0;
+
+    /**
+     * M: [ALPS00091751] Add api for check apk signature
+     *
+     * @hide
+     */
+    public static final int KEY_PLATFORM = 1; //apk sing platform key
+
+    /**
+     * M: [ALPS00091751] Add api for check apk signature
+     *
+     * @hide
+     */
+    public static final int KEY_MEDIA = 2; //apk sing media key
+
+    /**
+     * M: [ALPS00091751] Add api for check apk signature
+     *
+     * @hide
+     */
+    public static final int KEY_SHARED = 3; //apk sing shared key
+
+    /**
+     * M: [ALPS00091751] Add api for check apk signature
+     *
+     * @hide
+     */
+    public static final int KEY_RELEASE = 4; //apk sing release key
+
+    /**
+     * M: [ALPS00091751] Add api for check apk signature
+     *
+     * @hide
+     */
+    public static final int KEY_UNKNOWN = 5; //apk sing others not above key
 
     /**
      * What package, if any, this package will overlay.

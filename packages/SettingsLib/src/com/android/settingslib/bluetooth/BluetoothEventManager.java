@@ -134,9 +134,10 @@ public final class BluetoothEventManager {
         }
     }
 
-    private final BroadcastReceiver mBroadcastReceiver = new BroadcastReceiver() {
+    final BroadcastReceiver mBroadcastReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
+            Log.v(TAG, "Received " + intent.getAction());
             String action = intent.getAction();
             BluetoothDevice device = intent
                     .getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
@@ -179,6 +180,7 @@ public final class BluetoothEventManager {
                     callback.onScanningStateChanged(mStarted);
                 }
             }
+            Log.d(TAG, "scanning state change to " + mStarted);
             mDeviceManager.onScanningStateChanged(mStarted);
         }
     }
@@ -189,6 +191,8 @@ public final class BluetoothEventManager {
             short rssi = intent.getShortExtra(BluetoothDevice.EXTRA_RSSI, Short.MIN_VALUE);
             BluetoothClass btClass = intent.getParcelableExtra(BluetoothDevice.EXTRA_CLASS);
             String name = intent.getStringExtra(BluetoothDevice.EXTRA_NAME);
+            Log.d(TAG, "Device " + name + " ,Class: " +
+                    (btClass != null ? btClass.getMajorDeviceClass() : null));
             // TODO Pick up UUID. They should be available for 2.1 devices.
             // Skip for now, there's a bluez problem and we are not getting uuids even for 2.1.
             CachedBluetoothDevice cachedDevice = mDeviceManager.findDevice(device);
@@ -197,6 +201,7 @@ public final class BluetoothEventManager {
                 Log.d(TAG, "DeviceFoundHandler created new CachedBluetoothDevice: "
                         + cachedDevice);
             }
+
             cachedDevice.setRssi(rssi);
             cachedDevice.setBtClass(btClass);
             cachedDevice.setNewName(name);
@@ -291,7 +296,7 @@ public final class BluetoothEventManager {
             if (bondState == BluetoothDevice.BOND_NONE) {
                 int reason = intent.getIntExtra(BluetoothDevice.EXTRA_REASON,
                         BluetoothDevice.ERROR);
-
+                Log.d(TAG, cachedDevice.getName() + " show unbond message for " + reason);
                 showUnbondMessage(context, cachedDevice.getName(), reason);
             }
         }

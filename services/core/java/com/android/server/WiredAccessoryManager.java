@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2008 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,6 +21,9 @@
 
 package com.android.server;
 
+import android.widget.Toast;
+import java.util.Timer;
+import java.util.TimerTask;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
@@ -27,6 +35,8 @@ import android.util.Slog;
 import android.media.AudioManager;
 import android.util.Log;
 import android.view.InputDevice;
+import android.content.IntentFilter;
+import android.content.Intent;
 
 import com.android.internal.R;
 import com.android.server.input.InputManagerService;
@@ -85,8 +95,13 @@ final class WiredAccessoryManager implements WiredAccessoryCallbacks {
     private final InputManagerService mInputManager;
 
     private final boolean mUseDevInputEventForAudioJack;
+    private final Context mContext;
+    private String num_hs_pole = "NA";
+    private Toast toast;
 
+    private int illegal_state = 0;
     public WiredAccessoryManager(Context context, InputManagerService inputManager) {
+        mContext = context;
         PowerManager pm = (PowerManager)context.getSystemService(Context.POWER_SERVICE);
         mWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "WiredAccessoryManager");
         mWakeLock.setReferenceCounted(false);
@@ -97,6 +112,9 @@ final class WiredAccessoryManager implements WiredAccessoryCallbacks {
                 context.getResources().getBoolean(R.bool.config_useDevInputEventForAudioJack);
 
         mObserver = new WiredAccessoryObserver();
+        IntentFilter filter = new IntentFilter(Intent.ACTION_BOOT_COMPLETED);
+        filter.addAction("android.intent.action.LAUNCH_POWEROFF_ALARM");
+
     }
 
     private void onSystemReady() {
@@ -158,6 +176,48 @@ final class WiredAccessoryManager implements WiredAccessoryCallbacks {
                 (mHeadsetState & ~(BIT_HEADSET | BIT_HEADSET_NO_MIC | BIT_LINEOUT)) | headset);
         }
     }
+    private void showheadsetToast() {
+                    Slog.d(TAG, "come in showheadsetToast++++++++");
+                    //String msg = "Your earphones are not compatible with the Phone.Please try another ones!";
+                        int duration = Toast.LENGTH_LONG;
+                        //int duration = Toast.LENGTH_SHORT;
+                    if (mContext != null) {
+                        //toast = Toast.makeText(mContext, msg, duration);
+                        //String msg = getString(R.string.headset_pin_recognition);
+                          toast = Toast.makeText(mContext, com.mediatek.internal.R.string.headset_pin_recognition, duration);
+                        //toast.setGravity(Gravity.NO_GRAVITY,50,100);
+                        //toast.setView =
+                        toast.show();
+                    }
+
+                        Timer headset_timer = new Timer();
+                        headset_timer.schedule(new TimerTask() {
+                            @Override
+                            public void run() {
+                                toast.show();
+                            }
+                        }, 500);
+
+    }
+
+    private int getIllegalHeadset() {
+                int state = 0;
+                //char[] buffer = new char[1024];
+                String pinStateFilePath = String.format("/sys/devices/platform/Accdet_Driver/driver/accdet_pin_recognition");
+                    try {
+                        //String state = String.valueOf(value);
+                        FileReader fw = new FileReader(pinStateFilePath);
+                        state = fw.read();
+                        int pin_state = Integer.valueOf(state);
+                        fw.close();
+                        Log.d(TAG, "PIN state for Accdet is " + pin_state);
+                        return pin_state;
+                    } catch (Exception e) {
+                        Log.e(TAG, "" , e);
+                    }
+                    return 0;
+    }
+
 
     @Override
     public void systemReady() {
@@ -284,17 +344,47 @@ final class WiredAccessoryManager implements WiredAccessoryCallbacks {
                 return;
             }
 
-            if (LOG) {
-                Slog.v(TAG, "headsetName: " + headsetName +
-                        (state == 1 ? " connected" : " disconnected"));
+            if (LOG)
+                Slog.v(TAG, "device "+ headsetName+((state == 1) ? " connected" : " disconnected"));
+            //ALPS00708321:add for AB=00->01, set device BIT_HEADSET will ingore and music will pause when plug in
+            // headset complete,so need delay to confirm set device BIT_HEADSET to Audio
+            if (prevHeadsetState == BIT_HEADSET_NO_MIC && headsetState == BIT_HEADSET && state == 0) {
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    // Ingore
+                }
             }
-
+            Log.d(TAG, "WiredHeadset num_hs_pole is " + num_hs_pole);
+            if (state == 1){
+                if (num_hs_pole != "NA")
+                    mAudioManager.setParameters(num_hs_pole);
+            }
             if (outDevice != 0) {
               mAudioManager.setWiredDeviceConnectionState(outDevice, state, "", headsetName);
             }
             if (inDevice != 0) {
               mAudioManager.setWiredDeviceConnectionState(inDevice, state, "", headsetName);
             }
+
+            illegal_state = getIllegalHeadset();
+            if (49 == illegal_state) {
+                mHandler.postDelayed(new Runnable() {
+                    public void run() {
+                        illegal_state = getIllegalHeadset();
+                            if (49 == illegal_state) {
+                                Slog.d(TAG, "show illegal Headset msg+++++++++++++");
+                                showheadsetToast();
+                                illegal_state = 0;
+                            } else {
+                                Slog.d(TAG, "don't show illegal Headset msg+++++++++++++");
+                                illegal_state = 0;
+                            }
+                    }
+                }, 500);
+            //illegal_state = 0;
+            }
+
         }
     }
 
@@ -457,7 +547,14 @@ final class WiredAccessoryManager implements WiredAccessoryCallbacks {
                 int setBits = ((switchState == 1) ? mState1Bits :
                               ((switchState == 2) ? mState2Bits :
                               ((switchState == mStateNbits) ? mStateNbits : 0)));
-
+                if (switchState == 3) {
+                    num_hs_pole = "num_hs_pole=5";
+                    setBits = mState1Bits;
+                } else if (switchState == 1) {
+                    num_hs_pole = "num_hs_pole=4";
+                } else {
+                    num_hs_pole = "NA";
+                }
                 return ((headsetState & preserveMask) | setBits);
             }
         }

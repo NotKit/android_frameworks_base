@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -50,6 +55,7 @@ import com.android.internal.telephony.cdma.CdmaSubscriptionSourceManager;
 import com.android.internal.util.XmlUtils;
 import com.android.internal.widget.LockPatternUtils;
 import com.android.internal.widget.LockPatternView;
+import com.mediatek.providers.utils.ProvidersUtils;
 
 import org.xmlpull.v1.XmlPullParser;
 import org.xmlpull.v1.XmlPullParserException;
@@ -93,6 +99,9 @@ class DatabaseHelper extends SQLiteOpenHelper {
     private static final String TABLE_SYSTEM = "system";
     private static final String TABLE_SECURE = "secure";
     private static final String TABLE_GLOBAL = "global";
+
+    /// M: Provider utils
+    private ProvidersUtils mUtils;
 
     static {
         mValidTables.add(TABLE_SYSTEM);
@@ -149,6 +158,7 @@ class DatabaseHelper extends SQLiteOpenHelper {
         File databaseFile = mContext.getDatabasePath(getDatabaseName());
         if (databaseFile.exists()) {
             databaseFile.delete();
+            Log.w(TAG, "dropDatabase, name = " + getDatabaseName());
         }
         File databaseJournalFile = mContext.getDatabasePath(getDatabaseName()
                 + DATABASE_JOURNAL_SUFFIX);
@@ -1832,6 +1842,11 @@ class DatabaseHelper extends SQLiteOpenHelper {
                     db.endTransaction();
                     if (stmt != null) stmt.close();
                 }
+
+                /// M: Init provider untils
+                if (mUtils == null) {
+                    mUtils = new ProvidersUtils(mContext);
+                }
             }
             upgradeVersion = 111;
         }
@@ -2315,11 +2330,12 @@ class DatabaseHelper extends SQLiteOpenHelper {
 
             // Vibrate on by default for ringer, on for notification
             int vibrate = 0;
+            /// M: VIBRATE_SETTING_OFF changed by MTK, default is VIBRATE_SETTING_ONLY_SILENT
             vibrate = AudioSystem.getValueForVibrateSetting(vibrate,
                     AudioManager.VIBRATE_TYPE_NOTIFICATION,
-                    AudioManager.VIBRATE_SETTING_ONLY_SILENT);
+                    AudioManager.VIBRATE_SETTING_OFF);
             vibrate |= AudioSystem.getValueForVibrateSetting(vibrate,
-                    AudioManager.VIBRATE_TYPE_RINGER, AudioManager.VIBRATE_SETTING_ONLY_SILENT);
+                    AudioManager.VIBRATE_TYPE_RINGER, AudioManager.VIBRATE_SETTING_OFF);
             loadSetting(stmt, Settings.System.VIBRATE_ON, vibrate);
         } finally {
             if (stmt != null) stmt.close();
@@ -2345,6 +2361,9 @@ class DatabaseHelper extends SQLiteOpenHelper {
     }
 
     private void loadSettings(SQLiteDatabase db) {
+        /// M: Init provider utils
+        mUtils = new ProvidersUtils(mContext);
+
         loadSystemSettings(db);
         loadSecureSettings(db);
         // The global table only exists for the 'owner/system' user
@@ -2393,6 +2412,11 @@ class DatabaseHelper extends SQLiteOpenHelper {
 
             loadIntegerSetting(stmt, Settings.System.POINTER_SPEED,
                     R.integer.def_pointer_speed);
+            //guohuajun add
+			loadStringSetting(stmt,Settings.System.TIME_12_24, R.string.time_12_24);
+			//guohuajun add end
+            /// M: Load MTK added System providers before Android M.
+            mUtils.loadCustomSystemSettings(stmt);
 
             /*
              * IMPORTANT: Do not add any more upgrade steps here as the global,
@@ -2411,8 +2435,10 @@ class DatabaseHelper extends SQLiteOpenHelper {
                 R.bool.def_dtmf_tones_enabled);
         loadBooleanSetting(stmt, Settings.System.SOUND_EFFECTS_ENABLED,
                 R.bool.def_sound_effects_enabled);
-        loadBooleanSetting(stmt, Settings.System.HAPTIC_FEEDBACK_ENABLED,
-                R.bool.def_haptic_feedback);
+        /// M: Modify for operator customization.
+        loadSetting(stmt, Settings.System.HAPTIC_FEEDBACK_ENABLED,
+                mUtils.getBooleanValue(Settings.System.HAPTIC_FEEDBACK_ENABLED,
+                R.bool.def_haptic_feedback));
 
         loadIntegerSetting(stmt, Settings.System.LOCKSCREEN_SOUNDS_ENABLED,
             R.integer.def_lockscreen_sounds_enabled);
@@ -2426,8 +2452,10 @@ class DatabaseHelper extends SQLiteOpenHelper {
     }
 
     private void loadDefaultHapticSettings(SQLiteStatement stmt) {
-        loadBooleanSetting(stmt, Settings.System.HAPTIC_FEEDBACK_ENABLED,
-                R.bool.def_haptic_feedback);
+        /// M: Modify for operator customization.
+        loadSetting(stmt, Settings.System.HAPTIC_FEEDBACK_ENABLED,
+                mUtils.getBooleanValue(Settings.System.HAPTIC_FEEDBACK_ENABLED,
+                R.bool.def_haptic_feedback));
     }
 
     private void loadSecureSettings(SQLiteDatabase db) {
@@ -2436,8 +2464,10 @@ class DatabaseHelper extends SQLiteOpenHelper {
             stmt = db.compileStatement("INSERT OR IGNORE INTO secure(name,value)"
                     + " VALUES(?,?);");
 
-            loadStringSetting(stmt, Settings.Secure.LOCATION_PROVIDERS_ALLOWED,
-                    R.string.def_location_providers_allowed);
+            /// M: Modify for operator LOCATION_PROVIDERS_ALLOWED customization.
+            loadSetting(stmt, Settings.Secure.LOCATION_PROVIDERS_ALLOWED,
+                    mUtils.getStringValue(Settings.Secure.LOCATION_PROVIDERS_ALLOWED,
+                    R.string.def_location_providers_allowed));
 
             String wifiWatchList = SystemProperties.get("ro.com.android.wifi-watchlist");
             if (!TextUtils.isEmpty(wifiWatchList)) {
@@ -2533,6 +2563,14 @@ class DatabaseHelper extends SQLiteOpenHelper {
             loadIntegerSetting(stmt, Settings.Secure.SLEEP_TIMEOUT,
                     R.integer.def_sleep_timeout);
 
+			loadStringSetting(stmt, Settings.Secure.ENABLED_INPUT_METHODS,R.string.config_enabled_input_methods); //hezhuohua
+            /// M: Add for AOD @{
+            if (SystemProperties.get("ro.mtk_aod_support").equals("1")) {
+                loadIntegerSetting(stmt, Settings.Secure.DOZE_ENABLED,
+                        R.integer.def_doze_mode);
+            }
+            /// @}
+
             /*
              * IMPORTANT: Do not add any more upgrade steps here as the global,
              * secure, and system settings are no longer stored in a database
@@ -2575,11 +2613,15 @@ class DatabaseHelper extends SQLiteOpenHelper {
             loadBooleanSetting(stmt, Settings.Global.ASSISTED_GPS_ENABLED,
                     R.bool.assisted_gps_enabled);
 
-            loadBooleanSetting(stmt, Settings.Global.AUTO_TIME,
-                    R.bool.def_auto_time); // Sync time to NITZ
+            /// M: Modify for operator AUTO_TIME customization.
+            loadSetting(stmt, Settings.Global.AUTO_TIME,
+                    mUtils.getBooleanValue(Settings.Global.AUTO_TIME,
+                    R.bool.def_auto_time)); // Sync time to NITZ
 
-            loadBooleanSetting(stmt, Settings.Global.AUTO_TIME_ZONE,
-                    R.bool.def_auto_time_zone); // Sync timezone to NITZ
+            /// M: Modify for operator AUTO_TIME_ZONE customization.
+            loadSetting(stmt, Settings.Global.AUTO_TIME_ZONE,
+                    mUtils.getBooleanValue(Settings.Global.AUTO_TIME_ZONE,
+                    R.bool.def_auto_time_zone)); // Sync timezone to NITZ
 
             loadSetting(stmt, Settings.Global.STAY_ON_WHILE_PLUGGED_IN,
                     ("1".equals(SystemProperties.get("ro.kernel.qemu")) ||
@@ -2711,6 +2753,9 @@ class DatabaseHelper extends SQLiteOpenHelper {
 
             loadSetting(stmt, Settings.Global.ENHANCED_4G_MODE_ENABLED,
                     ImsConfig.FeatureValueConstants.ON);
+
+            /// M: Load MTK added Global providers before Android M.
+            mUtils.loadCustomGlobalSettings(stmt);
 
             /*
              * IMPORTANT: Do not add any more upgrade steps here as the global,

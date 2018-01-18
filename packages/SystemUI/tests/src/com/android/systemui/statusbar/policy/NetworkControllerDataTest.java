@@ -70,16 +70,25 @@ public class NetworkControllerDataTest extends NetworkControllerBaseTest {
         updateDataConnectionState(TelephonyManager.DATA_CONNECTED,
                 TelephonyManager.NETWORK_TYPE_HSPA);
 
+
         verifyDataIndicators(TelephonyIcons.DATA_H[1][0 /* No direction */],
-                TelephonyIcons.QS_DATA_H);
+               TelephonyIcons.QS_DATA_H);
     }
 
     public void testWfcNoDataIcon() {
         setupDefaultSignal();
         updateDataConnectionState(TelephonyManager.DATA_CONNECTED,
                 TelephonyManager.NETWORK_TYPE_IWLAN);
-
-        verifyDataIndicators(0, 0);
+        /// M: status bar is show no signal when connected to Iwlan. @{
+        /** IWLAN is special case in which the transmission via WIFI, no need cellular network, then
+        whenever PS type is IWLAN, cellular network is not connected. However, in special case, CS
+        may still connect under IWLAN with valid network type.
+        **/
+        //verifyDataIndicators(0, 0);
+        verifyLastMobileDataIndicators(true, TelephonyIcons.TELEPHONY_NO_NETWORK, 0);
+        verifyLastQsMobileDataIndicators(true, TelephonyIcons.QS_TELEPHONY_NO_NETWORK,
+                0, false,false);
+        /// @}
     }
 
     public void test4gDataIcon() {
@@ -137,6 +146,25 @@ public class NetworkControllerDataTest extends NetworkControllerBaseTest {
         verifyDataIndicators(TelephonyIcons.DATA_4G[1][0 /* No direction */],
                 TelephonyIcons.QS_DATA_4G);
     }
+    /// M: Support 4G+ case @{
+    public void test4gaDataIcon(){
+        mConfig.show4gForLte = true;
+        mConfig.hideLtePlus = false;
+        mNetworkController = new NetworkControllerImpl(mContext, mMockCm, mMockTm, mMockWm, mMockSm,
+                mConfig, Looper.getMainLooper(), mCallbackHandler,
+                Mockito.mock(AccessPointControllerImpl.class),
+                Mockito.mock(DataUsageController.class), mMockSubDefaults);
+        setupNetworkController();
+
+        setupDefaultSignal();
+        updateDataConnectionState(TelephonyManager.DATA_CONNECTED,
+                TelephonyManager.NETWORK_TYPE_LTE);
+        setUsingCarrierAggregation(true);
+
+        verifyDataIndicators(TelephonyIcons.DATA_4G_PLUS[1][0 /* No direction */],
+                TelephonyIcons.QS_DATA_4G_PLUS);
+    }
+    /// @}
 
     public void testDataChangeWithoutConnectionState() {
         setupDefaultSignal();

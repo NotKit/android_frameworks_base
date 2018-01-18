@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2008 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -44,6 +49,7 @@ import android.content.pm.ProviderInfo;
 import android.content.pm.ResolveInfo;
 import android.content.pm.ServiceInfo;
 import android.content.pm.VerifierDeviceIdentity;
+import android.content.pm.PackageManager.NameNotFoundException;
 import android.content.res.Resources;
 import android.content.res.XmlResourceParser;
 import android.graphics.Rect;
@@ -991,6 +997,16 @@ public class MockPackageManager extends PackageManager {
     /** {@hide} */
     @Override
     public boolean setDefaultBrowserPackageNameAsUser(String packageName, int userId) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * M: ALPS00091751 Add api for check apk signature
+     *
+     * @hide
+     */
+    @Override
+    public int checkAPKSignatures(String pkg) {
         throw new UnsupportedOperationException();
     }
 

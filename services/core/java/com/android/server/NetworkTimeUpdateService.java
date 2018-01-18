@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -44,6 +49,25 @@ import com.android.internal.telephony.TelephonyIntents;
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
 
+/// M: comment @{ add GPS Time Sync Service
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
+import android.widget.Toast;
+//import com.android.internal.R;
+import com.mediatek.internal.R;
+import android.os.Bundle;
+import android.provider.Settings.SettingNotFoundException;
+/// @}
+
+/// M: Configure default date/time to current year after restore reset @{
+import android.text.format.Time;
+import android.os.SystemProperties;
+/// @}
+
+//M: For multiple NTP server retry
+import java.util.ArrayList;
+
 /**
  * Monitors the network time and updates the system time if it is out of sync
  * and there hasn't been any NITZ update from the carrier recently.
@@ -57,11 +81,21 @@ import java.io.PrintWriter;
 public class NetworkTimeUpdateService extends Binder {
 
     private static final String TAG = "NetworkTimeUpdateService";
-    private static final boolean DBG = false;
+    ///M: deubg logging
+    private static final boolean DBG = true;
 
     private static final int EVENT_AUTO_TIME_CHANGED = 1;
     private static final int EVENT_POLL_NETWORK_TIME = 2;
     private static final int EVENT_NETWORK_CHANGED = 3;
+    /// M: comment @{ add GPS Time Sync Service
+    private static final int EVENT_GPS_TIME_SYNC_CHANGED = 4;
+    /// @}
+
+    /// M: Support default system time @{
+    private static final String DECRYPT_STATE = "trigger_restart_framework";
+    private static final String BOOT_SYS_PROPERTY = "persist.sys.first_time_boot";
+    private static int mDefaultYear = 2014;
+    /// @}
 
     private static final String ACTION_POLL =
             "com.android.server.NetworkTimeUpdateService.action.POLL";
@@ -79,6 +113,10 @@ public class NetworkTimeUpdateService extends Binder {
 
     // NTP lookup is done on this thread and handler
     private Handler mHandler;
+    /// M: comment @{ add GPS Time Sync Service
+    private Handler mGpsHandler;
+    private HandlerThread mGpsThread;
+    /// @}
     private AlarmManager mAlarmManager;
     private PendingIntent mPendingPollIntent;
     private SettingsObserver mSettingsObserver;
@@ -99,6 +137,15 @@ public class NetworkTimeUpdateService extends Binder {
     // connection to happen.
     private int mTryAgainCounter;
 
+    //M: For multiple NTP server retry
+    private ArrayList<String> mNtpServers = new ArrayList<String>();
+    private String mDefaultServer;
+    private static final String[] SERVERLIST =  new String[]{
+                                            "hshh.org",
+                                             "time.apple.com",
+                                             "time-a.nist.gov"
+                                             };
+
     public NetworkTimeUpdateService(Context context) {
         mContext = context;
         mTime = NtpTrustedTime.getInstance(context);
@@ -117,6 +164,14 @@ public class NetworkTimeUpdateService extends Binder {
 
         mWakeLock = ((PowerManager) context.getSystemService(Context.POWER_SERVICE)).newWakeLock(
                 PowerManager.PARTIAL_WAKE_LOCK, TAG);
+        //M: For multiple NTP server retry
+        mDefaultServer = ((NtpTrustedTime) mTime).getServer();
+        mNtpServers.add(mDefaultServer);
+        for (String str : SERVERLIST)
+        {
+           mNtpServers.add(str);
+        }
+        mTryAgainCounter = 0;
     }
 
     /** Initialize the receivers and initiate the first NTP request */
@@ -124,6 +179,12 @@ public class NetworkTimeUpdateService extends Binder {
         registerForTelephonyIntents();
         registerForAlarms();
         registerForConnectivityIntents();
+
+        // Add for IPO. Under IPO AP will only suspend, keep memory content.
+        // However phone process will reboot.
+        IntentFilter intentFilter = new IntentFilter();
+        intentFilter.addAction("android.intent.action.ACTION_SHUTDOWN_IPO");
+        mContext.registerReceiver(mIPOReceiver, intentFilter);
 
         HandlerThread thread = new HandlerThread(TAG);
         thread.start();
@@ -133,6 +194,45 @@ public class NetworkTimeUpdateService extends Binder {
 
         mSettingsObserver = new SettingsObserver(mHandler, EVENT_AUTO_TIME_CHANGED);
         mSettingsObserver.observe(mContext);
+
+        /// M: comment @{ add GPS Time Sync Service
+        Log.d(TAG, "add GPS time sync handler and looper");
+        mGpsThread = new HandlerThread(TAG);
+        mGpsThread.start();
+        mGpsHandler = new MyHandler(mGpsThread.getLooper());
+
+        mGpsTimeSyncObserver = new GpsTimeSyncObserver(mGpsHandler,
+                                        EVENT_GPS_TIME_SYNC_CHANGED);
+        mGpsTimeSyncObserver.observe(mContext);
+        /// @}
+
+        /// M: Configure default date/time to current year after factory reset or first bootup @{
+        mDefaultYear  = mContext.getResources().getInteger(
+            com.mediatek.internal.R.integer.default_restore_year);
+
+        String tempString = SystemProperties.get(BOOT_SYS_PROPERTY, "");
+        boolean isFirstBoot = (tempString != null && "".equals(tempString)) ? true : false;
+        if (isFirstBoot) {
+           tempString = SystemProperties.get("ro.kernel.qemu", "");
+           boolean isEmulator = "1".equals(tempString) ? true : false;
+           if (isEmulator) {
+              Log.d(TAG, "isEmulator:" + tempString);
+              return;
+           }
+
+           String decryptState = SystemProperties.get("vold.decrypt", "");
+           Log.d(TAG, "decryptState:" + decryptState);
+           if ("".equals(decryptState) || DECRYPT_STATE.equals(decryptState)) {
+              Time today = new Time(Time.getCurrentTimezone());
+              today.setToNow();
+              Log.d(TAG, "First boot:" + tempString + " with date:" + today);
+              today.set(1, 0, mDefaultYear);
+              Log.d(TAG, "Set the year to " + mDefaultYear);
+                     SystemProperties.set(BOOT_SYS_PROPERTY, "false");
+                 SystemClock.setCurrentTimeMillis(today.toMillis(false));
+              }
+           }
+        ///@}
     }
 
     private void registerForTelephonyIntents() {
@@ -159,8 +259,11 @@ public class NetworkTimeUpdateService extends Binder {
     }
 
     private void onPollNetworkTime(int event) {
+        if (DBG) Log.d(TAG, "onPollNetworkTime start");
         // If Automatic time is not set, don't bother.
         if (!isAutomaticTimeRequested()) return;
+        if (DBG) Log.d(TAG, "isAutomaticTimeRequested() = True");
+
         mWakeLock.acquire();
         try {
             onPollNetworkTimeUnderWakeLock(event);
@@ -173,6 +276,7 @@ public class NetworkTimeUpdateService extends Binder {
         final long refTime = SystemClock.elapsedRealtime();
         // If NITZ time was received less than mPollingIntervalMs time ago,
         // no need to sync to NTP.
+        if (DBG) Log.d(TAG, "mNitzTimeSetTime: " + mNitzTimeSetTime + ",refTime: " + refTime);
         if (mNitzTimeSetTime != NOT_SET && refTime - mNitzTimeSetTime < mPollingIntervalMs) {
             resetAlarm(mPollingIntervalMs);
             return;
@@ -186,7 +290,22 @@ public class NetworkTimeUpdateService extends Binder {
 
             // force refresh NTP cache when outdated
             if (mTime.getCacheAge() >= mPollingIntervalMs) {
-                mTime.forceRefresh();
+                //M: For multiple NTP server retry
+                //mTime.forceRefresh();
+                int index = mTryAgainCounter % mNtpServers.size();
+                if (DBG) Log.d(TAG, "mTryAgainCounter = " + mTryAgainCounter
+                    + ";mNtpServers.size() = " + mNtpServers.size()
+                    + ";index = " + index + ";mNtpServers = " + mNtpServers.get(index));
+                if (mTime instanceof NtpTrustedTime)
+                {
+                    ((NtpTrustedTime) mTime).setServer(mNtpServers.get(index));
+                    mTime.forceRefresh();
+                    ((NtpTrustedTime) mTime).setServer(mDefaultServer);
+                }
+                else
+                {
+                    mTime.forceRefresh();
+                }
             }
 
             // only update when NTP time is fresh
@@ -236,7 +355,7 @@ public class NetworkTimeUpdateService extends Binder {
         mAlarmManager.cancel(mPendingPollIntent);
         long now = SystemClock.elapsedRealtime();
         long next = now + interval;
-        mAlarmManager.set(AlarmManager.ELAPSED_REALTIME, next, mPendingPollIntent);
+        mAlarmManager.setExact(AlarmManager.ELAPSED_REALTIME, next, mPendingPollIntent);
     }
 
     /**
@@ -255,8 +374,10 @@ public class NetworkTimeUpdateService extends Binder {
             String action = intent.getAction();
             if (DBG) Log.d(TAG, "Received " + action);
             if (TelephonyIntents.ACTION_NETWORK_SET_TIME.equals(action)) {
+                if (DBG) Log.d(TAG, "mNitzReceiver Receive ACTION_NETWORK_SET_TIME");
                 mNitzTimeSetTime = SystemClock.elapsedRealtime();
             } else if (TelephonyIntents.ACTION_NETWORK_SET_TIMEZONE.equals(action)) {
+                if (DBG) Log.d(TAG, "mNitzReceiver Receive ACTION_NETWORK_SET_TIMEZONE");
                 mNitzZoneSetTime = SystemClock.elapsedRealtime();
             }
         }
@@ -278,6 +399,18 @@ public class NetworkTimeUpdateService extends Binder {
         }
     };
 
+    /** Receiver for IPO Shutdown events */
+    private BroadcastReceiver mIPOReceiver = new BroadcastReceiver() {
+
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            if (DBG) Log.d(TAG, "Received ACTION_SHUTDOWN_IPO ");
+            mNitzTimeSetTime = NOT_SET;
+            mNitzZoneSetTime = NOT_SET;
+        }
+    };
+
     /** Handler to do the network accesses on */
     private class MyHandler extends Handler {
 
@@ -291,8 +424,17 @@ public class NetworkTimeUpdateService extends Binder {
                 case EVENT_AUTO_TIME_CHANGED:
                 case EVENT_POLL_NETWORK_TIME:
                 case EVENT_NETWORK_CHANGED:
+                    if (DBG) Log.d(TAG, "MyHandler::handleMessage what = " + msg.what);
                     onPollNetworkTime(msg.what);
                     break;
+
+                /// M: comment @{ add GPS Time Sync Service
+                case EVENT_GPS_TIME_SYNC_CHANGED:
+                    boolean gpsTimeSyncStatus = getGpsTimeSyncState();;
+                    Log.d(TAG, "GPS Time sync is changed to " + gpsTimeSyncStatus);
+                    onGpsTimeChanged(gpsTimeSyncStatus);
+                    break;
+                /// @}
             }
         }
     }
@@ -344,4 +486,116 @@ public class NetworkTimeUpdateService extends Binder {
         TimeUtils.formatDuration(mLastNtpFetchTime, pw);
         pw.println();
     }
+
+    /// M: comment @{ add GPS Time Sync Service
+    /** ================ Gps Time Sync part ================*/
+
+    private Thread          mGpsTimerThread; //for interrupt
+    private LocationManager mLocationManager;
+    private boolean         mIsGpsTimeSyncRunning = false;
+    private GpsTimeSyncObserver   mGpsTimeSyncObserver;
+
+    private boolean getGpsTimeSyncState() {
+        try {
+            return Settings.System.getInt(mContext.getContentResolver(),
+                Settings.System.AUTO_TIME_GPS) > 0;
+        } catch (SettingNotFoundException snfe) {
+            return false;
+        }
+    }
+
+    private static class GpsTimeSyncObserver extends ContentObserver {
+
+        private int mMsg;
+        private Handler mHandler;
+
+        GpsTimeSyncObserver(Handler handler, int msg) {
+            super(handler);
+            mHandler = handler;
+            mMsg = msg;
+        }
+
+        void observe(Context context) {
+            ContentResolver resolver = context.getContentResolver();
+            resolver.registerContentObserver(
+                Settings.System.getUriFor(Settings.System.AUTO_TIME_GPS),false, this);
+        }
+
+        @Override
+        public void onChange(boolean selfChange) {
+            mHandler.obtainMessage(mMsg).sendToTarget();
+        }
+    }
+
+    public void onGpsTimeChanged(boolean enable) {
+        if(enable) {
+            startUsingGpsWithTimeout(180000,
+                mContext.getString(R.string.gps_time_sync_fail_str));
+        } else {
+            if(mGpsTimerThread != null) {
+                mGpsTimerThread.interrupt();
+            }
+        }
+    }
+
+    public void startUsingGpsWithTimeout(final int milliseconds, final String timeoutMsg) {
+
+        if(mIsGpsTimeSyncRunning == true) {
+            Log.d(TAG, "WARNING: Gps Time Sync is already run");
+            return;
+        } else {
+            mIsGpsTimeSyncRunning = true;
+        }
+
+        Log.d(TAG, "start using GPS for GPS time sync timeout=" + milliseconds
+            + " timeoutMsg=" + timeoutMsg);
+        mLocationManager = (LocationManager)mContext.getSystemService(mContext.LOCATION_SERVICE);
+        mLocationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000, 0,
+            mLocationListener);
+        mGpsTimerThread = new Thread() {
+            public void run() {
+                boolean isTimeout = false;
+                try {
+                    Thread.sleep(milliseconds);
+                    isTimeout = true;
+                } catch (InterruptedException e) {
+                }
+                Log.d(TAG, "isTimeout=" + isTimeout);
+                if(isTimeout == true) {
+                    Message m = new Message();
+                    m.obj = timeoutMsg;
+                    mGpsToastHandler.sendMessage(m);
+                }
+                mLocationManager.removeUpdates(mLocationListener);
+                mIsGpsTimeSyncRunning = false;
+            }
+        };
+        mGpsTimerThread.start();
+    }
+
+
+    private Handler mGpsToastHandler = new Handler() {
+        public void handleMessage(Message msg) {
+            String timeoutMsg = (String)msg.obj;
+            Toast.makeText(mContext, timeoutMsg, Toast.LENGTH_LONG).show();
+        }
+    };
+
+    private LocationListener mLocationListener = new LocationListener() {
+        @Override
+        public void onLocationChanged(Location location) {
+            mGpsTimerThread.interrupt();
+        }
+        @Override
+        public void onProviderDisabled(String provider) {
+        }
+        @Override
+        public void onProviderEnabled(String provider) {
+        }
+        @Override
+        public void onStatusChanged(String provider, int status, Bundle extras) {
+        }
+    };
+    /// @}
+
 }

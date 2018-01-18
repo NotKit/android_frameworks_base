@@ -25,11 +25,14 @@ import com.android.keyguard.KeyguardUpdateMonitor;
 import com.android.keyguard.KeyguardUpdateMonitorCallback;
 import com.android.systemui.settings.CurrentUserTracker;
 
-import java.util.ArrayList;
+//M: ALPS02893121 fix index out of bounds exception
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public final class KeyguardMonitor extends KeyguardUpdateMonitorCallback {
 
-    private final ArrayList<Callback> mCallbacks = new ArrayList<Callback>();
+    //M: ALPS02893121 fix index out of bounds exception
+    private final CopyOnWriteArrayList<Callback> mCallbacks
+            = new CopyOnWriteArrayList<Callback>();
 
     private final Context mContext;
     private final CurrentUserTracker mUserTracker;

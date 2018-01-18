@@ -29,7 +29,7 @@ LOCAL_AAPT_FLAGS := --auto-add-overlay \
 
 LOCAL_SRC_FILES := $(call all-java-files-under, src) \
     $(call all-Iaidl-files-under, src) \
-    $(call all-java-files-under, ../src)
+    $(call all-java-files-under, ../src) \
 
 LOCAL_RESOURCE_DIR := $(LOCAL_PATH)/res \
     frameworks/support/v7/preference/res \
@@ -38,15 +38,22 @@ LOCAL_RESOURCE_DIR := $(LOCAL_PATH)/res \
     frameworks/support/v7/recyclerview/res \
     frameworks/support/v17/leanback/res \
     frameworks/base/packages/SystemUI/res \
-    frameworks/base/packages/Keyguard/res
+    frameworks/base/packages/SystemUI/res_ext \
+    frameworks/base/packages/Keyguard/res \
+    frameworks/base/packages/Keyguard/res_ext \
+    $(LOCAL_PATH)/res_ext
 
 LOCAL_JAVA_LIBRARIES := android.test.runner telephony-common
+LOCAL_JAVA_LIBRARIES += ims-common
+LOCAL_JAVA_LIBRARIES += mediatek-framework
 
 LOCAL_PACKAGE_NAME := SystemUITests
 
 LOCAL_STATIC_JAVA_LIBRARIES := \
     mockito-target \
     Keyguard \
+    com.mediatek.systemui.ext \
+    services.core \
     android-support-v7-recyclerview \
     android-support-v7-preference \
     android-support-v7-appcompat \

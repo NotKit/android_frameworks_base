@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -66,6 +71,8 @@ import android.widget.PopupWindow.OnDismissListener;
 @Widget
 public class Spinner extends AbsSpinner implements OnClickListener {
     private static final String TAG = "Spinner";
+
+    private static final boolean IS_ENG_BUILD = "eng".equals(Build.TYPE);
 
     // Only measure this many items to get a decent max width.
     private static final int MAX_ITEMS_MEASURED = 15;
@@ -670,7 +677,7 @@ public class Spinner extends AbsSpinner implements OnClickListener {
 
         checkSelectionChanged();
 
-        mDataChanged = false;
+        setDataChanged(false);
         mNeedSync = false;
         setNextSelectedPositionInt(mSelectedPosition);
     }
@@ -1223,6 +1230,12 @@ public class Spinner extends AbsSpinner implements OnClickListener {
             } else {
                 hOffset += spinnerPaddingLeft;
             }
+
+            if (IS_ENG_BUILD) {
+                Log.d(TAG, "DropdownPopup show(): hOffset = " + hOffset + ", width = " + getWidth()
+                        + ", this = " + this);
+            }
+
             setHorizontalOffset(hOffset);
         }
 
@@ -1276,5 +1289,4 @@ public class Spinner extends AbsSpinner implements OnClickListener {
             }
         }
     }
-
 }

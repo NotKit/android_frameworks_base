@@ -1,3 +1,8 @@
+/*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
 //
 // Copyright 2006 The Android Open Source Project
 //
@@ -619,6 +624,8 @@ private:
     uint32_t mTypeIdOffset;
     DefaultKeyedVector<String16, sp<Package> > mPackages;
     Vector<sp<Package> > mOrderedPackages;
+    bool mIsmtkCur;
+    int  mIsmtkCurNum;
     size_t mNumLocal;
     SourcePos mCurrentXmlPos;
     Bundle* mBundle;

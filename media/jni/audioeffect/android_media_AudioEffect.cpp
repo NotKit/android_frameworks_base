@@ -532,6 +532,7 @@ android_media_AudioEffect_native_hasControl(JNIEnv *env, jobject thiz)
     }
 }
 
+#ifndef ANDROID_DEFAULT_CODE
 static jint android_media_AudioEffect_native_setParameter(JNIEnv *env,
         jobject thiz, jint psize, jbyteArray pJavaParam, jint vsize,
         jbyteArray pJavaValue) {
@@ -541,9 +542,74 @@ static jint android_media_AudioEffect_native_setParameter(JNIEnv *env,
     jint lStatus = AUDIOEFFECT_ERROR_BAD_VALUE;
     effect_param_t *p;
     int voffset;
+    AudioEffect* lpAudioEffect = (AudioEffect *) env->GetLongField(thiz,
+            fields.fidNativeAudioEffect);
 
-    sp<AudioEffect> lpAudioEffect = getAudioEffect(env, thiz);
-    if (lpAudioEffect == 0) {
+    if (lpAudioEffect == NULL) {
+        jniThrowException(env, "java/lang/IllegalStateException",
+                "Unable to retrieve AudioEffect pointer for setParameter()");
+        return AUDIOEFFECT_ERROR_NO_INIT;
+    }
+
+    if (psize == 0 || vsize == 0 || pJavaParam == NULL || pJavaValue == NULL) {
+        return AUDIOEFFECT_ERROR_BAD_VALUE;
+    }
+
+    // get the pointer for the param from the java array
+    lpParam = (jbyte *) env->GetPrimitiveArrayCritical(pJavaParam, NULL);
+    if (lpParam == NULL) {
+        ALOGE("setParameter: Error retrieving param pointer");
+        goto setParameter_Exit;
+    }
+
+    voffset = ((psize - 1) / sizeof(int) + 1) * sizeof(int);
+    p = (effect_param_t *) malloc(sizeof(effect_param_t) + voffset + vsize);
+    memcpy(p->data, lpParam, psize);
+    env->ReleasePrimitiveArrayCritical(pJavaParam, lpParam, 0);
+    p->psize = psize;
+
+    // get the pointer for the value from the java array
+    lpValue = (jbyte *) env->GetPrimitiveArrayCritical(pJavaValue, NULL);
+    if (lpValue == NULL) {
+        ALOGE("setParameter: Error retrieving value pointer");
+        goto setParameter_Exit;
+    }
+    memcpy(p->data + voffset, lpValue, vsize);
+    env->ReleasePrimitiveArrayCritical(pJavaValue, lpValue, 0);
+    p->vsize = vsize;
+
+    lStatus = lpAudioEffect->setParameter(p);
+    if (lStatus == NO_ERROR) {
+        lStatus = p->status;
+    }
+
+    free(p);
+    return translateError(lStatus);
+setParameter_Exit:
+
+    if (lpParam != NULL) {
+        env->ReleasePrimitiveArrayCritical(pJavaParam, lpParam, 0);
+    }
+    if (lpValue != NULL) {
+        env->ReleasePrimitiveArrayCritical(pJavaValue, lpValue, 0);
+    }
+    return translateError(lStatus);
+}
+#else
+static jint android_media_AudioEffect_native_setParameter(JNIEnv *env,
+        jobject thiz, int psize, jbyteArray pJavaParam, int vsize,
+        jbyteArray pJavaValue) {
+    // retrieve the AudioEffect object
+    jbyte* lpValue = NULL;
+    jbyte* lpParam = NULL;
+    jint lStatus = AUDIOEFFECT_ERROR_BAD_VALUE;
+    effect_param_t *p;
+    int voffset;
+
+    AudioEffect* lpAudioEffect = (AudioEffect *) env->GetLongField(thiz,
+            fields.fidNativeAudioEffect);
+
+    if (lpAudioEffect == NULL) {
         jniThrowException(env, "java/lang/IllegalStateException",
                 "Unable to retrieve AudioEffect pointer for setParameter()");
         return AUDIOEFFECT_ERROR_NO_INIT;
@@ -591,6 +657,7 @@ setParameter_Exit:
     }
     return (jint) translateError(lStatus);
 }
+#endif
 
 static jint
 android_media_AudioEffect_native_getParameter(JNIEnv *env,

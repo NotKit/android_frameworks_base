@@ -64,6 +64,7 @@ android_mtp_MtpServer_setup(JNIEnv *env, jobject thiz, jobject javaDatabase, jbo
         MtpServer* server = new MtpServer(fd, getMtpDatabase(env, javaDatabase),
                 usePtp, AID_MEDIA_RW, 0664, 0775);
         env->SetLongField(thiz, field_MtpServer_nativeContext, (jlong)server);
+        ALOGD("finish to setup server");
     } else {
         ALOGE("could not open MTP driver, errno: %d", errno);
     }
@@ -73,6 +74,9 @@ static void
 android_mtp_MtpServer_run(JNIEnv *env, jobject thiz)
 {
     MtpServer* server = getMtpServer(env, thiz);
+
+    ALOGD("server run");
+
     if (server)
         server->run();
     else
@@ -83,6 +87,8 @@ static void
 android_mtp_MtpServer_cleanup(JNIEnv *env, jobject thiz)
 {
     Mutex::Autolock autoLock(sMutex);
+
+    ALOGD("server cleanup");
 
     MtpServer* server = getMtpServer(env, thiz);
     if (server) {
@@ -177,6 +183,62 @@ android_mtp_MtpServer_remove_storage(JNIEnv *env, jobject thiz, jint storageId)
         ALOGE("server is null in remove_storage");
 }
 
+// for storage Update
+static void
+android_mtp_MtpServer_update_storage(JNIEnv *env, jobject thiz, jobject jstorage)
+{
+    Mutex::Autolock autoLock(sMutex);
+
+    ALOGD("update storage");
+    MtpServer* server = getMtpServer(env, thiz);
+
+    if (server) {
+        jint storageID = env->GetIntField(jstorage, field_MtpStorage_storageId);
+        jstring path = (jstring)env->GetObjectField(jstorage, field_MtpStorage_path);
+        jstring description = (jstring)env->GetObjectField(jstorage, field_MtpStorage_description);
+
+        const char *pathStr = env->GetStringUTFChars(path, NULL);
+        MtpStorage* storage = server->getStorage(storageID);
+        ALOGD("storageID = %d", storageID);
+
+        if (pathStr != NULL && storage) {
+            const char *descriptionStr = env->GetStringUTFChars(description, NULL);
+            if (descriptionStr != NULL) {
+                ALOGD("descriptionStr = %s", descriptionStr);
+                storage->setDescription(descriptionStr);
+                server->sendStorageInfoChanged(storageID);
+            }
+
+        } else {
+            ALOGE("server is null in add_storage");
+        }
+    }
+}
+
+static void
+android_mtp_MtpServer_send_object_infoChanged(JNIEnv *env, jobject thiz, jint handle)
+{
+    Mutex::Autolock autoLock(sMutex);
+
+    MtpServer* server = getMtpServer(env, thiz);
+    if (server)
+        server->sendObjectInfoChanged(handle);
+    else
+        ALOGE("server is null in send_object_infoChanged");
+}
+
+static void
+android_mtp_MtpServer_send_storage_infoChanged(JNIEnv *env, jobject thiz, jint storageId)
+{
+    Mutex::Autolock autoLock(sMutex);
+
+    MtpServer* server = getMtpServer(env, thiz);
+    if (server)
+        server->sendStorageInfoChanged(storageId);
+    else
+        ALOGE("server is null in send_object_infoChanged");
+}
+
 // ----------------------------------------------------------------------------
 
 static const JNINativeMethod gMethods[] = {
@@ -191,6 +253,11 @@ static const JNINativeMethod gMethods[] = {
     {"native_add_storage",          "(Landroid/mtp/MtpStorage;)V",
                                             (void *)android_mtp_MtpServer_add_storage},
     {"native_remove_storage",       "(I)V", (void *)android_mtp_MtpServer_remove_storage},
+    // for storage update
+    {"native_send_object_infoChanged",      "(I)V", (void *)android_mtp_MtpServer_send_object_infoChanged},
+    {"native_send_storage_infoChanged",     "(I)V", (void *)android_mtp_MtpServer_send_storage_infoChanged},
+    {"native_update_storage",               "(Landroid/mtp/MtpStorage;)V",
+                                            (void *)android_mtp_MtpServer_update_storage},
 };
 
 int register_android_mtp_MtpServer(JNIEnv *env)

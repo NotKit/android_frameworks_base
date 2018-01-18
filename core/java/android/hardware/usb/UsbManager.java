@@ -190,6 +190,15 @@ public class UsbManager {
     public static final String USB_FUNCTION_NONE = "none";
 
     /**
+     * Name of the USB mass storage USB function.
+     * Used in extras for the {@link #ACTION_USB_STATE} broadcast
+     *
+     * @internal
+     * {@hide}
+     */
+    public static final String USB_FUNCTION_MASS_STORAGE = "mass_storage";
+
+    /**
      * Name of the adb USB function.
      * Used in extras for the {@link #ACTION_USB_STATE} broadcast
      *
@@ -246,6 +255,49 @@ public class UsbManager {
     public static final String USB_FUNCTION_ACCESSORY = "accessory";
 
     /**
+     * Name of the EEM ethernet USB function.
+     * Used in extras for the {@link #ACTION_USB_STATE} broadcast
+     *
+     * @internal
+     * {@hide}
+     */
+    public static final String USB_FUNCTION_EEM = "eem";
+
+    /**
+     * Name of the USB BICR function.
+     * Used in extras for the {@link #ACTION_USB_STATE} broadcast
+     *
+     * @internal
+     * {@hide}
+     */
+    public static final String USB_FUNCTION_BICR = "bicr";
+
+    /**
+     * Name of the ACM USB function.
+     * Used in extras for the {@link #ACTION_USB_STATE} broadcast
+     *
+     * @internal
+     * {@hide}
+     */
+    public static final String USB_FUNCTION_ACM = "acm";
+
+    /**
+     * Name of the ACM USB function.
+     * Used in extras for the {@link #ACTION_USB_STATE} broadcast
+     *
+     * {@hide}
+     */
+    public static final String USB_FUNCTION_DUAL_ACM = "dual_acm";
+
+    /**
+     * Name of the MBIM DUN ethernet USB function.
+     * Used in extras for the {@link #ACTION_USB_STATE} broadcast
+     *
+     * {@hide}
+     */
+    public static final String USB_FUNCTION_MBIM_DUN = "mbim_dun";
+
+    /**
      * Name of extra for {@link #ACTION_USB_PORT_CHANGED}
      * containing the {@link UsbPort} object for the port.
      *
@@ -283,6 +335,22 @@ public class UsbManager {
      * containing a boolean value indicating whether the user granted permission or not.
      */
     public static final String EXTRA_PERMISSION_GRANTED = "permission";
+
+    /**
+     * The persistent property which stores whether adb is enabled or not. Other values are ignored.
+     * Previously this value stored non-adb settings, but not anymore.
+     * TODO: rename this to something adb specific, rather than using usb.
+     *
+     * {@hide}
+     */
+    public static final String ADB_PERSISTENT_PROPERTY = "persist.sys.usb.config";
+
+    /**
+     * The non-persistent property which stores the current USB settings.
+     *
+     * {@hide}
+     */
+    public static final String USB_SETTINGS_PROPERTY = "sys.usb.config";
 
     private final Context mContext;
     private final IUsbManager mService;
@@ -544,6 +612,23 @@ public class UsbManager {
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
         }
+    }
+
+    /**
+     * Returns the current USB state.
+     *
+     * @return current USB state.
+     *
+     * @internal
+     * {@hide}
+     */
+    public int getCurrentState() {
+        try {
+            return mService.getCurrentState();
+        } catch (RemoteException e) {
+            Log.e(TAG, "RemoteException in getCurrentState", e);
+        }
+        return 0;
     }
 
     /**

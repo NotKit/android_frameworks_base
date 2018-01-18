@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -61,7 +66,7 @@ import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.AdapterView.OnItemClickListener;
 import android.widget.AdapterView.OnItemSelectedListener;
-import android.widget.TextView.OnEditorActionListener;
+/// M: import android.widget.TextView.OnEditorActionListener;
 
 import com.android.internal.R;
 
@@ -182,7 +187,8 @@ public class SearchView extends LinearLayout implements CollapsibleActionView {
     private Runnable mReleaseCursorRunnable = new Runnable() {
         public void run() {
             if (mSuggestionsAdapter != null && mSuggestionsAdapter instanceof SuggestionsAdapter) {
-                mSuggestionsAdapter.changeCursor(null);
+                /// M: When release cursor, just close it.
+                ((SuggestionsAdapter) mSuggestionsAdapter).close();
             }
         }
     };
@@ -323,7 +329,7 @@ public class SearchView extends LinearLayout implements CollapsibleActionView {
         mSearchSrcTextView.setOnClickListener(mOnClickListener);
 
         mSearchSrcTextView.addTextChangedListener(mTextWatcher);
-        mSearchSrcTextView.setOnEditorActionListener(mOnEditorActionListener);
+/// M:  mSearchSrcTextView.setOnEditorActionListener(mOnEditorActionListener);
         mSearchSrcTextView.setOnItemClickListener(mOnItemClickListener);
         mSearchSrcTextView.setOnItemSelectedListener(mOnItemSelectedListener);
         mSearchSrcTextView.setOnKeyListener(mTextKeyListener);
@@ -960,6 +966,17 @@ public class SearchView extends LinearLayout implements CollapsibleActionView {
         invalidate();
     }
 
+    /*
+     * M: When attached to window, enable the adapter.
+     */
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        if (mSuggestionsAdapter != null && mSuggestionsAdapter instanceof SuggestionsAdapter) {
+            ((SuggestionsAdapter) mSuggestionsAdapter).enable();
+        }
+    }
+
     @Override
     protected void onDetachedFromWindow() {
         removeCallbacks(mUpdateDrawableStateRunnable);
@@ -1039,11 +1056,11 @@ public class SearchView extends LinearLayout implements CollapsibleActionView {
      */
     View.OnKeyListener mTextKeyListener = new View.OnKeyListener() {
         public boolean onKey(View v, int keyCode, KeyEvent event) {
-            // guard against possible race conditions
-            if (mSearchable == null) {
-                return false;
-            }
-
+         /** Check Not Required here
+           * if (mSearchable == null) {
+           *     return false;
+           * }
+           */
             if (DBG) {
                 Log.d(LOG_TAG, "mTextListener.onKey(" + keyCode + "," + event + "), selection: "
                         + mSearchSrcTextView.getListSelection());
@@ -1062,14 +1079,12 @@ public class SearchView extends LinearLayout implements CollapsibleActionView {
                 if (event.getAction() == KeyEvent.ACTION_UP) {
                     if (keyCode == KeyEvent.KEYCODE_ENTER) {
                         v.cancelLongPress();
-
-                        // Launch as a regular search.
-                        launchQuerySearch(KeyEvent.KEYCODE_UNKNOWN, null, mSearchSrcTextView.getText()
-                                .toString());
+                        /// M:
+                        onSubmitQuery();
                         return true;
                     }
                 }
-                if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                if (mSearchable != null && event.getAction() == KeyEvent.ACTION_DOWN) {
                     SearchableInfo.ActionKeyInfo actionKey = mSearchable.findActionKey(keyCode);
                     if ((actionKey != null) && (actionKey.getQueryActionMsg() != null)) {
                         launchQuerySearch(keyCode, actionKey.getQueryActionMsg(), mSearchSrcTextView
@@ -1253,17 +1268,15 @@ public class SearchView extends LinearLayout implements CollapsibleActionView {
         mVoiceButton.setVisibility(visibility);
     }
 
-    private final OnEditorActionListener mOnEditorActionListener = new OnEditorActionListener() {
-
-        /**
-         * Called when the input method default action key is pressed.
-         */
-        public boolean onEditorAction(TextView v, int actionId, KeyEvent event) {
-            onSubmitQuery();
-            return true;
-        }
-    };
-
+/** action key already handled
+  * private final OnEditorActionListener mOnEditorActionListener = new OnEditorActionListener() {
+  *
+  *    public boolean onEditorAction(TextView v, int actionId, KeyEvent event) {
+  *        onSubmitQuery();
+  *        return true;
+  *    }
+  * };
+  */
     private void onTextChanged(CharSequence newText) {
         CharSequence text = mSearchSrcTextView.getText();
         mUserQuery = text;

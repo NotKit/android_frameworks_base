@@ -662,7 +662,9 @@ public class AppTransition implements Dump {
     private void getDefaultNextAppTransitionStartRect(Rect rect) {
         if (mDefaultNextAppTransitionAnimationSpec == null ||
                 mDefaultNextAppTransitionAnimationSpec.rect == null) {
-            Slog.wtf(TAG, "Starting rect for app requested, but none available", new Throwable());
+            /// M: remove wtf
+            //Slog.wtf(TAG, "Starting rect for app requested, but none available", new Throwable());
+            Slog.e(TAG, "Starting rect for app requested, but none available", new Throwable());
             rect.setEmpty();
         } else {
             rect.set(mDefaultNextAppTransitionAnimationSpec.rect);

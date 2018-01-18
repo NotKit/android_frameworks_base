@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2008 The Android Open Source Project
  * 
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not
@@ -48,7 +53,9 @@ class ComposingText implements NoCopySpan {
  * to refer to the documentation in {@link InputConnection}.
  */
 public class BaseInputConnection implements InputConnection {
-    private static final boolean DEBUG = false;
+    /// M: Changed for switch log on/off in the runtime. @{
+    static boolean DEBUG = false;
+    /// @}
     private static final String TAG = "BaseInputConnection";
     static final Object COMPOSING = new ComposingText();
 
@@ -238,11 +245,12 @@ public class BaseInputConnection implements InputConnection {
             ca = cb;
             cb = tmp;
         }
-        if (ca != -1 && cb != -1) {
-            if (ca < a) a = ca;
-            if (cb > b) b = cb;
-        }
-
+        ///M:really ignore the composing text @{
+        //if (ca != -1 && cb != -1) {
+        //    if (ca < a) a = ca;
+        //    if (cb > b) b = cb;
+        //}
+        ///@}
         int deleted = 0;
 
         if (beforeLength > 0) {

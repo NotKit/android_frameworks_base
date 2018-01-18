@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -84,6 +89,13 @@ static status_t notifyMediaScanner(const char* fileName) {
 
 int main(int argc, char** argv)
 {
+
+#ifdef MTK_AOSP_ENHANCEMENT
+    // work around for SIGPIPE NE caused by abnormal system status
+    signal(SIGPIPE, SIG_IGN);
+    ALOGD("[Screencap] main");
+#endif
+
     ProcessState::self()->startThreadPool();
 
     const char* pname = argv[0];

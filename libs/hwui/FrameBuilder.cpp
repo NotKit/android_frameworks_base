@@ -33,11 +33,12 @@ namespace uirenderer {
 
 FrameBuilder::FrameBuilder(const SkRect& clip,
         uint32_t viewportWidth, uint32_t viewportHeight,
-        const LightGeometry& lightGeometry, Caches& caches)
-        : mStdAllocator(mAllocator)
+        const LightGeometry& lightGeometry, Caches& caches, DisplayListRecorderHost* host)
+        : DisplayListRecorderClient(host, viewportWidth, viewportHeight)
+        , mStdAllocator(mAllocator)
         , mLayerBuilders(mStdAllocator)
         , mLayerStack(mStdAllocator)
-        , mCanvasState(*this)
+        , mCanvasState(*this, recorder())
         , mCaches(caches)
         , mLightRadius(lightGeometry.radius)
         , mDrawFbo0(true) {
@@ -56,7 +57,7 @@ FrameBuilder::FrameBuilder(const LayerUpdateQueue& layers,
         : mStdAllocator(mAllocator)
         , mLayerBuilders(mStdAllocator)
         , mLayerStack(mStdAllocator)
-        , mCanvasState(*this)
+        , mCanvasState(*this, recorder())
         , mCaches(caches)
         , mLightRadius(lightGeometry.radius)
         , mDrawFbo0(false) {
@@ -99,7 +100,7 @@ void FrameBuilder::deferLayers(const LayerUpdateQueue& layers) {
                     layerDamage, lightCenter, nullptr, layerNode);
 
             if (layerNode->getDisplayList()) {
-                deferNodeOps(*layerNode);
+                RECORD_LAYER(deferNodeOps(*layerNode));
             }
             restoreForLayer();
         }
@@ -205,6 +206,7 @@ void FrameBuilder::onViewportInitialized() {}
 void FrameBuilder::onSnapshotRestored(const Snapshot& removed, const Snapshot& restored) {}
 
 void FrameBuilder::deferNodePropsAndOps(RenderNode& node) {
+    ScopedRecord record(recorder(), mCanvasState, &node);
     const RenderProperties& properties = node.properties();
     const Outline& outline = properties.getOutline();
     if (properties.getAlpha() <= 0
@@ -214,6 +216,7 @@ void FrameBuilder::deferNodePropsAndOps(RenderNode& node) {
         return; // rejected
     }
 
+    mCanvasState.setRecordMode(RecordMode::View); // M: view proerties begin
     if (properties.getLeft() != 0 || properties.getTop() != 0) {
         mCanvasState.translate(properties.getLeft(), properties.getTop());
     }
@@ -273,6 +276,7 @@ void FrameBuilder::deferNodePropsAndOps(RenderNode& node) {
     } else if (properties.getOutline().willClip()) {
         mCanvasState.setClippingOutline(mAllocator, &(properties.getOutline()));
     }
+    mCanvasState.setRecordMode(RecordMode::System); // M: view proerties end
 
     bool quickRejected = mCanvasState.currentSnapshot()->getRenderTargetClip().isEmpty()
             || (properties.getClipToBounds()
@@ -287,6 +291,7 @@ void FrameBuilder::deferNodePropsAndOps(RenderNode& node) {
                 // Node's layer already deferred, schedule it to render into parent layer
                 currentLayer().deferUnmergeableOp(mAllocator, bakedOpState, OpBatchType::Bitmap);
             }
+            recorder().record(RecordMode::Operation, mCanvasState.getCanvasState(), *drawLayerOp);
         } else if (CC_UNLIKELY(!saveLayerBounds.isEmpty())) {
             // draw DisplayList contents within temporary, since persisted layer could not be used.
             // (temp layers are clipped to viewport, since they don't persist offscreen content)
@@ -297,6 +302,8 @@ void FrameBuilder::deferNodePropsAndOps(RenderNode& node) {
                     Matrix4::identity(),
                     nullptr, // no record-time clip - need only respect defer-time one
                     &saveLayerPaint));
+            recorder().addSaveLayer(RecordMode::Operation, mCanvasState.getCanvasState(),
+                saveLayerBounds, properties.getAlpha(), SaveFlags::ClipToLayer);
             deferNodeOps(node);
             deferEndLayerOp(*mAllocator.create_trivial<EndLayerOp>());
         } else {
@@ -455,6 +462,7 @@ void FrameBuilder::deferShadow(const ClipBase* reorderClip, const RenderNodeOp& 
                 mCanvasState.currentSnapshot()->getRelativeLightCenter(),
                 mLightRadius);
         ShadowOp* shadowOp = mAllocator.create<ShadowOp>(task, casterAlpha);
+        recorder().record(RecordMode::Operation, mCanvasState.getCanvasState(), *shadowOp);
         BakedOpState* bakedOpState = BakedOpState::tryShadowOpConstruct(
                 mAllocator, *mCanvasState.writableSnapshot(), shadowOp);
         if (CC_LIKELY(bakedOpState)) {
@@ -518,10 +526,11 @@ void FrameBuilder::deferNodeOps(const RenderNode& renderNode) {
         FatVector<ZRenderNodeOpPair, 16> zTranslatedNodes;
         buildZSortedChildList(&zTranslatedNodes, displayList, chunk);
 
+        int prevDrawOpIndex, currentDrawOpIndex;
         defer3dChildren(chunk.reorderClip, ChildrenSelectMode::Negative, zTranslatedNodes);
         for (size_t opIndex = chunk.beginOpIndex; opIndex < chunk.endOpIndex; opIndex++) {
             const RecordedOp* op = displayList.getOps()[opIndex];
-            receivers[op->opId](*this, *op);
+            RECORD_DRAW(receivers[op->opId](*this, *op));
 
             if (CC_UNLIKELY(!renderNode.mProjectedNodes.empty()
                     && displayList.projectionReceiveIndex >= 0
@@ -872,6 +881,7 @@ void FrameBuilder::deferBeginLayerOp(const BeginLayerOp& op) {
             Rect(layerWidth, layerHeight),
             lightCenter,
             &op, nullptr);
+    recorder().increaseSaveCountOffset();
 }
 
 void FrameBuilder::deferEndLayerOp(const EndLayerOp& /* ignored */) {
@@ -879,6 +889,7 @@ void FrameBuilder::deferEndLayerOp(const EndLayerOp& /* ignored */) {
     int finishedLayerIndex = mLayerStack.back();
 
     restoreForLayer();
+    recorder().decreaseSaveCountOffset();
 
     // saveLayer will clip & translate the draw contents, so we need
     // to translate the drawLayer by how much the contents was translated

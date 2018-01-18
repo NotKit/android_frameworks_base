@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,8 +25,22 @@ package android.filterfw.core;
 import android.filterfw.core.FrameFormat;
 import android.filterfw.core.FrameManager;
 import android.graphics.Bitmap;
+import android.util.Log;
 
 import java.nio.ByteBuffer;
+
+import java.io.BufferedOutputStream;
+import java.io.DataOutputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.Closeable;
+import java.io.File;
+
+import android.net.Uri;
+import android.opengl.GLES20;
+import android.os.Environment;
+import android.os.SystemClock;
+import android.os.SystemProperties;
 
 /**
  * @hide
@@ -232,4 +251,98 @@ public abstract class Frame {
         mReadOnly = true;
     }
 
+    /// M: for debug @{
+    private static final String TAG = "Frame";
+    private static final int BUFSIZE = 4096;
+    /**
+     * @hide
+     */
+    public void saveFrame(String name) {
+        int savePixel = SystemProperties.getInt("debug.effect.save.pixel", 1);
+        if (savePixel == 1) {
+            savePixel(name, getData().array());
+        }
+        int saveImage = SystemProperties.getInt("debug.effect.save.image", 1);
+        if (saveImage == 1) {
+            saveImage(name, getBitmap());
+        }
+    }
+    /**
+     * @hide
+     */
+    public void savePixel(String name, byte[] data) {
+        File file = new File(Environment.getExternalStorageDirectory().getPath()
+                + "/debug_mca_output/" + SystemClock.uptimeMillis() + "_" + name + "_pixel.png");
+        Uri uri = Uri.fromFile(file);
+        Log.v(TAG, "savePixel(" + name + ") path=" + file.getPath());
+
+        FileOutputStream f = null;
+        BufferedOutputStream b = null;
+        DataOutputStream d = null;
+        try {
+            f = new FileOutputStream(file);
+            b = new BufferedOutputStream(f, BUFSIZE);
+            d = new DataOutputStream(b);
+            d.write(data);
+            d.writeUTF(uri.toString());
+            d.close();
+        } catch (IOException e) {
+            Log.e(TAG, "Fail to store pixel. path=" + file.getPath(), e);
+        } finally {
+            closeSilently(f);
+            closeSilently(b);
+            closeSilently(d);
+        }
+    }
+    /**
+     * @hide
+     */
+    public void saveImage(String name, Bitmap bitmap) {
+        File file = new File(Environment.getExternalStorageDirectory().getPath()
+                + "/debug_mca_output/" + SystemClock.uptimeMillis() + "_" + name + "_image.png");
+        Uri uri = Uri.fromFile(file);
+        Log.v(TAG, "saveImage(" + name + ") path=" + file.getPath());
+
+        FileOutputStream f = null;
+        BufferedOutputStream b = null;
+        DataOutputStream d = null;
+        try {
+            f = new FileOutputStream(file);
+            b = new BufferedOutputStream(f, BUFSIZE);
+            d = new DataOutputStream(b);
+            d.writeUTF(uri.toString());
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, d);
+            d.close();
+        } catch (IOException e) {
+            Log.e(TAG, "Fail to store image. path=" + file.getPath(), e);
+        } finally {
+            closeSilently(f);
+            closeSilently(b);
+            closeSilently(d);
+        }
+    }
+    /**
+     * @hide
+     */
+    public static void closeSilently(Closeable c) {
+        if (c == null) {
+            return;
+        }
+        try {
+            c.close();
+        } catch (IOException e) {
+            Log.e(TAG, "closeSilently: Fail to close " + c, e);
+        }
+    }
+
+    /**
+     * @hide
+     */
+    public static void wait3DReady() {
+        final int w = 1;
+        final int h = 1;
+        ByteBuffer buffer = ByteBuffer.allocate(w * h * 4);
+        GLES20.glReadPixels(0, 0, w, h, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, buffer);
+    }
+    /// @}
 }

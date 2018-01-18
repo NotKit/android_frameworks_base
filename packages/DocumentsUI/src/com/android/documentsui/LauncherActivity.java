@@ -100,6 +100,7 @@ public class LauncherActivity extends Activity {
     static final Intent createLaunchIntent(Activity activity) {
         Intent intent = new Intent(activity, FilesActivity.class);
         intent.setData(buildLaunchUri());
+        intent.putExtra(DocumentsContract.EXTRA_SHOW_ADVANCED, true);
 
         // Relay any config overrides bits present in the original intent.
         Intent original = activity.getIntent();

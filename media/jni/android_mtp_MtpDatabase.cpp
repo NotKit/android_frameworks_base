@@ -271,8 +271,10 @@ MtpObjectHandleList* MyMtpDatabase::getObjectList(MtpStorageID storageID,
     MtpObjectHandleList* list = new MtpObjectHandleList();
     jint* handles = env->GetIntArrayElements(array, 0);
     jsize length = env->GetArrayLength(array);
-    for (int i = 0; i < length; i++)
+    for (int i = 0; i < length; i++) {
         list->push(handles[i]);
+        ALOGV("getObjectList: handles[%d] = 0x%x, length = %d", i, handles[i], length);
+    }
     env->ReleaseIntArrayElements(array, handles, 0);
     env->DeleteLocalRef(array);
 
@@ -546,8 +548,10 @@ MtpResponseCode MyMtpDatabase::setObjectPropertyValue(MtpObjectHandle handle,
                                                       MtpDataPacket& packet) {
     int         type;
 
-    if (!getObjectPropertyInfo(property, type))
+    if (!getObjectPropertyInfo(property, type)) {
+        ALOGE("MTP_RESPONSE_OBJECT_PROP_NOT_SUPPORTED!");
         return MTP_RESPONSE_OBJECT_PROP_NOT_SUPPORTED;
+    }
 
     JNIEnv* env = AndroidRuntime::getJNIEnv();
     jlong longValue = 0;
@@ -583,8 +587,10 @@ MtpResponseCode MyMtpDatabase::getDevicePropertyValue(MtpDeviceProperty property
     } else {
         int type;
 
-        if (!getDevicePropertyInfo(property, type))
+        if (!getDevicePropertyInfo(property, type)) {
+            ALOGE("MTP_RESPONSE_DEVICE_PROP_NOT_SUPPORTED!");
             return MTP_RESPONSE_DEVICE_PROP_NOT_SUPPORTED;
+        }
 
         jint result = env->CallIntMethod(mDatabase, method_getDeviceProperty,
                     (jint)property, mLongBuffer, mStringBuffer);
@@ -649,8 +655,10 @@ MtpResponseCode MyMtpDatabase::setDevicePropertyValue(MtpDeviceProperty property
                                                       MtpDataPacket& packet) {
     int         type;
 
-    if (!getDevicePropertyInfo(property, type))
+    if (!getDevicePropertyInfo(property, type)) {
+        ALOGE("MTP_RESPONSE_DEVICE_PROP_NOT_SUPPORTED!");
         return MTP_RESPONSE_DEVICE_PROP_NOT_SUPPORTED;
+    }
 
     JNIEnv* env = AndroidRuntime::getJNIEnv();
     jlong longValue = 0;
@@ -845,6 +853,9 @@ MtpResponseCode MyMtpDatabase::getObjectInfo(MtpObjectHandle handle,
     info.mName = strdup((const char *)temp);
     env->ReleaseCharArrayElements(mStringBuffer, str, 0);
 
+    ALOGD("getObjectInfo: objectHandles: 0x%x, info.mFormat: 0x%x, info.mStorageID =: 0x%x, info.mName = %s",
+        handle, info.mFormat, info.mStorageID, info.mName);
+
     // read EXIF data for thumbnail information
     switch (info.mFormat) {
         case MTP_FORMAT_EXIF_JPEG:
@@ -966,6 +977,7 @@ MtpResponseCode MyMtpDatabase::getObjectFilePath(MtpObjectHandle handle,
     jint result = env->CallIntMethod(mDatabase, method_getObjectFilePath,
                 (jint)handle, mStringBuffer, mLongBuffer);
     if (result != MTP_RESPONSE_OK) {
+        ALOGD("getObjectFilePath, result = 0x%x", result);
         checkAndClearExceptionFromCallback(env, __FUNCTION__);
         return result;
     }

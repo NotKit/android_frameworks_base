@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,6 +34,7 @@ import android.content.Intent;
 import android.content.res.Resources;
 import android.content.res.TypedArray;
 import android.content.res.XmlResourceParser;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
@@ -36,6 +42,7 @@ import android.os.Parcel;
 import android.os.Parcelable;
 import android.text.TextUtils;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.util.TypedValue;
 import android.util.Xml;
 import android.view.LayoutInflater;
@@ -128,6 +135,7 @@ public abstract class PreferenceActivity extends ListActivity implements
         PreferenceFragment.OnPreferenceStartFragmentCallback {
 
     private static final String TAG = "PreferenceActivity";
+    private static final boolean DBG = "eng".equals(Build.TYPE);
 
     // Constants for state save/restore
     private static final String HEADERS_TAG = ":android:headers";
@@ -230,9 +238,17 @@ public abstract class PreferenceActivity extends ListActivity implements
         public void handleMessage(Message msg) {
             switch (msg.what) {
                 case MSG_BIND_PREFERENCES: {
+                    if (DBG) {
+                        Log.d(TAG, "handleMessage, MSG_BIND_PREFERENCES");
+                    }
+
                     bindPreferences();
                 } break;
                 case MSG_BUILD_HEADERS: {
+                    if (DBG) {
+                        Log.d(TAG, "handleMessage, MSG_BUILD_HEADERS");
+                    }
+
                     ArrayList<Header> oldHeaders = new ArrayList<Header>(mHeaders);
                     mHeaders.clear();
                     onBuildHeaders(mHeaders);
@@ -565,11 +581,24 @@ public abstract class PreferenceActivity extends ListActivity implements
         int initialTitle = getIntent().getIntExtra(EXTRA_SHOW_FRAGMENT_TITLE, 0);
         int initialShortTitle = getIntent().getIntExtra(EXTRA_SHOW_FRAGMENT_SHORT_TITLE, 0);
 
+        if (DBG) {
+            Log.d(TAG, "onCreate, hidingHeaders = " + hidingHeaders +
+                    ", mSinglePane = " + mSinglePane);
+        }
+
         if (savedInstanceState != null) {
+            if (DBG) {
+                Log.d(TAG, "    Restarts from a previous saved state.");
+            }
+
             // We are restarting from a previous saved state; used that to
             // initialize, instead of starting fresh.
             ArrayList<Header> headers = savedInstanceState.getParcelableArrayList(HEADERS_TAG);
             if (headers != null) {
+                if (DBG) {
+                    Log.d(TAG, "    Get previous headers from parcelable array list.");
+                }
+
                 mHeaders.addAll(headers);
                 int curHeader = savedInstanceState.getInt(CUR_HEADER_TAG,
                         (int) HEADER_ID_UNDEFINED);
@@ -579,7 +608,15 @@ public abstract class PreferenceActivity extends ListActivity implements
             }
 
         } else {
+            if (DBG) {
+                Log.d(TAG, "    Start a new activity.");
+            }
+
             if (initialFragment != null && mSinglePane) {
+                if (DBG) {
+                    Log.d(TAG, "    Show a fragment from EXTRA_SHOW_FRAGMENT.");
+                }
+
                 // If we are just showing a fragment, we want to run in
                 // new fragment mode, but don't need to compute and show
                 // the headers.
@@ -599,6 +636,10 @@ public abstract class PreferenceActivity extends ListActivity implements
                 // them and, depending on the screen, we may also show in-line
                 // the currently selected preference fragment.
                 if (mHeaders.size() > 0) {
+                    if (DBG) {
+                        Log.d(TAG, "    Build headers successfully.");
+                    }
+
                     if (!mSinglePane) {
                         if (initialFragment == null) {
                             Header h = onGetInitialHeader();
@@ -614,6 +655,10 @@ public abstract class PreferenceActivity extends ListActivity implements
         // The default configuration is to only show the list view.  Adjust
         // visibility for other configurations.
         if (initialFragment != null && mSinglePane) {
+            if (DBG) {
+                Log.d(TAG, "    Single pane, showing just a prefs fragment.");
+            }
+
             // Single pane, showing just a prefs fragment.
             findViewById(com.android.internal.R.id.headers).setVisibility(View.GONE);
             mPrefsContainer.setVisibility(View.VISIBLE);
@@ -624,6 +669,10 @@ public abstract class PreferenceActivity extends ListActivity implements
                 showBreadCrumbs(initialTitleStr, initialShortTitleStr);
             }
         } else if (mHeaders.size() > 0) {
+            if (DBG) {
+                Log.d(TAG, "    Set list adapter created from headers.");
+            }
+
             setListAdapter(new HeaderAdapter(this, mHeaders, mPreferenceHeaderItemResId,
                     mPreferenceHeaderRemoveEmptyIcon));
             if (!mSinglePane) {
@@ -635,6 +684,10 @@ public abstract class PreferenceActivity extends ListActivity implements
                 mPrefsContainer.setVisibility(View.VISIBLE);
             }
         } else {
+            if (DBG) {
+                Log.d(TAG, "    In the old \"just show a screen of preferences\" mode.");
+            }
+
             // If there are no headers, we are in the old "just show a screen
             // of preferences" mode.
             setContentView(com.android.internal.R.layout.preference_list_content_single);
@@ -647,6 +700,9 @@ public abstract class PreferenceActivity extends ListActivity implements
         // see if we should show Back/Next buttons
         Intent intent = getIntent();
         if (intent.getBooleanExtra(EXTRA_PREFS_SHOW_BUTTON_BAR, false)) {
+            if (DBG) {
+                Log.d(TAG, "    Initialize button bar.");
+            }
 
             findViewById(com.android.internal.R.id.button_bar).setVisibility(View.VISIBLE);
 
@@ -805,6 +861,10 @@ public abstract class PreferenceActivity extends ListActivity implements
      * @param target The list in which the parsed headers should be placed.
      */
     public void loadHeadersFromResource(@XmlRes int resid, List<Header> target) {
+        if (DBG) {
+            Log.d(TAG, "loadHeadersFromResource");
+        }
+
         XmlResourceParser parser = null;
         try {
             parser = getResources().getXml(resid);
@@ -958,6 +1018,10 @@ public abstract class PreferenceActivity extends ListActivity implements
 
     @Override
     protected void onStop() {
+        if (DBG) {
+            Log.d(TAG, "onStop");
+        }
+
         super.onStop();
 
         if (mPreferenceManager != null) {
@@ -967,6 +1031,10 @@ public abstract class PreferenceActivity extends ListActivity implements
 
     @Override
     protected void onDestroy() {
+        if (DBG) {
+            Log.d(TAG, "onDestroy");
+        }
+
         mHandler.removeMessages(MSG_BIND_PREFERENCES);
         mHandler.removeMessages(MSG_BUILD_HEADERS);
         super.onDestroy();
@@ -979,6 +1047,10 @@ public abstract class PreferenceActivity extends ListActivity implements
     @Override
     protected void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);
+
+        if (DBG) {
+            Log.d(TAG, "onSaveInstanceState");
+        }
 
         if (mHeaders.size() > 0) {
             outState.putParcelableArrayList(HEADERS_TAG, mHeaders);
@@ -1002,6 +1074,10 @@ public abstract class PreferenceActivity extends ListActivity implements
 
     @Override
     protected void onRestoreInstanceState(Bundle state) {
+        if (DBG) {
+            Log.d(TAG, "onRestoreInstanceState");
+        }
+
         if (mPreferenceManager != null) {
             Bundle container = state.getBundle(PREFERENCES_TAG);
             if (container != null) {
@@ -1039,6 +1115,10 @@ public abstract class PreferenceActivity extends ListActivity implements
 
     @Override
     protected void onListItemClick(ListView l, View v, int position, long id) {
+        if (DBG) {
+            Log.d(TAG, "onListItemClick, position = " + position + ", id = " + id);
+        }
+
         if (!isResumed()) {
             return;
         }
@@ -1062,6 +1142,10 @@ public abstract class PreferenceActivity extends ListActivity implements
     public void onHeaderClick(Header header, int position) {
         if (header.fragment != null) {
             if (mSinglePane) {
+                if (DBG) {
+                    Log.d(TAG, "onHeaderClick, single pane and startWithFragment.");
+                }
+
                 int titleRes = header.breadCrumbTitleRes;
                 int shortTitleRes = header.breadCrumbShortTitleRes;
                 if (titleRes == 0) {
@@ -1071,9 +1155,17 @@ public abstract class PreferenceActivity extends ListActivity implements
                 startWithFragment(header.fragment, header.fragmentArguments, null, 0,
                         titleRes, shortTitleRes);
             } else {
+                if (DBG) {
+                    Log.d(TAG, "onHeaderClick, multiple pane and switchToHeader.");
+                }
+
                 switchToHeader(header);
             }
         } else if (header.intent != null) {
+            if (DBG) {
+                Log.d(TAG, "onHeaderClick, start activity with header intent.");
+            }
+
             startActivity(header.intent);
         }
     }
@@ -1500,6 +1592,10 @@ public abstract class PreferenceActivity extends ListActivity implements
      */
     @Deprecated
     public void addPreferencesFromIntent(Intent intent) {
+        if (DBG) {
+            Log.d(TAG, "addPreferencesFromIntent, intent = " + intent);
+        }
+
         requirePreferenceManager();
 
         setPreferenceScreen(mPreferenceManager.inflateFromIntent(intent, getPreferenceScreen()));
@@ -1516,6 +1612,10 @@ public abstract class PreferenceActivity extends ListActivity implements
      */
     @Deprecated
     public void addPreferencesFromResource(int preferencesResId) {
+        if (DBG) {
+            Log.d(TAG, "addPreferencesFromResource, preferencesResId = " + preferencesResId);
+        }
+
         requirePreferenceManager();
 
         setPreferenceScreen(mPreferenceManager.inflateFromResource(this, preferencesResId,

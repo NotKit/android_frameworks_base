@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2008 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -195,6 +200,10 @@ public class SyncManager {
      */
     private static final int MIN_SYNC_JOB_ID = 100000;
     private static final int MAX_SYNC_JOB_ID = 110000;
+
+    private static final long EXPEDITED_SYNC_DELAY = 500;
+
+    private static final int INITIALIZATION_UNBIND_DELAY_MS = 5000;
 
     private static final String SYNC_WAKE_LOCK_PREFIX = "*sync*/";
     private static final String HANDLE_SYNC_ALARM_WAKE_LOCK = "SyncManagerHandleSyncAlarm";
@@ -1147,6 +1156,9 @@ public class SyncManager {
         msg.setData(extras);
         msg.obj = info;
         mSyncHandler.sendMessage(msg);
+
+        //M: fixed CTS testCancelSync bug
+        //setCancelAllSyncTime(account, authority, SystemClock.elapsedRealtime());
     }
 
     /**

@@ -55,6 +55,11 @@ public class FloatingActionMode extends ActionMode {
     private final View mOriginatingView;
     private final int mBottomAllowance;
 
+    // M: need to reposition floating toolbar if viewport changes.
+    // Refer ALPS02525882 for issue details.
+    private final Rect mViewPortOnScreen;
+    private final Rect mPreviousViewPortOnScreen;
+
     private final Runnable mMovingOff = new Runnable() {
         public void run() {
             mFloatingToolbarVisibilityHelper.setMoving(false);
@@ -91,6 +96,8 @@ public class FloatingActionMode extends ActionMode {
         mContentRect = new Rect();
         mContentRectOnScreen = new Rect();
         mPreviousContentRectOnScreen = new Rect();
+        mViewPortOnScreen = new Rect();
+        mPreviousViewPortOnScreen = new Rect();
         mViewPositionOnScreen = new int[2];
         mPreviousViewPositionOnScreen = new int[2];
         mRootViewPositionOnScreen = new int[2];
@@ -181,6 +188,8 @@ public class FloatingActionMode extends ActionMode {
             mContentRectOnScreen.offset(mViewPositionOnScreen[0], mViewPositionOnScreen[1]);
         }
 
+        mOriginatingView.getWindowVisibleDisplayFrame(mViewPortOnScreen);
+
         if (isContentRectWithinBounds()) {
             mFloatingToolbarVisibilityHelper.setOutOfBounds(false);
             // Make sure that content rect is not out of the view's visible bounds.
@@ -191,7 +200,9 @@ public class FloatingActionMode extends ActionMode {
                     Math.min(mContentRectOnScreen.bottom,
                             mViewRectOnScreen.bottom + mBottomAllowance));
 
-            if (!mContentRectOnScreen.equals(mPreviousContentRectOnScreen)) {
+
+            if (!mContentRectOnScreen.equals(mPreviousContentRectOnScreen) ||
+                    !mViewPortOnScreen.equals(mPreviousViewPortOnScreen)) {
                 // Content rect is moving.
                 mOriginatingView.removeCallbacks(mMovingOff);
                 mFloatingToolbarVisibilityHelper.setMoving(true);
@@ -207,6 +218,7 @@ public class FloatingActionMode extends ActionMode {
         mFloatingToolbarVisibilityHelper.updateToolbarVisibility();
 
         mPreviousContentRectOnScreen.set(mContentRectOnScreen);
+        mPreviousViewPortOnScreen.set(mViewPortOnScreen);
     }
 
     private boolean isContentRectWithinBounds() {

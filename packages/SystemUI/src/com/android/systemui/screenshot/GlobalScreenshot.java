@@ -48,6 +48,7 @@ import android.os.Environment;
 import android.os.Process;
 import android.provider.MediaStore;
 import android.util.DisplayMetrics;
+import android.util.Log;
 import android.view.Display;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
@@ -518,6 +519,11 @@ class GlobalScreenshot {
         data.previewheight = mPreviewHeight;
         if (mSaveInBgTask != null) {
             mSaveInBgTask.cancel(false);
+        }
+        /// M: Bug fix ALPS02570218, avoid the null pointer before saving image.
+        if (data.image == null) {
+            Log.d("saveScreenshotInWorkerThread", "The image is null before saving it!");
+            return;
         }
         mSaveInBgTask = new SaveImageInBackgroundTask(mContext, data, mNotificationManager)
                 .execute();

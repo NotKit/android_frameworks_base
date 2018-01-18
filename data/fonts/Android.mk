@@ -1,3 +1,8 @@
+#
+# Copyright (C) 2014 MediaTek Inc.
+# Modification based on code covered by the mentioned copyright
+# and/or permission notice(s).
+#
 # Copyright (C) 2011 The Android Open Source Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -111,3 +116,6 @@ endif
 fontchain_lint: $(FONTCHAIN_LINTER) $(TARGET_OUT)/etc/fonts.xml $(PRODUCT_OUT)/system.img
 	PYTHONPATH=$$PYTHONPATH:external/fonttools/Lib \
 	python $(FONTCHAIN_LINTER) $(TARGET_OUT) $(CHECK_EMOJI) external/unicode
+
+# Use the following to include the added fonts.
+include $(call all-makefiles-under,$(LOCAL_PATH))

@@ -21,6 +21,8 @@
 #include <utils/Log.h>
 #include <utils/String8.h>
 #include <map>
+/// M: [ProgramBinaryAtlas] For using program atlas.
+#include "mediatek/MTKProgramAtlas.h"
 
 #include <GLES2/gl2.h>
 
@@ -40,12 +42,37 @@ namespace uirenderer {
  */
 class ProgramCache {
 public:
-    ProgramCache(Extensions& extensions);
-    ~ProgramCache();
+    ANDROID_API ProgramCache(Extensions& extensions);
+    ANDROID_API ~ProgramCache();
 
     Program* get(const ProgramDescription& description);
 
     void clear();
+
+    /**
+     * M: [ProgramBinaryAtlas] Create program and its mapping table, return the total memory size
+     * for caching programs binaries, and update the correct mapLength.
+     *
+     * The mapping will be ProgramKey, Offset, Length, "ProgramId", ProgramKey, Offset...
+     */
+    ANDROID_API int createPrograms(int64_t* map, int* mapLength);
+
+    /**
+     * M: [ProgramBinaryAtlas] Load program binaries to the buffer, delete programs, and update the map
+     *
+     * The mapping will be ProgramKey, Offset, Length, "Format", ProgramKey, Offset...
+     */
+    static ANDROID_API void loadProgramBinariesAndDelete(int64_t* map, int mapLength, void* buffer, int length);
+
+    /**
+     * M: Initialize program cache.
+     */
+    void init();
+
+    /**
+     * M: save program keys to disk, keys are used to preload programs when initializing
+     */
+    void saveToDisk();
 
 private:
     Program* generateProgram(const ProgramDescription& description, programid key);
@@ -59,6 +86,8 @@ private:
     std::map<programid, std::unique_ptr<Program>> mCache;
 
     const bool mHasES3;
+    /// M: [ProgramBinaryAtlas] Program atlas for caching program binaries.
+    ProgramAtlas programAtlas;
 }; // class ProgramCache
 
 }; // namespace uirenderer

@@ -52,7 +52,7 @@ public final class PdfManipulationService extends Service {
     public static final int ERROR_SECURE_PDF_FILE = -3;
 
     private static final String LOG_TAG = "PdfManipulationService";
-    private static final boolean DEBUG = false;
+    private static final boolean DEBUG = true;
 
     private static final int MILS_PER_INCH = 1000;
     private static final int POINTS_IN_INCH = 72;
@@ -259,7 +259,13 @@ public final class PdfManipulationService extends Service {
                     }
 
                     for (int j = range.getEnd(); j >= range.getStart(); j--) {
-                        mEditor.removePage(j);
+                        ///M: Only page in document should be removed, just
+                        //Leave those who are not in file. @{
+                        int mPageCount = mEditor.getPageCount();
+                        if ((j >= 0) && (j <= mPageCount)) {
+                            mEditor.removePage(j);
+                        }
+                        ///M: @}
                     }
                 }
             }

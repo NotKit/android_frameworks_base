@@ -33,6 +33,7 @@ import android.content.pm.PackageManager.NameNotFoundException;
 import android.content.pm.UserInfo;
 import android.net.Uri;
 import android.os.INetworkManagementService;
+import android.os.Process;
 import android.os.RemoteException;
 import android.os.UserHandle;
 import android.os.UserManager;
@@ -167,6 +168,7 @@ public class PermissionMonitor {
 
     private boolean hasRestrictedNetworkPermission(PackageInfo app) {
         int flags = app.applicationInfo != null ? app.applicationInfo.flags : 0;
+        log("Permissions flag:" + Integer.toBinaryString(flags));
         if ((flags & FLAG_SYSTEM) != 0 || (flags & FLAG_UPDATED_SYSTEM_APP) != 0) {
             return true;
         }
@@ -188,6 +190,12 @@ public class PermissionMonitor {
         for (Entry<Integer, Boolean> app : apps.entrySet()) {
             List<Integer> list = app.getValue() ? system : network;
             for (int user : users) {
+                // M: Do not remove system uid permission. Some China app or engineer will remove
+                // sharedUid = system app.
+                if (!add && app.getKey()== Process.SYSTEM_UID) {
+                    log("Ignore remove SYSTEM_UID permission !");
+                    continue;
+                }
                 list.add(UserHandle.getUid(user, app.getKey()));
             }
         }
@@ -238,6 +246,7 @@ public class PermissionMonitor {
             PackageInfo app = mPackageManager.getPackageInfo(appName, GET_PERMISSIONS);
             boolean isNetwork = hasNetworkPermission(app);
             boolean hasRestrictedPermission = hasRestrictedNetworkPermission(app);
+            log("isNetwork:" + isNetwork + ",hasRestrictedPermission:" + hasRestrictedNetworkPermission(app));
             if (isNetwork || hasRestrictedPermission) {
                 Boolean permission = mApps.get(appUid);
                 // If multiple packages share a UID (cf: android:sharedUserId) and ask for different

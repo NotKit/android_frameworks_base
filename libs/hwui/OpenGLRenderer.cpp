@@ -700,8 +700,15 @@ bool OpenGLRenderer::createFboLayer(Layer* layer, Rect& bounds, Rect& clip) {
 
     // Clear the FBO, expand the clear region by 1 to get nice bilinear filtering
     mRenderState.scissor().setEnabled(true);
-    mRenderState.scissor().set(clip.left - 1.0f, bounds.getHeight() - clip.bottom - 1.0f,
-            clip.getWidth() + 2.0f, clip.getHeight() + 2.0f);
+    if (CC_LIKELY(g_HWUI_debug_enhancement)) {
+        /// M: [ALPS01846243] Don't expand the clear region by 1 due to fragment shader precision issue,
+        /// current gFS_Header is using precision mediump not highp, it leads to the alpha blending artifacts
+        mRenderState.scissor().set(clip.left, bounds.getHeight() - clip.bottom,
+                clip.getWidth(), clip.getHeight());
+    } else {
+        mRenderState.scissor().set(clip.left - 1.0f, bounds.getHeight() - clip.bottom - 1.0f,
+                clip.getWidth() + 2.0f, clip.getHeight() + 2.0f);
+    }
     glClear(GL_COLOR_BUFFER_BIT);
 
     dirtyClip();

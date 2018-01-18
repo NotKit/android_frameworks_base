@@ -37,6 +37,7 @@ import android.util.ArraySet;
 import android.util.AttributeSet;
 import android.view.Display;
 import android.view.View;
+import android.util.Log;
 import android.widget.TextView;
 
 import com.android.systemui.DemoMode;
@@ -72,6 +73,11 @@ public class Clock extends TextView implements DemoMode, Tunable {
     private boolean mShowSeconds;
     private Handler mSecondsHandler;
 
+    /// M: For Debug @ {
+    final static String TAG = "Clock";
+    static final boolean DEBUG = true;
+    /// @ }
+
     public Clock(Context context) {
         this(context, null);
     }
@@ -87,7 +93,7 @@ public class Clock extends TextView implements DemoMode, Tunable {
                 R.styleable.Clock,
                 0, 0);
         try {
-            mAmPmStyle = a.getInt(R.styleable.Clock_amPmStyle, AM_PM_STYLE_GONE);
+            mAmPmStyle = a.getInt(R.styleable.Clock_amPmStyle, AM_PM_STYLE_NORMAL);
         } finally {
             a.recycle();
         }
@@ -143,6 +149,10 @@ public class Clock extends TextView implements DemoMode, Tunable {
                 mCalendar = Calendar.getInstance(TimeZone.getTimeZone(tz));
                 if (mClockFormat != null) {
                     mClockFormat.setTimeZone(mCalendar.getTimeZone());
+                }
+                if (DEBUG) {
+                    Log.d(TAG, "onReceive : ACTION_TIMEZONE_CHANGED : " + mCalendar);
+                    Log.d(TAG, "TimeZone =" + TimeZone.getTimeZone(tz));
                 }
             } else if (action.equals(Intent.ACTION_CONFIGURATION_CHANGED)) {
                 final Locale newLocale = getResources().getConfiguration().locale;

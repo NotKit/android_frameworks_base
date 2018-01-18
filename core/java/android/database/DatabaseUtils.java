@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -452,13 +457,49 @@ public class DatabaseUtils {
 
     private static byte[] getCollationKeyInBytes(String name) {
         if (mColl == null) {
-            mColl = Collator.getInstance();
+            /** M: Update search key when Locale changed @{ */
+            mLocale = Locale.getDefault();
+            mColl = Collator.getInstance(mLocale);
+            /** @} */
             mColl.setStrength(Collator.PRIMARY);
         }
         return mColl.getCollationKey(name).toByteArray();
     }
 
     private static Collator mColl = null;
+
+    /** M: Update search key when Locale changed @{ */
+    private static Locale mLocale = null;
+
+    /**
+     * Return the locale for inner Collator
+     * used by getCollationKey() and getHexCollationKey().
+     * @return mLocale the current set locale
+     * @hide
+     * @internal
+     */
+    public static Locale getCollatorLocale() {
+        return mLocale;
+    }
+
+    /**
+     * Set the locale for inner Collator
+     * used by getCollationKey() and getHexCollationKey().
+     * @param locale the locale that want to be set
+     * @hide
+     * @internal
+     */
+    public static void setCollatorLocale(Locale locale) {
+        if (locale != null) {
+            mLocale = locale;
+            mColl = Collator.getInstance(mLocale);
+            mColl.setStrength(Collator.PRIMARY);
+        } else {
+            Log.e(TAG, "setCollatorLocale error, locale=null!");
+        }
+    }
+    /** @} */
+
     /**
      * Prints the contents of a Cursor to System.out. The position is restored
      * after printing.

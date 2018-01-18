@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -44,11 +49,23 @@ public class SortCursor extends AbstractCursor
             // Reset our position so the optimizations in move-related code
             // don't screw us over
             mPos = -1;
+            /// M: when data is changed, cache will be invalidated. so reset these values. @{
+            for (int i = mRowNumCache.length - 1; i >= 0; i--) {
+                mRowNumCache[i] = -2;
+            }
+            mLastCacheHit = -1;
+            /// M: @}
         }
 
         @Override
         public void onInvalidated() {
             mPos = -1;
+            /// M: when data is Invalidated, cache will be invalidated too. so reset these values @{
+            for (int i = mRowNumCache.length - 1; i >= 0; i--) {
+                mRowNumCache[i] = -2;
+            }
+            mLastCacheHit = -1;
+            /// M: @}
         }
     };
     
@@ -264,6 +281,7 @@ public class SortCursor extends AbstractCursor
 
     @Override
     public void close() {
+        super.close();
         int length = mCursors.length;
         for (int i = 0 ; i < length ; i++) {
             if (mCursors[i] == null) continue;
@@ -277,6 +295,13 @@ public class SortCursor extends AbstractCursor
         for (int i = 0 ; i < length ; i++) {
             if (mCursors[i] != null) {
                 mCursors[i].registerDataSetObserver(observer);
+                /// M: SortCursor's behavior is affected by the value of mPos,mRowNumCache,mLastCacheHit.
+                /// M: if mCursors's data is changed,these values must be reset first befor other
+                /// M: observers is notified,such as AdapterView. However, DatabaSetObserver is
+                /// M: implemented in a way that firt register last notified. so sortCursor should
+                /// M: registerContentObserver after AdapterView do it
+                mCursors[i].unregisterDataSetObserver(mObserver);
+                mCursors[i].registerDataSetObserver(mObserver);
             }
         }
     }

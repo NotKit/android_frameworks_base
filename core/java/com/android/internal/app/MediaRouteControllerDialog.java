@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -51,10 +56,11 @@ public class MediaRouteControllerDialog extends Dialog {
     // to allow the route provider time to propagate the change and publish a new
     // route descriptor.
     private static final int VOLUME_UPDATE_DELAY_MILLIS = 250;
-
     private final MediaRouter mRouter;
     private final MediaRouterCallback mCallback;
-    private final MediaRouter.RouteInfo mRoute;
+    /// M: workaround for wfd's status in settings @{
+    private /*final*/ MediaRouter.RouteInfo mRoute;
+    /// @}
 
     private boolean mCreated;
     private Drawable mMediaRouteConnectingDrawable;
@@ -69,13 +75,40 @@ public class MediaRouteControllerDialog extends Dialog {
     private View mControlView;
 
     private Button mDisconnectButton;
-
+    /// M: workaround for wfd's status in settings @{
+    private boolean mIsWfd = false;
+    /// @}
     public MediaRouteControllerDialog(Context context, int theme) {
         super(context, theme);
 
         mRouter = (MediaRouter) context.getSystemService(Context.MEDIA_ROUTER_SERVICE);
         mCallback = new MediaRouterCallback();
+
         mRoute = mRouter.getSelectedRoute();
+        /// M: workaround for wfd's status in settings @{
+        int supportedTypes = mRoute.getSupportedTypes();
+        int statusCode = mRoute.getStatusCode();
+        // if it is type of wfd, select the connected dongle.
+        boolean shouldRepick = (((supportedTypes & MediaRouter.ROUTE_TYPE_REMOTE_DISPLAY) != 0)
+                && (statusCode != MediaRouter.RouteInfo.STATUS_CONNECTING)
+                && (statusCode != MediaRouter.RouteInfo.STATUS_CONNECTED));
+        if (shouldRepick) {
+            final int routeCount = mRouter.getRouteCount();
+            for (int i = 0; i < routeCount; i++) {
+                MediaRouter.RouteInfo r = mRouter.getRouteAt(i);
+                if (r.matchesTypes(MediaRouter.ROUTE_TYPE_REMOTE_DISPLAY)) {
+                    int status = r.getStatusCode();
+                    if (status == MediaRouter.RouteInfo.STATUS_CONNECTING
+                            || status == MediaRouter.RouteInfo.STATUS_CONNECTED) {
+                        mRoute = r;
+                        mIsWfd = true;
+                        break;
+                    }
+
+                }
+            }
+        }
+        /// @}
     }
 
     /**
@@ -180,6 +213,15 @@ public class MediaRouteControllerDialog extends Dialog {
         mDisconnectButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                /// M: workaround for wfd's status in settings @{
+                if (mIsWfd) {
+                    int status = mRoute.getStatusCode();
+                    if (status == MediaRouter.RouteInfo.STATUS_CONNECTING
+                            || status == MediaRouter.RouteInfo.STATUS_CONNECTED) {
+                        mRouter.getDefaultRoute().select();
+                    }
+                } else
+                /// @}
                 if (mRoute.isSelected()) {
                     mRouter.getDefaultRoute().select();
                 }
@@ -237,6 +279,16 @@ public class MediaRouteControllerDialog extends Dialog {
     }
 
     private boolean update() {
+        /// M: workaround for wfd's status in settings @{
+        if (mIsWfd) {
+            int status = mRoute.getStatusCode();
+            if (status != MediaRouter.RouteInfo.STATUS_CONNECTING
+                    && status != MediaRouter.RouteInfo.STATUS_CONNECTED) {
+                dismiss();
+                return false;
+            }
+        } else
+        /// @}
         if (!mRoute.isSelected() || mRoute.isDefault()) {
             dismiss();
             return false;

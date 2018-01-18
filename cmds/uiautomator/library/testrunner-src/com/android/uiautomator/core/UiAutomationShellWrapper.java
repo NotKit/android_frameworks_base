@@ -10,13 +10,15 @@ import android.app.UiAutomationConnection;
 import android.content.Intent;
 import android.os.HandlerThread;
 import android.os.RemoteException;
+import android.util.Log;
 
 /**
  * @hide
  */
 public class UiAutomationShellWrapper {
 
-    private static final String HANDLER_THREAD_NAME = "UiAutomatorHandlerThread";
+    private static final String TAG = "UiAutomationShellWrapper";
+    private static final String HANDLER_THREAD_NAME = "UiAutomationShellWrapper-UiAutomatorHandlerThread";
 
     private final HandlerThread mHandlerThread = new HandlerThread(HANDLER_THREAD_NAME);
 
@@ -64,7 +66,12 @@ public class UiAutomationShellWrapper {
             throw new IllegalStateException("Already disconnected!");
         }
         mUiAutomation.disconnect();
-        mHandlerThread.quit();
+        boolean quit_result = mHandlerThread.quitSafely();
+        Log.i(TAG, "disconnect finished, HandlerThread Quit result " + quit_result);
+        try {
+            mHandlerThread.join();
+        } catch (InterruptedException e) {
+        }
     }
 
     public UiAutomation getUiAutomation() {

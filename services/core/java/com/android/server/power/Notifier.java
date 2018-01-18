@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2012 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -71,7 +76,7 @@ import android.view.inputmethod.InputMethodManagerInternal;
 final class Notifier {
     private static final String TAG = "PowerManagerNotifier";
 
-    private static final boolean DEBUG = false;
+    private static final boolean DEBUG = true;
 
     private static final int INTERACTIVE_STATE_UNKNOWN = 0;
     private static final int INTERACTIVE_STATE_AWAKE = 1;
@@ -403,6 +408,9 @@ final class Notifier {
                     @Override
                     public void run() {
                         EventLog.writeEvent(EventLogTags.POWER_SCREEN_STATE, 1, 0, 0, 0);
+                        if (DEBUG) {
+                            Slog.d(TAG, "handleEarlyInteractiveChange: mPolicy.startedWakingUp");
+                        }
                         mPolicy.startedWakingUp();
                     }
                 });
@@ -477,6 +485,8 @@ final class Notifier {
                 return WindowManagerPolicy.OFF_BECAUSE_OF_ADMIN;
             case PowerManager.GO_TO_SLEEP_REASON_TIMEOUT:
                 return WindowManagerPolicy.OFF_BECAUSE_OF_TIMEOUT;
+            case PowerManager.GO_TO_SLEEP_REASON_PROXIMITY:
+                return WindowManagerPolicy.OFF_BECAUSE_OF_PROX_SENSOR;
             default:
                 return WindowManagerPolicy.OFF_BECAUSE_OF_USER;
         }
@@ -555,6 +565,13 @@ final class Notifier {
     }
 
     private void updatePendingBroadcastLocked() {
+        if (DEBUG) {
+            Slog.d(TAG, "updatePendingBroadcastLocked "
+                        + "mBroadcastInProgress = " + mBroadcastInProgress
+                        + ", mPendingInteractiveState = " + mPendingInteractiveState
+                        + ", mPendingGoToSleepBroadcast = " + mPendingGoToSleepBroadcast
+                        + ", mBroadcastedInteractiveState = " + mBroadcastedInteractiveState);
+        }
         if (!mBroadcastInProgress
                 && mPendingInteractiveState != INTERACTIVE_STATE_UNKNOWN
                 && (mPendingWakeUpBroadcast || mPendingGoToSleepBroadcast
@@ -568,6 +585,10 @@ final class Notifier {
     }
 
     private void finishPendingBroadcastLocked() {
+        if (DEBUG) {
+            Slog.d(TAG, "finishPendingBroadcastLocked");
+        }
+
         mBroadcastInProgress = false;
         mSuspendBlocker.release();
     }
@@ -587,6 +608,15 @@ final class Notifier {
 
     private void sendNextBroadcast() {
         final int powerState;
+
+        if (DEBUG) {
+            Slog.d(TAG, "sendNextBroadcast "
+                        + "mBroadcastedInteractiveState = " + mBroadcastedInteractiveState
+                        + ", mPendingInteractiveState = " + mPendingInteractiveState
+                        + ", mPendingWakeUpBroadcast = " + mPendingWakeUpBroadcast
+                        + ", mPendingGoToSleepBroadcast = " + mPendingGoToSleepBroadcast);
+        }
+
         synchronized (mLock) {
             if (mBroadcastedInteractiveState == INTERACTIVE_STATE_UNKNOWN) {
                 // Broadcasted power state is unknown.  Send wake up.
@@ -645,10 +675,13 @@ final class Notifier {
 
     private void sendWakeUpBroadcast() {
         if (DEBUG) {
-            Slog.d(TAG, "Sending wake up broadcast.");
+            Slog.d(TAG, "sendWakeUpBroadcast");
         }
 
         if (ActivityManagerNative.isSystemReady()) {
+            if (DEBUG) {
+                Slog.d(TAG, "sendWakeUpBroadcast - sendOrderedBroadcastAsUser");
+            }
             mContext.sendOrderedBroadcastAsUser(mScreenOnIntent, UserHandle.ALL, null,
                     mWakeUpBroadcastDone, mHandler, 0, null, null);
         } else {
@@ -660,6 +693,9 @@ final class Notifier {
     private final BroadcastReceiver mWakeUpBroadcastDone = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
+            if (DEBUG) {
+                Slog.d(TAG, "mWakeUpBroadcastDone - sendNextBroadcast");
+            }
             EventLog.writeEvent(EventLogTags.POWER_SCREEN_BROADCAST_DONE, 1,
                     SystemClock.uptimeMillis() - mBroadcastStartTime, 1);
             sendNextBroadcast();
@@ -668,10 +704,13 @@ final class Notifier {
 
     private void sendGoToSleepBroadcast() {
         if (DEBUG) {
-            Slog.d(TAG, "Sending go to sleep broadcast.");
+            Slog.d(TAG, "sendGoToSleepBroadcast");
         }
 
         if (ActivityManagerNative.isSystemReady()) {
+            if (DEBUG) {
+                Slog.d(TAG, "sendGoToSleepBroadcast - sendOrderedBroadcastAsUser");
+            }
             mContext.sendOrderedBroadcastAsUser(mScreenOffIntent, UserHandle.ALL, null,
                     mGoToSleepBroadcastDone, mHandler, 0, null, null);
         } else {
@@ -683,6 +722,9 @@ final class Notifier {
     private final BroadcastReceiver mGoToSleepBroadcastDone = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
+            if (DEBUG) {
+                Slog.d(TAG, "mGoToSleepBroadcastDone - sendNextBroadcast");
+            }
             EventLog.writeEvent(EventLogTags.POWER_SCREEN_BROADCAST_DONE, 0,
                     SystemClock.uptimeMillis() - mBroadcastStartTime, 1);
             sendNextBroadcast();

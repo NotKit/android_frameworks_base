@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -991,6 +996,20 @@ public abstract class AbsSeekBar extends ProgressBar {
             // for invalidation won't be the actual bounds we want invalidated,
             // so just invalidate this whole view.
             invalidate();
+        }
+    }
+
+    @Override
+    public void invalidateDrawable(Drawable dr) {
+        if (dr == mThumb) {
+            final Rect dirty = dr.getBounds();
+            final int scrollX = mScrollX + mPaddingLeft - mThumbOffset;
+            final int scrollY = mScrollY + mPaddingTop;
+
+            invalidate(dirty.left + scrollX, dirty.top + scrollY,
+                    dirty.right + scrollX, dirty.bottom + scrollY);
+        } else {
+            super.invalidateDrawable(dr);
         }
     }
 }

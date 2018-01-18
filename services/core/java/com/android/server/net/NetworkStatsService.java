@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -63,6 +68,9 @@ import static com.android.internal.util.Preconditions.checkNotNull;
 import static com.android.server.NetworkManagementService.LIMIT_GLOBAL_ALERT;
 import static com.android.server.NetworkManagementSocketTagger.resetKernelUidStats;
 import static com.android.server.NetworkManagementSocketTagger.setKernelCounterSet;
+
+// M:DataUsage for ViLTE
+import static android.net.TrafficStats.UID_VILTE;
 
 import android.app.AlarmManager;
 import android.app.IAlarmManager;
@@ -132,13 +140,20 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 
+import static android.telephony.TelephonyManager.SIM_STATE_READY;
+import android.telephony.SubscriptionManager;
+import android.os.SystemProperties;
+
 /**
  * Collect and persist detailed network statistics, and provide this data to
  * other system services.
  */
 public class NetworkStatsService extends INetworkStatsService.Stub {
     private static final String TAG = "NetworkStats";
-    private static final boolean LOGV = false;
+    private static final boolean LOGV = true;
+    private static final String PROP_FORCE_DEBUG_KEY = "persist.log.tag.tel_dbg";
+    private static final boolean ENG_DBG = android.util.Log.isLoggable(TAG, android.util.Log.DEBUG)
+        ||(SystemProperties.getInt(PROP_FORCE_DEBUG_KEY, 0) == 1);
 
     private static final int MSG_PERFORM_POLL = 1;
     private static final int MSG_UPDATE_IFACES = 2;
@@ -184,6 +199,14 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
      * Virtual network interface for video telephony. This is for VT data usage counting purpose.
      */
     public static final String VT_INTERFACE = "vt_data0";
+
+    /**
+      *M: ALPS00118758 we prefer not use it. due to some mobile Internet
+      *can't access the ntp server and always timeout.
+      *The timeout impact device's performance.
+    */
+   public static boolean USE_TRUESTED_TIME = false;
+
 
     /**
      * Settings that can be changed externally.
@@ -253,6 +276,9 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
     private long mPersistThreshold = 2 * MB_IN_BYTES;
     private long mGlobalAlertBytes;
 
+    //M:  lower max throughput power consumption under 4g
+    private boolean mIgnoreAlert = false;
+
     private static File getDefaultSystemDir() {
         return new File(Environment.getDataDirectory(), "system");
     }
@@ -304,6 +330,8 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
     void setHandler(Handler handler, Handler.Callback callback) {
         mHandler = handler;
         mHandlerCallback = callback;
+        //M:  lower max throughput power consumption under 4g
+        mIgnoreAlert = false;
     }
 
     public void bindConnectivityManager(IConnectivityManager connManager) {
@@ -356,7 +384,15 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
 
         // persist stats during clean shutdown
         final IntentFilter shutdownFilter = new IntentFilter(ACTION_SHUTDOWN);
+        /// M: add action
+        shutdownFilter.addAction("android.intent.action.ACTION_SHUTDOWN_IPO");
         mContext.registerReceiver(mShutdownReceiver, shutdownFilter);
+
+        //M:  lower max throughput power consumption under 4g
+        final IntentFilter ignoreAlertFilter =
+            new IntentFilter("android.intent.action.IGNORE_DATA_USAGE_ALERT");
+        ignoreAlertFilter.addAction("android.intent.action.IGNORE_DATA_USAGE_ALERT");
+        mContext.registerReceiver(mIgnoreAlertReceiver, ignoreAlertFilter);
 
         try {
             mNetworkManager.registerObserver(mAlertObserver);
@@ -378,13 +414,22 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
     }
 
     private void shutdownLocked() {
+
+        /// M: comment:  Don't unregister due to ACTION_SHUTDOWN_IPO
+        ///systemReady will not be call when IPO power up. @{
+        /*
         mContext.unregisterReceiver(mTetherReceiver);
         mContext.unregisterReceiver(mPollReceiver);
         mContext.unregisterReceiver(mRemovedReceiver);
         mContext.unregisterReceiver(mShutdownReceiver);
+        //M:  lower max throughput power consumption under 4g
+        mContext.unregisterReceiver(mIgnoreAlertReceiver);
 
-        final long currentTime = mTime.hasCache() ? mTime.currentTimeMillis()
-                : System.currentTimeMillis();
+       */
+        /// @}
+        ///M: add USE_TRUESTED_TIME
+        final long currentTime = (mTime.hasCache() && USE_TRUESTED_TIME) ?
+            mTime.currentTimeMillis() : System.currentTimeMillis();
 
         // persist any pending stats
         mDevRecorder.forcePersistLocked(currentTime);
@@ -392,6 +437,10 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
         mUidRecorder.forcePersistLocked(currentTime);
         mUidTagRecorder.forcePersistLocked(currentTime);
 
+
+        /// M: comment:  Don't unregister due to ACTION_SHUTDOWN_IPO
+        ///systemReady will not be call when IPO power up.  @{
+        /*
         mDevRecorder = null;
         mXtRecorder = null;
         mUidRecorder = null;
@@ -400,6 +449,9 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
         mXtStatsCached = null;
 
         mSystemReady = false;
+        */
+        /// @}
+
     }
 
     private void maybeUpgradeLegacyStatsLocked() {
@@ -423,7 +475,8 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
                 file.delete();
             }
         } catch (IOException e) {
-            Log.wtf(TAG, "problem during legacy upgrade", e);
+            ///M: modefied remove wtf
+            Log.e(TAG, "problem during legacy upgrade", e);
         } catch (OutOfMemoryError e) {
             Log.wtf(TAG, "problem during legacy upgrade", e);
         }
@@ -554,6 +607,7 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
             public NetworkStats getSummaryForAllUid(
                     NetworkTemplate template, long start, long end, boolean includeTags) {
                 @NetworkStatsAccess.Level int accessLevel = checkAccessLevel(mCallingPackage);
+                if (ENG_DBG) Log.d(TAG, "getSummaryForAllUid template:" + template);
                 final NetworkStats stats =
                         getUidComplete().getSummary(template, start, end, accessLevel);
                 if (includeTags) {
@@ -561,6 +615,7 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
                             .getSummary(template, start, end, accessLevel);
                     stats.combineAllValues(tagStats);
                 }
+                if (ENG_DBG) Log.d(TAG, "getSummaryForAllUid stats:" + stats);
                 return stats;
             }
 
@@ -599,6 +654,52 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
                 mUidComplete = null;
                 mUidTagComplete = null;
             }
+
+            @Override
+            //M: for MOM
+            public long getMobileTotalBytes(
+                int subSim, long start_time, long end_time) {
+                String subscriberId = null;
+                long totalBytes = 0;
+                NetworkTemplate templete;
+                final TelephonyManager tele = TelephonyManager.from(mContext);
+                if (tele != null) {
+                    try {
+                        if (tele.getSimState(subSim) == SIM_STATE_READY) {
+                            int subId = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
+                            int[] subIds = SubscriptionManager.getSubId(subSim);
+                            if ((subIds != null) && (subIds.length != 0)) {
+                                subId = subIds[0];
+                            }
+
+                            if (!SubscriptionManager.isValidSubscriptionId(subId)){
+                                //Dual sim fetch fail, always fetch sim1
+                                Log.e(TAG, "Dual sim subSim:" + subSim
+                                    + " fetch subID fail, always fetch default");
+                                subId = SubscriptionManager.getDefaultDataSubscriptionId();
+                            }
+
+                            if (SubscriptionManager.isValidSubscriptionId(subId)) {
+                                subscriberId = tele.getSubscriberId(subId);
+                                templete = NetworkTemplate.buildTemplateMobileAll(subscriberId);
+                                totalBytes = getNetworkTotalBytes(templete, start_time, end_time);
+                            } else {
+                                Log.e(TAG, "getMobileTotalBytes subId not valid");
+                            }
+                        } else {
+                            Log.e(TAG, "getMobileTotalBytes SimState != SIM_STATE_READY");
+                        }
+                    } catch (Exception e) {
+                         Log.e(TAG, "getMobileTotalBytes Exception" + e);
+                    }
+                } else {
+                    Log.e(TAG, "getMobileTotalBytes TelephonyManager is null");
+                }
+                Log.v(TAG, "getMobileTotalBytes subSim=" + subSim + " subscriberId" + subscriberId
+                    + " start_time=" + start_time + " end_time" + end_time
+                    + " totalBytes=" + totalBytes);
+                return totalBytes;
+            }
         };
     }
 
@@ -614,6 +715,7 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
     private NetworkStats internalGetSummaryForNetwork(
             NetworkTemplate template, long start, long end,
             @NetworkStatsAccess.Level int accessLevel) {
+        if (ENG_DBG) Log.d(TAG, "internalGetSummaryForNetwork template:" + template);
         // We've been using pure XT stats long enough that we no longer need to
         // splice DEV and XT together.
         return mXtStatsCached.getSummary(template, start, end, accessLevel);
@@ -625,6 +727,7 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
      */
     private NetworkStatsHistory internalGetHistoryForNetwork(NetworkTemplate template, int fields,
             @NetworkStatsAccess.Level int accessLevel) {
+        if (ENG_DBG) Log.d(TAG, "internalGetHistoryForNetwork template:" + template);
         // We've been using pure XT stats long enough that we no longer need to
         // splice DEV and XT together.
         return mXtStatsCached.getHistory(template, UID_ALL, SET_ALL, TAG_NONE, fields, accessLevel);
@@ -634,6 +737,7 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
     public long getNetworkTotalBytes(NetworkTemplate template, long start, long end) {
         // Special case - since this is for internal use only, don't worry about a full access level
         // check and just require the signature/privileged permission.
+        if (ENG_DBG) Log.d(TAG, "getNetworkTotalBytes template:" + template);
         mContext.enforceCallingOrSelfPermission(READ_NETWORK_USAGE_HISTORY, TAG);
         assertBandwidthControlEnabled();
         return internalGetSummaryForNetwork(template, start, end, NetworkStatsAccess.Level.DEVICE)
@@ -709,6 +813,7 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
             final int oldSet = mActiveUidCounterSet.get(uid, SET_DEFAULT);
             if (oldSet != set) {
                 mActiveUidCounterSet.put(uid, set);
+                Slog.v(TAG, "setKernelCounterSet uid=" + uid + " set=" + set);
                 setKernelCounterSet(uid, set);
             }
         }
@@ -753,7 +858,8 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
         }
 
         // update and persist if beyond new thresholds
-        final long currentTime = mTime.hasCache() ? mTime.currentTimeMillis()
+       ///M: add USE_TRUESTED_TIME
+        final long currentTime = (mTime.hasCache() && USE_TRUESTED_TIME)? mTime.currentTimeMillis()
                 : System.currentTimeMillis();
         synchronized (mStatsLock) {
             if (!mSystemReady) return;
@@ -886,6 +992,15 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
         }
     };
 
+    //M:  lower max throughput power consumption under 4g
+    private BroadcastReceiver mIgnoreAlertReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            Log.e(TAG, "[powerdebug]ignoreAlertFilter received");
+            mIgnoreAlert = true;
+        }
+    };
+
     private BroadcastReceiver mShutdownReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -905,7 +1020,13 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
             // only someone like NMS should be calling us
             mContext.enforceCallingOrSelfPermission(CONNECTIVITY_INTERNAL, TAG);
 
-            if (LIMIT_GLOBAL_ALERT.equals(limitName)) {
+            //M:  lower max throughput power consumption under 4g
+            //if (LIMIT_GLOBAL_ALERT.equals(limitName)) {
+            if (mIgnoreAlert) {
+                Log.d(TAG, "[powerdebug]IGNORE_DATA_USAGE_ALERT received, mIgnoreAlert="
+                    + mIgnoreAlert);
+            }
+            if (LIMIT_GLOBAL_ALERT.equals(limitName) && !mIgnoreAlert) {
                 // kick off background poll to collect network stats; UID stats
                 // are handled during normal polling interval.
                 final int flags = FLAG_PERSIST_NETWORK;
@@ -967,7 +1088,7 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
             if (state.networkInfo.isConnected()) {
                 final boolean isMobile = isNetworkTypeMobile(state.networkInfo.getType());
                 final NetworkIdentity ident = NetworkIdentity.buildNetworkIdentity(mContext, state);
-
+                Slog.i(TAG, "NetworkIdentity: " + ident);
                 // Traffic occurring on the base interface is always counted for
                 // both total usage and UID details.
                 final String baseIface = state.linkProperties.getInterfaceName();
@@ -980,6 +1101,7 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
                     // If IMS is metered, then the IMS network usage has already included VT usage.
                     // VT is considered always metered in framework's layer. If VT is not metered
                     // per carrier's policy, modem will report 0 usage for VT calls.
+                    if (LOGV) Slog.i(TAG, "state.networkCapabilities: " + state.networkCapabilities);
                     if (state.networkCapabilities.hasCapability(
                             NetworkCapabilities.NET_CAPABILITY_IMS) && !ident.getMetered()) {
 
@@ -1013,7 +1135,20 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
             }
         }
 
-        mMobileIfaces = mobileIfaces.toArray(new String[mobileIfaces.size()]);
+        for (int i = 0; i < mActiveIfaces.size(); i++) {
+            Slog.i(TAG, "iface:" + mActiveIfaces.keyAt(i));
+            for( NetworkIdentity id : mActiveIfaces.valueAt(i)) {
+                Slog.i(TAG, "ident:" + id );
+            }
+        }
+
+        //mMobileIfaces = mobileIfaces.toArray(new String[mobileIfaces.size()]);
+        //Bugfix: Any ifaces associated with mobile networks since boot, event disconnected
+        for( String iface : mobileIfaces) {
+            if ( iface != null && !ArrayUtils.contains(mMobileIfaces, iface)) {
+                    mMobileIfaces = ArrayUtils.appendElement(String.class, mMobileIfaces, iface);
+            }
+        }
     }
 
     private static <K> NetworkIdentitySet findOrCreateNetworkIdentitySet(
@@ -1031,7 +1166,7 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
         // avoid over counting dev stats.
         final NetworkStats uidSnapshot = getNetworkStatsUidDetail();
         final NetworkStats xtSnapshot = getNetworkStatsXtAndVt();
-        final NetworkStats devSnapshot = mNetworkManager.getNetworkStatsSummaryDev();
+        final NetworkStats devSnapshot = getNetworkStatsSummaryDevAndVt();
 
 
         // For xt/dev, we pass a null VPN array because usage is aggregated by UID, so VPN traffic
@@ -1057,7 +1192,8 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
      * so we have baseline values without double-counting.
      */
     private void bootstrapStatsLocked() {
-        final long currentTime = mTime.hasCache() ? mTime.currentTimeMillis()
+        ///M: add USE_TRUESTED_TIME
+        final long currentTime = (mTime.hasCache() && USE_TRUESTED_TIME) ? mTime.currentTimeMillis()
                 : System.currentTimeMillis();
 
         try {
@@ -1071,7 +1207,8 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
 
     private void performPoll(int flags) {
         // try refreshing time source when stale
-        if (mTime.getCacheAge() > mSettings.getTimeCacheMaxAge()) {
+        ///M: USE_TRUESTED_TIME
+        if (mTime.getCacheAge() > mSettings.getTimeCacheMaxAge() && USE_TRUESTED_TIME ) {
             mTime.forceRefresh();
         }
 
@@ -1101,8 +1238,9 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
         final boolean persistForce = (flags & FLAG_PERSIST_FORCE) != 0;
 
         // TODO: consider marking "untrusted" times in historical stats
-        final long currentTime = mTime.hasCache() ? mTime.currentTimeMillis()
-                : System.currentTimeMillis();
+         ///M: USE_TRUESTED_TIME
+        final long currentTime = (mTime.hasCache() && USE_TRUESTED_TIME) ?
+            mTime.currentTimeMillis() : System.currentTimeMillis();
 
         try {
             recordSnapshotLocked(currentTime);
@@ -1153,7 +1291,9 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
      */
     private void performSampleLocked() {
         // TODO: migrate trustedtime fixes to separate binary log events
-        final long trustedTime = mTime.hasCache() ? mTime.currentTimeMillis() : -1;
+        ///M: USE_TRUESTED_TIME
+        final long trustedTime = (mTime.hasCache()&& USE_TRUESTED_TIME) ?
+            mTime.currentTimeMillis() : -1;
 
         NetworkTemplate template;
         NetworkStats.Entry devTotal;
@@ -1327,12 +1467,74 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
     private NetworkStats getNetworkStatsUidDetail() throws RemoteException {
         final NetworkStats uidSnapshot = mNetworkManager.getNetworkStatsUidDetail(UID_ALL);
 
+        // M:DataUsage for ViLTE
+        TelephonyManager tm = (TelephonyManager) mContext.getSystemService(
+                Context.TELEPHONY_SERVICE);
+        long usage = tm.getVtDataUsage();
+
+        if (LOGV) Slog.d(TAG, "VT call data usage = " + usage);
+
+        final NetworkStats vtSnapshot = new NetworkStats(SystemClock.elapsedRealtime(), 1);
+
+        final NetworkStats.Entry entry = new NetworkStats.Entry();
+        entry.iface = VT_INTERFACE;
+        entry.uid = UID_VILTE;
+        entry.set = SET_DEFAULT;
+        entry.tag = TAG_NONE;
+
+        // Since modem only tell us the total usage instead of each usage for RX and TX,
+        // we need to split it up (though it might not quite accurate). At
+        // least we can make sure the data usage report to the user will still be accurate.
+        entry.rxBytes = usage / 2;
+        entry.rxPackets = 0;
+        entry.txBytes = usage - entry.rxBytes;
+        entry.txPackets = 0;
+        vtSnapshot.combineValues(entry);
+
+        // Merge VT int XT
+        uidSnapshot.combineAllValues(vtSnapshot);
+        // end of M:DataUsage for ViLTE
+
         // fold tethering stats and operations into uid snapshot
         final NetworkStats tetherSnapshot = getNetworkStatsTethering();
         uidSnapshot.combineAllValues(tetherSnapshot);
         uidSnapshot.combineAllValues(mUidOperations);
-
+        if (ENG_DBG) Slog.d(TAG, "uidSnapshot = " + uidSnapshot);
         return uidSnapshot;
+    }
+
+    // M:DataUsage for ViLTE
+    private NetworkStats getNetworkStatsSummaryDevAndVt() throws RemoteException {
+        final NetworkStats devSnapshot = mNetworkManager.getNetworkStatsSummaryDev();
+
+        TelephonyManager tm = (TelephonyManager) mContext.getSystemService(
+                Context.TELEPHONY_SERVICE);
+
+        long usage = tm.getVtDataUsage();
+
+        if (LOGV) Slog.d(TAG, "VT call data usage = " + usage);
+
+        final NetworkStats vtSnapshot = new NetworkStats(SystemClock.elapsedRealtime(), 1);
+
+        final NetworkStats.Entry entry = new NetworkStats.Entry();
+        entry.iface = VT_INTERFACE;
+        entry.uid = UID_ALL;
+        entry.set = SET_ALL;
+        entry.tag = TAG_NONE;
+
+        // Since modem only tell us the total usage instead of each usage for RX and TX,
+        // we need to split it up (though it might not quite accurate). At
+        // least we can make sure the data usage report to the user will still be accurate.
+        entry.rxBytes = usage / 2;
+        entry.rxPackets = 0;
+        entry.txBytes = usage - entry.rxBytes;
+        entry.txPackets = 0;
+        vtSnapshot.combineValues(entry);
+
+        // Merge VT int XT
+        devSnapshot.combineAllValues(vtSnapshot);
+        if (ENG_DBG) Slog.d(TAG, "devSnapshot = " + devSnapshot);
+        return devSnapshot;
     }
 
     /**
@@ -1352,8 +1554,8 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
 
         final NetworkStats.Entry entry = new NetworkStats.Entry();
         entry.iface = VT_INTERFACE;
-        entry.uid = -1;
-        entry.set = TAG_ALL;
+        entry.uid = -1;  // UID_ALL
+        entry.set = SET_ALL;
         entry.tag = TAG_NONE;
 
         // Since modem only tell us the total usage instead of each usage for RX and TX,
@@ -1367,7 +1569,7 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
 
         // Merge VT int XT
         xtSnapshot.combineAllValues(vtSnapshot);
-
+        if (ENG_DBG) Slog.d(TAG, "xtSnapshot = " + xtSnapshot);
         return xtSnapshot;
     }
 
@@ -1379,7 +1581,12 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
         try {
             return mNetworkManager.getNetworkStatsTethering();
         } catch (IllegalStateException e) {
-            Log.wtf(TAG, "problem reading network stats", e);
+    /*M:  [MTK40247] don't throw "What a Terrible Failure"
+     * In the tricked timing, Tethering disable nat and then
+     * NetworkStatsService poll tetnering stats from the iptable cause fail.
+     * Of course, it is an illegal State Exception.
+     */
+            Log.e(TAG, "problem reading network stats" + e);
             return new NetworkStats(0L, 10);
         }
     }
@@ -1394,6 +1601,7 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
 
         @Override
         public boolean handleMessage(Message msg) {
+            if (LOGV) Log.v(TAG, "handleMessage(): msg=" + msg.what);
             switch (msg.what) {
                 case MSG_PERFORM_POLL: {
                     final int flags = msg.arg1;
@@ -1526,5 +1734,10 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
         public long getUidTagPersistBytes(long def) {
             return getGlobalLong(NETSTATS_UID_TAG_PERSIST_BYTES, def);
         }
+    }
+
+    ///M: MTK add
+    public void setUseTrustedTime(boolean b){
+        USE_TRUESTED_TIME = b;
     }
 }

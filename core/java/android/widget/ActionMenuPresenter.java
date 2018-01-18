@@ -799,9 +799,12 @@ public class ActionMenuPresenter extends BaseMenuPresenter
                 ((View) mMenuView).removeOnAttachStateChangeListener(mAttachStateChangeListener);
             }
             mMenuView = menuView;
-            menuView.initialize(mMenu);
             menuView.addOnAttachStateChangeListener(mAttachStateChangeListener);
         }
+
+        // Should always sync menu builder between menu view and presenter.
+        // See 'ALPS02273165' for details. And this is a side-effect of Google commit '575217fc'.
+        menuView.initialize(mMenu);
     }
 
     private static class SavedState implements Parcelable {

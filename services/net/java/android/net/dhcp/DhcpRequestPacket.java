@@ -57,7 +57,8 @@ class DhcpRequestPacket extends DhcpPacket {
      */
     void finishPacket(ByteBuffer buffer) {
         addTlv(buffer, DHCP_MESSAGE_TYPE, DHCP_MESSAGE_TYPE_REQUEST);
-        addTlv(buffer, DHCP_CLIENT_IDENTIFIER, getClientId());
+        //M: disable DHCP_CLIENT_IDENTIFIER due to IOT issue
+        //addTlv(buffer, DHCP_CLIENT_IDENTIFIER, getClientId());
         if (!INADDR_ANY.equals(mRequestedIp)) {
             addTlv(buffer, DHCP_REQUESTED_IP, mRequestedIp);
         }

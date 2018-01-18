@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -97,6 +102,13 @@ public class StatusBarManager {
     private IStatusBarService mService;
     private IBinder mToken = new Binder();
 
+    /// M: Add for Debug TAG @ {
+    private static final String TAG = "StatusBarManager";
+    public static final int STATUS_ALWAYS_ASK = -100;
+    public static final int STATUS_SIP = STATUS_ALWAYS_ASK + 1;
+    public static final int STATUS_SMS_AUTO = STATUS_ALWAYS_ASK + 2;
+    public static final int STATUS_OTHER_ACCOUNTS = STATUS_ALWAYS_ASK + 3;
+    /// @ }
     StatusBarManager(Context context) {
         mContext = context;
     }

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -107,11 +112,18 @@ public final class PhoneAccountHandle implements Parcelable {
     public String toString() {
         // Note: Log.pii called for mId as it can contain personally identifying phone account
         // information such as SIP account IDs.
+        /** M: [log optimize]shorten the log size.
+         * google original code:
         return new StringBuilder().append(mComponentName)
+        */
+        String className = mComponentName.getClassName();
+        return new StringBuilder().append("PhoneAccountHandle{")
+                    .append(className.substring(className.lastIndexOf('.') + 1))
                     .append(", ")
                     .append(Log.pii(mId))
                     .append(", ")
                     .append(mUserHandle)
+                    .append("}")
                     .toString();
     }
 

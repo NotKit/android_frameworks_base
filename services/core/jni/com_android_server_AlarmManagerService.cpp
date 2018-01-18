@@ -1,3 +1,8 @@
+/*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
 /* //device/libs/android_runtime/android_server_AlarmManagerService.cpp
 **
 ** Copyright 2006, The Android Open Source Project
@@ -462,6 +467,27 @@ static jint android_server_AlarmManagerService_waitForAlarm(JNIEnv*, jobject, jl
     return result;
 }
 
+static jboolean android_server_AlarmManagerService_bootFromAlarm(JNIEnv* env, jobject obj, jint fd)
+{
+#if HAVE_ANDROID_OS
+#ifndef MTK_EMULATOR_SUPPORT
+/*
+    struct rtc_wkalrm alm;
+    int result = ioctl(fd, ANDROID_ALARM_GET_POWER_ON,&alm);
+    if (result < 0) {
+    	ALOGE("unable to query boot class: %s\n", strerror(errno));
+    	return false;
+    }
+    if (alm.pending == 1) {
+    	return true;
+    } else {
+    	return false;
+    }
+*/
+#endif
+#endif
+    return false;
+}
 static const JNINativeMethod sMethods[] = {
      /* name, signature, funcPtr */
     {"init", "()J", (void*)android_server_AlarmManagerService_init},
@@ -470,6 +496,7 @@ static const JNINativeMethod sMethods[] = {
     {"waitForAlarm", "(J)I", (void*)android_server_AlarmManagerService_waitForAlarm},
     {"setKernelTime", "(JJ)I", (void*)android_server_AlarmManagerService_setKernelTime},
     {"setKernelTimezone", "(JI)I", (void*)android_server_AlarmManagerService_setKernelTimezone},
+    {"bootFromAlarm", "(I)Z", (void*)android_server_AlarmManagerService_bootFromAlarm},
 };
 
 int register_android_server_AlarmManagerService(JNIEnv* env)

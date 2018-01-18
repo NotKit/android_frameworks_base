@@ -44,6 +44,11 @@ import com.android.systemui.statusbar.phone.PhoneStatusBar;
 import com.android.systemui.statusbar.phone.QSTileHost;
 import com.android.systemui.statusbar.policy.KeyguardMonitor.Callback;
 
+/// M: add plugin in quicksetting @{
+import com.mediatek.systemui.ext.IQuickSettingsPlugin;
+import com.mediatek.systemui.PluginManager;
+/// @}
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -185,6 +190,10 @@ public class QSCustomizer extends LinearLayout implements OnMenuItemClickListene
     private void reset() {
         ArrayList<String> tiles = new ArrayList<>();
         String defTiles = mContext.getString(R.string.quick_settings_tiles_default);
+        /// M: Customize the quick settings tile order for operator. @{
+        IQuickSettingsPlugin quickSettingsPlugin = PluginManager.getQuickSettingsPlugin(mContext);
+        defTiles = quickSettingsPlugin.customizeQuickSettingsTileOrder(defTiles);
+        /// M: Customize the quick settings tile order for operator. @}
         for (String tile : defTiles.split(",")) {
             tiles.add(tile);
         }

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2009 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -154,8 +159,10 @@ public class SyncStatusInfo implements Parcelable {
     public void setPeriodicSyncTime(int index, long when) {
         // The list is initialized lazily when scheduling occurs so we need to make sure
         // we initialize elements < index to zero (zero is ignore for scheduling purposes)
-        ensurePeriodicSyncTimeSize(index);
-        periodicSyncTimes.set(index, when);
+        synchronized (this) {
+            ensurePeriodicSyncTimeSize(index);
+            periodicSyncTimes.set(index, when);
+        }
     }
 
     public long getPeriodicSyncTime(int index) {
@@ -167,8 +174,10 @@ public class SyncStatusInfo implements Parcelable {
     }
 
     public void removePeriodicSyncTime(int index) {
-        if (periodicSyncTimes != null && index < periodicSyncTimes.size()) {
-            periodicSyncTimes.remove(index);
+        synchronized (this) {
+            if (periodicSyncTimes != null && index < periodicSyncTimes.size()) {
+                periodicSyncTimes.remove(index);
+            }
         }
     }
 

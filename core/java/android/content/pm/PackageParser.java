@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -37,6 +42,7 @@ import android.os.Bundle;
 import android.os.FileUtils;
 import android.os.PatternMatcher;
 import android.os.Trace;
+import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.text.TextUtils;
 import android.util.ArrayMap;
@@ -96,6 +102,12 @@ import static android.content.pm.PackageManager.INSTALL_PARSE_FAILED_NO_CERTIFIC
 import static android.content.pm.PackageManager.INSTALL_PARSE_FAILED_UNEXPECTED_EXCEPTION;
 import static android.os.Trace.TRACE_TAG_PACKAGE_MANAGER;
 
+/// M: CTA requirement - link cta permissions @{
+import com.android.server.LocalServices;
+import com.mediatek.cta.CtaPackageManagerInternal;
+import com.mediatek.cta.CtaUtils;
+///@}
+
 /**
  * Parser for package files (APKs) on disk. This supports apps packaged either
  * as a single "monolithic" APK, or apps packaged as a "cluster" of multiple
@@ -118,6 +130,8 @@ public class PackageParser {
     private static final boolean DEBUG_JAR = false;
     private static final boolean DEBUG_PARSER = false;
     private static final boolean DEBUG_BACKUP = false;
+    //switch force HardwareAccelerate for special packages
+    private static final boolean IsForceHardwareAccelerated = false;
 
     private static final boolean MULTI_PACKAGE_APK_ENABLED = false;
     private static final int MAX_PACKAGES_PER_APK = 5;
@@ -659,6 +673,9 @@ public class PackageParser {
     public final static int PARSE_ENFORCE_CODE = 1<<10;
     public final static int PARSE_IS_EPHEMERAL = 1<<11;
     public final static int PARSE_FORCE_SDK = 1<<12;
+
+    /// M: [ALPS00338366] Add PARSE_IS_OPERATOR for operator apps
+    public final static int PARSE_IS_OPERATOR = 1 << 13;
 
     private static final Comparator<String> sSplitNameComparator = new SplitNameComparator();
 
@@ -2007,7 +2024,6 @@ public class PackageParser {
                 sa.recycle();
 
                 XmlUtils.skipCurrentTag(parser);
-
             } else if (tagName.equals(TAG_PROTECTED_BROADCAST)) {
                 sa = res.obtainAttributes(parser,
                         com.android.internal.R.styleable.AndroidManifestProtectedBroadcast);
@@ -2208,6 +2224,16 @@ public class PackageParser {
                         >= android.os.Build.VERSION_CODES.DONUT)) {
             pkg.applicationInfo.flags |= ApplicationInfo.FLAG_SUPPORTS_SCREEN_DENSITIES;
         }
+
+        /// M: CTA requirement - link cta permissions @{
+        if (CtaUtils.isCtaSupported()) {
+            CtaPackageManagerInternal ctaPkgMgrInternal =
+                    LocalServices.getService(CtaPackageManagerInternal.class);
+            if (ctaPkgMgrInternal != null) {
+                ctaPkgMgrInternal.linkCtaPermissions(pkg);
+            }
+        }
+        ///@}
 
         return pkg;
     }
@@ -2866,6 +2892,18 @@ public class PackageParser {
         if (owner.baseHardwareAccelerated) {
             ai.flags |= ApplicationInfo.FLAG_HARDWARE_ACCELERATED;
         }
+
+    /** M: Software HardwareAcceleration Support @{
+         *  Enable HardwareAcceleration for special application in whitelist packages.
+         */
+        if (IsForceHardwareAccelerated) {
+            if (PackageHardwareAccelerationPolicy.match(pkgName)) {
+            owner.baseHardwareAccelerated = true;
+            Slog.i(TAG, "[HardwareAccelerated] " + pkgName +
+            ", hwui-res: " + owner.baseHardwareAccelerated);
+            }
+        }
+    /** @} 2014-12-02 */
 
         if (sa.getBoolean(
                 com.android.internal.R.styleable.AndroidManifestApplication_hasCode,
@@ -5140,7 +5178,9 @@ public class PackageParser {
             // The following app types CANNOT have oat directory
             // - non-updated system apps
             // - forward-locked apps or apps installed in ASEC containers
-            return (!isSystemApp() || isUpdatedSystemApp())
+            /// M: Dex file of operator apps should also be placed in /data/dalvik-cache too.
+            final boolean isVendorApps = applicationInfo.isVendorApp();
+            return (!(isSystemApp() || isVendorApps) || isUpdatedSystemApp())
                     && !isForwardLocked() && !applicationInfo.isExternalAsec();
         }
 

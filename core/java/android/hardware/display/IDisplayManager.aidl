@@ -77,4 +77,14 @@ interface IDisplayManager {
 
     // No permissions required but must be same Uid as the creator.
     void releaseVirtualDisplay(in IVirtualDisplayCallback token);
+
+    boolean isSinkEnabled();
+
+    void enableSink(boolean enable);
+
+    void waitWifiDisplayConnection(in Surface surface);
+
+    void suspendWifiDisplay(boolean suspend, in Surface surface);
+
+    void sendUibcInputEvent(String input);
 }

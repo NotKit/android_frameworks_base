@@ -28,12 +28,14 @@ key A {
     label:                              'A'
     base:                               'a'
     shift, capslock:                    'A'
+    fn:					                fallback APP_SWITCH
 }
 
 key B {
     label:                              'B'
     base:                               'b'
     shift, capslock:                    'B'
+    fn:				                	fallback BRIGHTNESS_DOWN
 }
 
 key C {
@@ -42,12 +44,14 @@ key C {
     shift, capslock:                    'C'
     alt:                                '\u00e7'
     shift+alt:                          '\u00c7'
+    fn:				 	fallback VOLUME_DOWN
 }
 
 key D {
     label:                              'D'
     base:                               'd'
     shift, capslock:                    'D'
+    fn:				                	fallback HOME
 }
 
 key E {
@@ -55,12 +59,14 @@ key E {
     base:                               'e'
     shift, capslock:                    'E'
     alt:                                '\u0301'
+    fn:			                		fallback MEDIA_NEXT
 }
 
 key F {
     label:                              'F'
     base:                               'f'
     shift, capslock:                    'F'
+ #   fn:                                 fallback TOGGLE_FLIGHT_MODE
 }
 
 key G {
@@ -80,30 +86,35 @@ key I {
     base:                               'i'
     shift, capslock:                    'I'
     alt:                                '\u0302'
+    fn:				                	'+'
 }
 
 key J {
     label:                              'J'
     base:                               'j'
     shift, capslock:                    'J'
+    fn:					                '_'
 }
 
 key K {
     label:                              'K'
     base:                               'k'
     shift, capslock:                    'K'
+    fn:					                '@'
 }
 
 key L {
     label:                              'L'
     base:                               'l'
     shift, capslock:                    'L'
+    fn:				                	';'
 }
 
 key M {
     label:                              'M'
     base:                               'm'
     shift, capslock:                    'M'
+    fn:				                	'`'
 }
 
 key N {
@@ -111,24 +122,28 @@ key N {
     base:                               'n'
     shift, capslock:                    'N'
     alt:                                '\u0303'
+    fn:					                fallback BRIGHTNESS_UP
 }
 
 key O {
     label:                              'O'
     base:                               'o'
     shift, capslock:                    'O'
+    fn:				                	'-'
 }
 
 key P {
     label:                              'P'
     base:                               'p'
     shift, capslock:                    'P'
+    fn:					                '='
 }
 
 key Q {
     label:                              'Q'
     base:                               'q'
     shift, capslock:                    'Q'
+    fn:				                	fallback MEDIA_PLAY_PAUSE
 }
 
 key R {
@@ -148,6 +163,7 @@ key T {
     label:                              'T'
     base:                               't'
     shift, capslock:                    'T'
+    fn:				                	fallback VOLUME_MUTE
 }
 
 key U {
@@ -155,18 +171,21 @@ key U {
     base:                               'u'
     shift, capslock:                    'U'
     alt:                                '\u0308'
+    fn:				                	'/'
 }
 
 key V {
     label:                              'V'
     base:                               'v'
     shift, capslock:                    'V'
+    fn:				                	fallback VOLUME_UP
 }
 
 key W {
     label:                              'W'
     base:                               'w'
     shift, capslock:                    'W'
+    fn:				                	fallback MEDIA_PREVIOUS
 }
 
 key X {
@@ -179,6 +198,7 @@ key Y {
     label:                              'Y'
     base:                               'y'
     shift, capslock:                    'Y'
+    fn:					                '*'
 }
 
 key Z {
@@ -187,40 +207,39 @@ key Z {
     shift, capslock:                    'Z'
 }
 
-key 0 {
-    label:                              '0'
-    base:                               '0'
-    shift:                              ')'
-}
-
 key 1 {
     label:                              '1'
     base:                               '1'
     shift:                              '!'
+    fn:			                		'|'
 }
 
 key 2 {
     label:                              '2'
     base:                               '2'
-    shift:                              '@'
+    shift:                              '"'
+    fn:				                	'#'
 }
 
 key 3 {
     label:                              '3'
     base:                               '3'
-    shift:                              '#'
+    shift:                              '\u00a3'
+    fn:			                		'\\'
 }
 
 key 4 {
     label:                              '4'
     base:                               '4'
     shift:                              '$'
+    fn:		                			'\u20ac'
 }
 
 key 5 {
     label:                              '5'
     base:                               '5'
     shift:                              '%'
+    fn:		                			'<'
 }
 
 key 6 {
@@ -228,24 +247,35 @@ key 6 {
     base:                               '6'
     shift:                              '^'
     alt+shift:                          '\u0302'
+    fn:				                	'>'
 }
 
 key 7 {
     label:                              '7'
     base:                               '7'
     shift:                              '&'
+    fn:			                		'['
 }
 
 key 8 {
     label:                              '8'
     base:                               '8'
     shift:                              '*'
+    fn:			                		']'
 }
 
 key 9 {
     label:                              '9'
     base:                               '9'
     shift:                              '('
+    fn:					                '{'
+}
+
+key 0 {
+    label:                              '0'
+    base:                               '0'
+    shift:                              ')'
+    fn:					                '}'
 }
 
 key SPACE {
@@ -268,13 +298,15 @@ key TAB {
 key COMMA {
     label:                              ','
     base:                               ','
-    shift:                              '<'
+    shift:                              '/'
+#    fn:                                 fallback SYMBOLS
 }
 
 key PERIOD {
     label:                              '.'
     base:                               '.'
-    shift:                              '>'
+    shift:                              '?'
+#    fn:                                 fallback EMOJI
 }
 
 key SLASH {
@@ -330,9 +362,35 @@ key SEMICOLON {
 key APOSTROPHE {
     label:                              '\''
     base:                               '\''
-    shift:                              '"'
+    shift:                              '~'
+    fn:				                	':'
+}
+#### guohuajun add ######
+key DPAD_LEFT {
+   base:				                fallback DPAD_LEFT
+   fn:				                	fallback MOVE_HOME
 }
 
+key DPAD_DOWN {
+   base:			                	fallback DPAD_DOWN
+   fn:			                		fallback PAGE_DOWN
+}
+
+key DPAD_RIGHT {
+   base:		                		fallback DPAD_RIGHT
+   fn:			                		fallback MOVE_END
+}
+
+key DPAD_UP {
+   base:			                	fallback DPAD_UP
+   fn:				                	fallback PAGE_UP
+}
+
+key DEL {
+    base:			                	fallback DEL
+    shift:        			            fallback FORWARD_DEL
+ #   fn:                                 fallback SETTINGS
+}
 ### Numeric keypad ###
 
 key NUMPAD_0 {

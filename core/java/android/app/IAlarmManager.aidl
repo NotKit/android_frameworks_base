@@ -37,4 +37,7 @@ interface IAlarmManager {
     void remove(in PendingIntent operation, in IAlarmListener listener);
     long getNextWakeFromIdleTime();
     AlarmManager.AlarmClockInfo getNextAlarmClock(int userId);
+    void cancelPoweroffAlarm(String name);
+    void removeFromAms(String packageName);
+    boolean lookForPackageFromAms(String packageName);
 }

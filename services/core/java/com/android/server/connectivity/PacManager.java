@@ -113,10 +113,18 @@ public class PacManager {
             if (file != null) {
                 synchronized (mProxyLock) {
                     if (!file.equals(mCurrentPac)) {
+                        //oneway async native call
                         setCurrentProxyScript(file);
                     }
                 }
                 mHasDownloaded = true;
+                //M: to prevent from timing issue against proxy script setter
+                try {
+                    Thread.sleep(2000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                //
                 sendProxyIfNeeded();
                 longSchedule();
             } else {

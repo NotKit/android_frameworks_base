@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -40,6 +45,7 @@ class MeasuredText {
     private int mPos;
     private TextPaint mWorkPaint;
     private StaticLayout.Builder mBuilder;
+    static final String TAG = "MeasuredText";
 
     private MeasuredText() {
         mWorkPaint = new TextPaint();
@@ -161,8 +167,12 @@ class MeasuredText {
     }
 
     float addStyleRun(TextPaint paint, int len, Paint.FontMetricsInt fm) {
+        if (TextUtils.DEBUG_LOG) {
+            TextUtils.printDebugLog(TAG, "[addStyleRun_NoSpan] " + "start");
+        }
         if (fm != null) {
-            paint.getFontMetricsInt(fm);
+            /// M: new FontMetrics method for complex text support.
+            paint.getFontMetricsInt(mChars, fm, mPos, len);
         }
 
         int p = mPos;
@@ -209,6 +219,9 @@ class MeasuredText {
                 level = mLevels[i];
             }
         }
+        if (TextUtils.DEBUG_LOG) {
+            TextUtils.printDebugLog(TAG, "[addStyleRun_NoSapn] " + "end");
+        }
         return totalAdvance;
     }
 
@@ -219,7 +232,9 @@ class MeasuredText {
         workPaint.set(paint);
         // XXX paint should not have a baseline shift, but...
         workPaint.baselineShift = 0;
-
+        if (TextUtils.DEBUG_LOG) {
+            TextUtils.printDebugLog(TAG, "[addStyleRun_Span] " + "start");
+        }
         ReplacementSpan replacement = null;
         for (int i = 0; i < spans.length; i++) {
             MetricAffectingSpan span = spans[i];
@@ -256,6 +271,9 @@ class MeasuredText {
                 fm.descent += workPaint.baselineShift;
                 fm.bottom += workPaint.baselineShift;
             }
+        }
+        if (TextUtils.DEBUG_LOG) {
+            TextUtils.printDebugLog(TAG, "[addStyleRun_Span] " + "end");
         }
 
         return wid;

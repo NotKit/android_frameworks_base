@@ -49,6 +49,7 @@ import android.graphics.Shader;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.RemoteException;
+import android.os.SystemProperties;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.util.TypedValue;
@@ -80,6 +81,7 @@ import android.widget.FrameLayout;
 import android.widget.PopupWindow;
 
 import static android.app.ActivityManager.StackId;
+import static android.app.ActivityManager.StackId.FREEFORM_WORKSPACE_STACK_ID;
 import static android.app.ActivityManager.StackId.FULLSCREEN_WORKSPACE_STACK_ID;
 import static android.app.ActivityManager.StackId.PINNED_STACK_ID;
 import static android.app.ActivityManager.StackId.INVALID_STACK_ID;
@@ -104,9 +106,20 @@ import static android.view.WindowManager.LayoutParams.TYPE_BASE_APPLICATION;
 import static android.view.WindowManager.LayoutParams.TYPE_DRAWN_APPLICATION;
 import static com.android.internal.policy.PhoneWindow.FEATURE_OPTIONS_PANEL;
 
+/// M: BMW
+import com.mediatek.multiwindow.MultiWindowManager;
+
+
 /** @hide */
 public class DecorView extends FrameLayout implements RootViewSurfaceTaker, WindowCallbacks {
     private static final String TAG = "DecorView";
+
+    /// M: enable log dynamically for debug motion.
+    private static final boolean DBG_MOTION = SystemProperties.getBoolean(
+            "debug.view.motionlog", false);
+
+    private static final boolean DEBUG_TRANSPARENT_BACKGROUND = SystemProperties.getBoolean(
+            "debug.phonewindow.transparentBG", false);
 
     private static final boolean DEBUG_MEASURE = false;
 
@@ -316,8 +329,15 @@ public class DecorView extends FrameLayout implements RootViewSurfaceTaker, Wind
 
         if (!mWindow.isDestroyed()) {
             final Window.Callback cb = mWindow.getCallback();
+            if (DBG_MOTION) {
+                Log.d(TAG, "dispatchKeyEvent+ = " + event + ", cb = " + cb + ", mFeatureId = "
+                        + mFeatureId);
+            }
             final boolean handled = cb != null && mFeatureId < 0 ? cb.dispatchKeyEvent(event)
                     : super.dispatchKeyEvent(event);
+            if (DBG_MOTION) {
+                Log.d(TAG, "dispatchKeyEvent- = " + event + ", handled = " + handled);
+            }
             if (handled) {
                 return true;
             }
@@ -371,6 +391,10 @@ public class DecorView extends FrameLayout implements RootViewSurfaceTaker, Wind
     @Override
     public boolean dispatchTouchEvent(MotionEvent ev) {
         final Window.Callback cb = mWindow.getCallback();
+        if (DBG_MOTION) {
+            Log.d(TAG, "dispatchTouchEvent = " + ev + ", cb = " + cb + ", destroyed? = "
+                    + mWindow.isDestroyed() + ", mFeatureId = " + mFeatureId);
+        }
         return cb != null && !mWindow.isDestroyed() && mFeatureId < 0
                 ? cb.dispatchTouchEvent(ev) : super.dispatchTouchEvent(ev);
     }
@@ -586,6 +610,9 @@ public class DecorView extends FrameLayout implements RootViewSurfaceTaker, Wind
             Drawable bg = getBackground();
             if (bg != null) {
                 bg.setBounds(drawingBounds);
+                /// M: The outline should be updated if background gets a new size.@{
+                invalidateOutline();
+                /// @}
             }
 
             if (SWEEP_OPEN_MENU) {
@@ -755,6 +782,16 @@ public class DecorView extends FrameLayout implements RootViewSurfaceTaker, Wind
         if (mMenuBackground != null) {
             mMenuBackground.draw(canvas);
         }
+    }
+
+    /// M: For debug transparent background. When debug flag is enabled,
+    /// the background shows green if the background of decorview is transparent.
+    @Override
+    protected void dispatchDraw(Canvas canvas) {
+        if (DEBUG_TRANSPARENT_BACKGROUND) {
+            canvas.drawARGB(255, 0, 255, 0);
+        }
+        super.dispatchDraw(canvas);
     }
 
     @Override
@@ -1459,6 +1496,11 @@ public class DecorView extends FrameLayout implements RootViewSurfaceTaker, Wind
         }
 
         updateElevation();
+        /// M: BMW @{
+        if (MultiWindowManager.isSupported() && mDecorCaptionView != null) {
+            mDecorCaptionView.updateStickView(mDecorCaptionView.isStickyByMtk());
+        }
+        /// @}
     }
 
     @Override
@@ -1563,6 +1605,14 @@ public class DecorView extends FrameLayout implements RootViewSurfaceTaker, Wind
     public void onRootViewScrollYChanged(int rootScrollY) {
         mRootScrollY = rootScrollY;
         updateColorViewTranslations();
+    }
+
+    /// M: Monitoring the Visiblity of DeorView.
+    @Override
+    public void setVisibility(int visibility) {
+        super.setVisibility(visibility);
+        Log.v("PhoneWindow", "DecorView setVisiblity: visibility = " + visibility
+            + ", Parent = " + getParent() + ", this = " + this);
     }
 
     private ActionMode createActionMode(
@@ -1883,8 +1933,15 @@ public class DecorView extends FrameLayout implements RootViewSurfaceTaker, Wind
         final Context context = getContext();
         // We make a copy of the inflater, so it has the right context associated with it.
         inflater = inflater.from(context);
-        final DecorCaptionView view = (DecorCaptionView) inflater.inflate(R.layout.decor_caption,
-                null);
+        /// M: BMW @{
+        DecorCaptionView view = null;
+        if (MultiWindowManager.isSupported()) {
+            view = (DecorCaptionView) inflater
+                    .inflate(com.mediatek.internal.R.layout.decor_caption_float, null);
+        } else {
+            view = (DecorCaptionView) inflater.inflate(R.layout.decor_caption, null);
+        }
+        /// @}
         setDecorCaptionShade(context, view);
         return view;
     }
@@ -1925,6 +1982,19 @@ public class DecorView extends FrameLayout implements RootViewSurfaceTaker, Wind
                 R.drawable.decor_maximize_button_light);
         view.findViewById(R.id.close_window).setBackgroundResource(
                 R.drawable.decor_close_button_light);
+        /// M: BMW @{
+        if (MultiWindowManager.isSupported()) {
+            if (mDecorCaptionView != null && mDecorCaptionView.mSticked) {
+                view.findViewById(com.mediatek.internal.R.id.stick_window).setBackgroundResource(
+                     com.mediatek.internal.R.drawable.decor_stick_button_clicked_light);
+            } else {
+                view.findViewById(com.mediatek.internal.R.id.stick_window).setBackgroundResource(
+                    com.mediatek.internal.R.drawable.decor_stick_button_light);
+            }
+
+        }
+        /// @}
+
     }
 
     private void setDarkDecorCaptionShade(DecorCaptionView view) {
@@ -1932,6 +2002,19 @@ public class DecorView extends FrameLayout implements RootViewSurfaceTaker, Wind
                 R.drawable.decor_maximize_button_dark);
         view.findViewById(R.id.close_window).setBackgroundResource(
                 R.drawable.decor_close_button_dark);
+        /// M: BMW @{
+        if (MultiWindowManager.isSupported()) {
+            if (mDecorCaptionView != null && mDecorCaptionView.mSticked) {
+                view.findViewById(com.mediatek.internal.R.id.stick_window).setBackgroundResource(
+                    com.mediatek.internal.R.drawable.decor_stick_button_clicked_dark);
+            } else {
+                view.findViewById(com.mediatek.internal.R.id.stick_window).setBackgroundResource(
+                    com.mediatek.internal.R.drawable.decor_stick_button_dark);
+            }
+
+        }
+        /// @}
+
     }
 
     /**
@@ -2167,6 +2250,11 @@ public class DecorView extends FrameLayout implements RootViewSurfaceTaker, Wind
             mElevationAdjustedForStack = false;
         }
 
+        /// M: ALPS02823062. No need surfaceInsets for freeform. BMW @{
+        if (MultiWindowManager.isSupported() && mStackId == FREEFORM_WORKSPACE_STACK_ID) {
+            elevation = 0;
+        }
+        /// @}
         // Don't change the elevation if we didn't previously adjust it for the stack it was in
         // or it didn't change.
         if ((wasAdjustedForStack || mElevationAdjustedForStack)
@@ -2238,6 +2326,11 @@ public class DecorView extends FrameLayout implements RootViewSurfaceTaker, Wind
 
     @Override
     public String toString() {
+        /// M: Fix NullPointerException when enabling debug.view.layoutlog.
+        if (mWindow == null) {
+            return "DecorView@" + Integer.toHexString(this.hashCode()) + "[null]";
+        }
+
         return "DecorView@" + Integer.toHexString(this.hashCode()) + "["
                 + getTitleSuffix(mWindow.getAttributes()) + "]";
     }
@@ -2389,4 +2482,15 @@ public class DecorView extends FrameLayout implements RootViewSurfaceTaker, Wind
             }
         }
     }
+
+    /// M: BMW @{
+    /**
+     * @hide
+     */
+    public void updateDecorCaptionShadeFromUpdateStickView() {
+        if (MultiWindowManager.isSupported()) {
+            updateDecorCaptionShade();
+        }
+    }
+    /// @}
 }

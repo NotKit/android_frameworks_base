@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,11 +27,13 @@ import android.content.Intent;
 import android.net.TrafficStats;
 import android.net.Uri;
 import android.os.Environment;
+import android.os.Environment;
 import android.os.Parcel;
 import android.os.Parcelable;
 import android.os.UserHandle;
 import android.provider.DocumentsContract;
-
+import android.os.SystemProperties;
+import android.util.Slog;
 import com.android.internal.util.IndentingPrintWriter;
 import com.android.internal.util.Preconditions;
 
@@ -77,6 +84,7 @@ import java.io.File;
 // user, but is now part of the public API.
 public final class StorageVolume implements Parcelable {
 
+    private static final String TAG = "StorageVolume";
     private final String mId;
     private final int mStorageId;
     private final File mPath;
@@ -86,11 +94,11 @@ public final class StorageVolume implements Parcelable {
     private final boolean mEmulated;
     private final long mMtpReserveSize;
     private final boolean mAllowMassStorage;
-    private final long mMaxFileSize;
+    private long mMaxFileSize;
+    /** When set, indicates exclusive ownership of this volume */
     private final UserHandle mOwner;
     private final String mFsUuid;
     private final String mState;
-
     /**
      * Name of the {@link Parcelable} extra in the {@link Intent#ACTION_MEDIA_REMOVED},
      * {@link Intent#ACTION_MEDIA_UNMOUNTED}, {@link Intent#ACTION_MEDIA_CHECKING},
@@ -259,6 +267,17 @@ public final class StorageVolume implements Parcelable {
     }
 
     /** {@hide} */
+
+    /**
+     * set max file size by MountService.
+     *
+     * @hide
+     */
+    public void setMaxFileSize(long maxFileSize) {
+        mMaxFileSize = maxFileSize;
+    }
+
+    /** {@hide} */
     public UserHandle getOwner() {
         return mOwner;
     }
@@ -282,6 +301,7 @@ public final class StorageVolume implements Parcelable {
         try {
             return (int) Long.parseLong(mFsUuid.replace("-", ""), 16);
         } catch (NumberFormatException e) {
+            Slog.i(TAG, "getFatVolumeId " + e);
             return -1;
         }
     }

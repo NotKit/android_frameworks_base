@@ -28,5 +28,12 @@ interface IWifiP2pManager
     Messenger getMessenger();
     Messenger getP2pStateMachineMessenger();
     void setMiracastMode(int mode);
+    ///M: Add by MTK  @{
+    void setMiracastModeEx(int mode, int freq);
+    String getMacAddress();
+    String getPeerIpAddress(in String peerMacAddress);
+    void setCrossMountIE(boolean isAdd, String hexData);
+    void setBeamMode(int mode);
+    ///@}
 }
 

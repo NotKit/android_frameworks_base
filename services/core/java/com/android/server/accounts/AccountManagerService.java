@@ -143,7 +143,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public class AccountManagerService
         extends IAccountManager.Stub
         implements RegisteredServicesCacheListener<AuthenticatorDescription> {
-    private static final String TAG = "AccountManagerService";
+    private static final String TAG = "AccountManager";
 
     public static class Lifecycle extends SystemService {
         private AccountManagerService mService;

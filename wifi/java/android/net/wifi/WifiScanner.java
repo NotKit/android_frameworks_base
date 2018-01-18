@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2008 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,8 +30,10 @@ import android.os.Message;
 import android.os.Messenger;
 import android.os.Parcel;
 import android.os.Parcelable;
+import android.os.Process;
 import android.os.RemoteException;
 import android.os.WorkSource;
+
 import android.util.Log;
 import android.util.SparseArray;
 
@@ -35,6 +42,7 @@ import com.android.internal.util.Preconditions;
 import com.android.internal.util.Protocol;
 
 import java.util.List;
+
 
 
 /**
@@ -727,6 +735,8 @@ public class WifiScanner {
      */
     public void startBackgroundScan(ScanSettings settings, ScanListener listener,
             WorkSource workSource) {
+        Log.d(TAG, "startBackgroundScan, pid:" + Process.myPid() + ", tid:" + Process.myTid() +
+            ", uid:" + Process.myUid());
         Preconditions.checkNotNull(listener, "listener cannot be null");
         int key = addListener(listener);
         if (key == INVALID_KEY) return;
@@ -743,9 +753,13 @@ public class WifiScanner {
      *  #startBackgroundScan}
      */
     public void stopBackgroundScan(ScanListener listener) {
+        Log.d(TAG, "stopBackgroundScan, pid:" + Process.myPid() + ", tid:" + Process.myTid() +
+            ", uid:" + Process.myUid());
+
         Preconditions.checkNotNull(listener, "listener cannot be null");
         int key = removeListener(listener);
         if (key == INVALID_KEY) return;
+
         validateChannel();
         mAsyncChannel.sendMessage(CMD_STOP_BACKGROUND_SCAN, 0, key);
     }
@@ -754,6 +768,8 @@ public class WifiScanner {
      * @return true if all scan results were reported correctly
      */
     public boolean getScanResults() {
+        Log.d(TAG, "getScanResults, pid:" + Process.myPid() + ", tid:" + Process.myTid() +
+            ", uid:" + Process.myUid());
         validateChannel();
         Message reply = mAsyncChannel.sendMessageSynchronously(CMD_GET_SCAN_RESULTS, 0);
         return reply.what == CMD_OP_SUCCEEDED;
@@ -781,6 +797,9 @@ public class WifiScanner {
      *                 scans should also not share this object.
      */
     public void startScan(ScanSettings settings, ScanListener listener, WorkSource workSource) {
+
+        Log.d(TAG, "startScan, pid:" + Process.myPid() + ", tid:" + Process.myTid() + ", uid:" +
+            Process.myUid());
         Preconditions.checkNotNull(listener, "listener cannot be null");
         int key = addListener(listener);
         if (key == INVALID_KEY) return;
@@ -797,6 +816,8 @@ public class WifiScanner {
      * @param listener
      */
     public void stopScan(ScanListener listener) {
+        Log.d(TAG, "stopScan, pid:" + Process.myPid() + ", tid:" + Process.myTid() +
+            ", uid:" + Process.myUid());
         Preconditions.checkNotNull(listener, "listener cannot be null");
         int key = removeListener(listener);
         if (key == INVALID_KEY) return;
@@ -805,6 +826,8 @@ public class WifiScanner {
     }
 
     private void startPnoScan(ScanSettings scanSettings, PnoSettings pnoSettings, int key) {
+        Log.d(TAG, "startPnoScan, pid:" + Process.myPid() + ", tid:" + Process.myTid() +
+            ", uid:" + Process.myUid());
         // Bundle up both the settings and send it across.
         Bundle pnoParams = new Bundle();
         // Set the PNO scan flag.
@@ -826,6 +849,8 @@ public class WifiScanner {
      */
     public void startConnectedPnoScan(ScanSettings scanSettings, PnoSettings pnoSettings,
             PnoScanListener listener) {
+        Log.d(TAG, "startConnectedPnoScan, pid:" + Process.myPid() + ", tid:" + Process.myTid() +
+            ", uid:" + Process.myUid());
         Preconditions.checkNotNull(listener, "listener cannot be null");
         Preconditions.checkNotNull(pnoSettings, "pnoSettings cannot be null");
         int key = addListener(listener);
@@ -847,6 +872,8 @@ public class WifiScanner {
      */
     public void startDisconnectedPnoScan(ScanSettings scanSettings, PnoSettings pnoSettings,
             PnoScanListener listener) {
+        Log.d(TAG, "startDisconnectedPnoScan, pid:" + Process.myPid() + ", tid:" + Process.myTid() +
+            ", uid:" + Process.myUid());
         Preconditions.checkNotNull(listener, "listener cannot be null");
         Preconditions.checkNotNull(pnoSettings, "pnoSettings cannot be null");
         int key = addListener(listener);
@@ -863,6 +890,8 @@ public class WifiScanner {
      * {@hide}
      */
     public void stopPnoScan(ScanListener listener) {
+        Log.d(TAG, "stopPnoScan, pid:" + Process.myPid() + ", tid:" + Process.myTid() +
+            ", uid:" + Process.myUid());
         Preconditions.checkNotNull(listener, "listener cannot be null");
         int key = removeListener(listener);
         if (key == INVALID_KEY) return;
@@ -966,6 +995,8 @@ public class WifiScanner {
             BssidInfo[] bssidInfos                          /* signal thresholds to crosss */
             )
     {
+        Log.d(TAG, "configureWifiChange, pid:" + Process.myPid() + ", tid:" + Process.myTid() +
+            ", uid:" + Process.myUid());
         validateChannel();
 
         WifiChangeSettings settings = new WifiChangeSettings();
@@ -999,9 +1030,13 @@ public class WifiScanner {
      *                 provided on {@link #stopTrackingWifiChange}
      */
     public void startTrackingWifiChange(WifiChangeListener listener) {
+        Log.d(TAG, "startTrackingWifiChange, pid:" + Process.myPid() + ", tid:" + Process.myTid() +
+            ", uid:" + Process.myUid());
+
         Preconditions.checkNotNull(listener, "listener cannot be null");
         int key = addListener(listener);
         if (key == INVALID_KEY) return;
+
         validateChannel();
         mAsyncChannel.sendMessage(CMD_START_TRACKING_CHANGE, 0, key);
     }
@@ -1012,8 +1047,12 @@ public class WifiScanner {
      * #stopTrackingWifiChange}
      */
     public void stopTrackingWifiChange(WifiChangeListener listener) {
+        Log.d(TAG, "stopTrackingWifiChange, pid:" + Process.myPid() + ", tid:" + Process.myTid() +
+            ", uid:" + Process.myUid());
+
         int key = removeListener(listener);
         if (key == INVALID_KEY) return;
+
         validateChannel();
         mAsyncChannel.sendMessage(CMD_STOP_TRACKING_CHANGE, 0, key);
     }
@@ -1021,6 +1060,8 @@ public class WifiScanner {
     /** @hide */
     @SystemApi
     public void configureWifiChange(WifiChangeSettings settings) {
+        Log.d(TAG, "configureWifiChange, pid:" + Process.myPid() + ", tid:" + Process.myTid() +
+            ", uid:" + Process.myUid());
         validateChannel();
         mAsyncChannel.sendMessage(CMD_CONFIGURE_WIFI_CHANGE, 0, 0, settings);
     }
@@ -1100,9 +1141,13 @@ public class WifiScanner {
      */
     public void startTrackingBssids(BssidInfo[] bssidInfos,
                                     int apLostThreshold, BssidListener listener) {
+        Log.d(TAG, "startTrackingBssids, pid:" + Process.myPid() + ", tid:" + Process.myTid() +
+            ", uid:" + Process.myUid());
+
         Preconditions.checkNotNull(listener, "listener cannot be null");
         int key = addListener(listener);
         if (key == INVALID_KEY) return;
+
         validateChannel();
         HotlistSettings settings = new HotlistSettings();
         settings.bssidInfos = bssidInfos;
@@ -1115,9 +1160,13 @@ public class WifiScanner {
      * @param listener same object provided in {@link #startTrackingBssids}
      */
     public void stopTrackingBssids(BssidListener listener) {
+        Log.d(TAG, "stopTrackingBssids, pid:" + Process.myPid() + ", tid:" + Process.myTid() +
+            ", uid:" + Process.myUid());
+
         Preconditions.checkNotNull(listener, "listener cannot be null");
         int key = removeListener(listener);
         if (key == INVALID_KEY) return;
+
         validateChannel();
         mAsyncChannel.sendMessage(CMD_RESET_HOTLIST, 0, key);
     }
@@ -1126,7 +1175,7 @@ public class WifiScanner {
     /* private members and methods */
 
     private static final String TAG = "WifiScanner";
-    private static final boolean DBG = false;
+    private static final boolean DBG = true;
 
     /* commands for Wifi Service */
     private static final int BASE = Protocol.BASE_WIFI_SCANNER;
@@ -1372,7 +1421,8 @@ public class WifiScanner {
                 if (DBG) Log.d(TAG, "invalid listener key = " + msg.arg2);
                 return;
             } else {
-                if (DBG) Log.d(TAG, "listener key = " + msg.arg2);
+                ///M: mark for android log much
+                //if (DBG) Log.d(TAG, "listener key = " + msg.arg2);
             }
 
             switch (msg.what) {
@@ -1381,6 +1431,7 @@ public class WifiScanner {
                     ((ActionListener) listener).onSuccess();
                     break;
                 case CMD_OP_FAILED : {
+                        Log.e(TAG, "removeListener CMD_OP_FAILED " + msg.arg2);
                         OperationResult result = (OperationResult)msg.obj;
                         ((ActionListener) listener).onFailure(result.reason, result.description);
                         removeListener(msg.arg2);

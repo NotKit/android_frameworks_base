@@ -48,9 +48,19 @@ import com.android.systemui.R;
 import com.android.systemui.RecentsComponent;
 import com.android.systemui.stackdivider.Divider;
 import com.android.systemui.statusbar.policy.DeadZone;
+/// M: BMW restore Window
+import com.mediatek.multiwindow.IFreeformStackListener;
+import com.mediatek.multiwindow.MultiWindowManager;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
+
+import com.mediatek.common.MPlugin;
+import com.mediatek.systemui.ext.DefaultNavigationBarPlugin;
+import com.mediatek.systemui.ext.INavigationBarPlugin;
+/// M: BMW restore Window
+import com.android.systemui.keyguard.KeyguardViewMediator;
+import com.android.systemui.SystemUIApplication;
 
 public class NavigationBarView extends LinearLayout {
     final static boolean DEBUG = false;
@@ -81,6 +91,11 @@ public class NavigationBarView extends LinearLayout {
     private Drawable mDockedIcon;
     private Drawable mImeIcon;
     private Drawable mMenuIcon;
+    /// M: BMW @{
+    private Drawable mRestoreIcon;
+    private boolean mResizeMode;
+    private boolean mRestoreShow;
+    /// @}
 
     private NavigationBarGestureHelper mGestureHelper;
     private DeadZone mDeadZone;
@@ -102,6 +117,12 @@ public class NavigationBarView extends LinearLayout {
 
     private final SparseArray<ButtonDispatcher> mButtonDisatchers = new SparseArray<>();
     private Configuration mConfiguration;
+
+    // MPlugin for Navigation Bar
+    private INavigationBarPlugin mNavBarPlugin;
+    /// M: BMW @{
+    private KeyguardViewMediator mKeyguardViewMediator;
+    /// @}
 
     private NavigationBarInflaterView mNavigationInflaterView;
 
@@ -197,11 +218,30 @@ public class NavigationBarView extends LinearLayout {
         mConfiguration.updateFrom(context.getResources().getConfiguration());
         updateIcons(context, Configuration.EMPTY, mConfiguration);
 
+       // MPlugin Navigation Bar creation and initialization
+        try {
+            mNavBarPlugin = (INavigationBarPlugin) MPlugin.createInstance(
+            INavigationBarPlugin.class.getName(), context);
+        } catch (Exception e) {
+            Log.e(TAG, "Catch INavigationBarPlugin exception: ", e);
+        }
+        if (mNavBarPlugin == null) {
+            Log.d(TAG, "DefaultNavigationBarPlugin");
+            mNavBarPlugin = new DefaultNavigationBarPlugin(context);
+        }
+
         mBarTransitions = new NavigationBarTransitions(this);
 
         mButtonDisatchers.put(R.id.back, new ButtonDispatcher(R.id.back));
         mButtonDisatchers.put(R.id.home, new ButtonDispatcher(R.id.home));
         mButtonDisatchers.put(R.id.recent_apps, new ButtonDispatcher(R.id.recent_apps));
+        /// M: BMW @{
+        if (MultiWindowManager.isSupported()) {
+            mButtonDisatchers.put(R.id.restore, new ButtonDispatcher(R.id.restore));
+            mKeyguardViewMediator = ((SystemUIApplication)context)
+                .getComponent(KeyguardViewMediator.class);
+        }
+        /// @}
         mButtonDisatchers.put(R.id.menu, new ButtonDispatcher(R.id.menu));
         mButtonDisatchers.put(R.id.ime_switcher, new ButtonDispatcher(R.id.ime_switcher));
     }
@@ -248,14 +288,14 @@ public class NavigationBarView extends LinearLayout {
     public View[] getAllViews() {
         return mRotatedViews;
     }
-
+    //TODO:: Temp remove plugin for build pass, need to add back
     public ButtonDispatcher getRecentsButton() {
         return mButtonDisatchers.get(R.id.recent_apps);
     }
 
     public ButtonDispatcher getMenuButton() {
         return mButtonDisatchers.get(R.id.menu);
-    }
+   }
 
     public ButtonDispatcher getBackButton() {
         return mButtonDisatchers.get(R.id.back);
@@ -268,6 +308,12 @@ public class NavigationBarView extends LinearLayout {
     public ButtonDispatcher getImeSwitchButton() {
         return mButtonDisatchers.get(R.id.ime_switcher);
     }
+
+    /// M: BMW @{
+    public ButtonDispatcher getRestoreButton() {
+        return mButtonDisatchers.get(R.id.restore);
+    }
+    /// @}
 
     private void updateCarModeIcons(Context ctx) {
         mBackCarModeIcon = ctx.getDrawable(R.drawable.ic_sysbar_back_carmode);
@@ -292,7 +338,11 @@ public class NavigationBarView extends LinearLayout {
             mRecentIcon = ctx.getDrawable(R.drawable.ic_sysbar_recent);
             mMenuIcon = ctx.getDrawable(R.drawable.ic_sysbar_menu);
             mImeIcon = ctx.getDrawable(R.drawable.ic_ime_switcher_default);
-
+            /// M: BMW @{
+            if (MultiWindowManager.isSupported()) {
+                mRestoreIcon = ctx.getDrawable(R.drawable.ic_sysbar_restore);
+            }
+            /// @}
             if (ALTERNATE_CAR_MODE_UI) {
                 updateCarModeIcons(ctx);
             }
@@ -349,14 +399,23 @@ public class NavigationBarView extends LinearLayout {
                 ? getBackIconWithAlt(mUseCarModeUi, mVertical)
                 : getBackIcon(mUseCarModeUi, mVertical);
 
-        getBackButton().setImageDrawable(backIcon);
+        /// M: Support plugin customize.
+        //getBackButton().setImageDrawable(backIcon);
+        getBackButton().setImageDrawable(mNavBarPlugin.getBackImage(backIcon));
 
         updateRecentsIcon();
+        /// M: BMW @{
+        if (MultiWindowManager.isSupported()) {
+            updateRestoreIcon();
+        }
+        /// @}
 
         if (mUseCarModeUi) {
             getHomeButton().setImageDrawable(mHomeCarModeIcon);
         } else {
-            getHomeButton().setImageDrawable(mHomeDefaultIcon);
+            /// M: Support plugin customize.
+            //getHomeButton().setImageDrawable(mHomeDefaultIcon);
+            getHomeButton().setImageDrawable(mNavBarPlugin.getHomeImage(mHomeDefaultIcon));
         }
 
         final boolean showImeButton = ((hints & StatusBarManager.NAVIGATION_HINT_IME_SHOWN) != 0);
@@ -406,7 +465,16 @@ public class NavigationBarView extends LinearLayout {
         getBackButton().setVisibility(disableBack      ? View.INVISIBLE : View.VISIBLE);
         getHomeButton().setVisibility(disableHome      ? View.INVISIBLE : View.VISIBLE);
         getRecentsButton().setVisibility(disableRecent ? View.INVISIBLE : View.VISIBLE);
-    }
+
+        /// M: BMW @{
+        //hide restore when keyguard is showing
+        if (MultiWindowManager.isSupported() && mKeyguardViewMediator != null) {
+            boolean isKeyguardShowing = mKeyguardViewMediator.isShowing();
+            mResizeMode = mRestoreShow && !isKeyguardShowing;
+            updateRestoreIcon();
+        }
+        /// @}
+   }
 
     private boolean inLockTask() {
         try {
@@ -521,7 +589,48 @@ public class NavigationBarView extends LinearLayout {
         } catch (RemoteException e) {
             Log.e(TAG, "Failed registering docked stack exists listener", e);
         }
+
+
+        /// M: BMW restore button @{
+        if (MultiWindowManager.isSupported()) {
+            try {
+                WindowManagerGlobal.getWindowManagerService()
+                    .registerFreeformStackListener(new IFreeformStackListener.Stub() {
+                    @Override
+                    public void onShowRestoreButtonChanged(final boolean isShown)
+                                 throws RemoteException {
+                        mHandler.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                //hide restore when keyguard is showing
+                                boolean isKeyguardShowing = false;
+                                if (mKeyguardViewMediator != null) {
+                                    isKeyguardShowing = mKeyguardViewMediator.isShowing();
+                                }
+                                mRestoreShow = isShown;
+                                mResizeMode = isShown && !isKeyguardShowing;
+                                updateRestoreIcon();
+                            }
+                    });
+                    }
+                });
+            } catch (RemoteException e) {
+                Log.e(TAG, "Failed registering freeform stack exists listener", e);
+            }
+
+        }
+
+        /// @}
     }
+
+    /// M: BMW restore button @{
+    private void updateRestoreIcon() {
+        if (MultiWindowManager.DEBUG)
+            Log.d(TAG, "BMW, updateRestoreIcon, mResizeMode = " + mResizeMode);
+        getRestoreButton().setImageDrawable(mRestoreIcon);
+        getRestoreButton().setVisibility(mResizeMode ? View.VISIBLE : View.INVISIBLE);
+    }
+    /// @}
 
     void updateRotatedViews() {
         mRotatedViews[Surface.ROTATION_0] =
@@ -552,7 +661,10 @@ public class NavigationBarView extends LinearLayout {
     }
 
     private void updateRecentsIcon() {
-        getRecentsButton().setImageDrawable(mDockedStackExists ? mDockedIcon : mRecentIcon);
+        /// M: Support plugin customize.
+        //getRecentsButton().setImageDrawable(mDockedStackExists ? mDockedIcon : mRecentIcon);
+        getRecentsButton().setImageDrawable(
+                mNavBarPlugin.getRecentImage(mDockedStackExists ? mDockedIcon : mRecentIcon));
     }
 
     public boolean isVertical() {

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2015 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2009 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -75,6 +80,38 @@ public class LocationProviderProxy implements LocationProviderInterface {
                 defaultServicePackageNameResId, initialPackageNamesResId,
                 mNewServiceWork, handler);
     }
+
+    /// MTK added begin
+    public static LocationProviderProxy createAndBind(
+            Context context, String name, String action,
+            int overlaySwitchResId, int defaultServicePackageNameResId,
+            int initialPackageNamesResId, int vendorPackageNamesResId,
+            int preferPackageNamesResId, Handler handler) {
+        LocationProviderProxy proxy = new LocationProviderProxy(context, name, action,
+                overlaySwitchResId, defaultServicePackageNameResId, initialPackageNamesResId,
+                vendorPackageNamesResId, preferPackageNamesResId, handler);
+        if (proxy.bind()) {
+            return proxy;
+        } else {
+            return null;
+        }
+    }
+
+    private LocationProviderProxy(Context context, String name, String action,
+            int overlaySwitchResId, int defaultServicePackageNameResId,
+            int initialPackageNamesResId, int vendorPackageNamesResId,
+            int preferPackageNamesResId, Handler handler) {
+        mContext = context;
+        mName = name;
+        mServiceWatcher = new ServiceWatcher(mContext, TAG + "-" + name, action, overlaySwitchResId,
+                defaultServicePackageNameResId, initialPackageNamesResId,
+                vendorPackageNamesResId, preferPackageNamesResId, mNewServiceWork, handler);
+    }
+
+    public void unbind() {
+        mServiceWatcher.stop();
+    }
+    //MTK add end
 
     private boolean bind () {
         return mServiceWatcher.start();

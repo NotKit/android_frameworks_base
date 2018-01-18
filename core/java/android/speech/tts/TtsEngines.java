@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not
@@ -468,7 +473,7 @@ public class TtsEngines {
      * {@link Locale#getISO3Language()}, then we return new String[]{"eng","USA",""};
      */
     static public String[] toOldLocaleStringFormat(Locale locale) {
-        String[] ret = new String[]{"","",""};
+        String[] ret = new String[]{"", "", ""};
         try {
             // Note that the default locale might have an empty variant
             // or language, and we take care that the construction is

@@ -54,6 +54,23 @@ import com.android.server.EventLogTags;
 import java.io.PrintWriter;
 import java.util.ArrayList;
 
+import static android.app.ActivityManager.DOCKED_STACK_CREATE_MODE_TOP_OR_LEFT;
+import static android.app.ActivityManager.StackId.DOCKED_STACK_ID;
+import static android.app.ActivityManager.StackId.FULLSCREEN_WORKSPACE_STACK_ID;
+import static android.app.ActivityManager.StackId.PINNED_STACK_ID;
+import static android.content.res.Configuration.ORIENTATION_PORTRAIT;
+import static android.view.WindowManager.DOCKED_BOTTOM;
+import static android.view.WindowManager.DOCKED_INVALID;
+import static android.view.WindowManager.DOCKED_LEFT;
+import static android.view.WindowManager.DOCKED_RIGHT;
+import static android.view.WindowManager.DOCKED_TOP;
+import static com.android.server.wm.WindowManagerDebugConfig.DEBUG_TASK_MOVEMENT;
+import static com.android.server.wm.WindowManagerService.H.RESIZE_STACK;
+import static com.android.server.wm.WindowManagerDebugConfig.TAG_WM;
+
+/// M: Add import.
+import static com.android.server.wm.WindowManagerDebugConfig.DEBUG_STACK;
+
 public class TaskStack implements DimLayer.DimLayerUser,
         BoundsAnimationController.AnimateBoundsUser {
     /** Minimum size of an adjusted stack bounds relative to original stack bounds. Used to
@@ -199,7 +216,14 @@ public class TaskStack implements DimLayer.DimLayerUser,
                                     : null);
                 }
             } else {
-                Slog.wtf(TAG_WM, "No config for task: " + task + ", is there a mismatch with AM?");
+                /// M: skip defering removal task {@
+                if (task.mDeferRemoval) {
+                    Slog.e(TAG_WM, "Skip defering removal task: " + task);
+                } else {
+                    Slog.e(TAG_WM, "No config for task: "
+                            + task + ", is there a mismatch with AM?");
+                }
+                /// @}
             }
         }
         return true;
@@ -268,6 +292,12 @@ public class TaskStack implements DimLayer.DimLayerUser,
     }
 
     private boolean setBounds(Rect bounds) {
+        /// M: Add debug info.
+        if (DEBUG_STACK) {
+            Slog.d(TAG_WM, "setBounds bound = " + bounds
+                    + ", stackId = " + mStackId, new Throwable("setBounds"));
+        }
+
         boolean oldFullscreen = mFullscreen;
         int rotation = Surface.ROTATION_0;
         int density = DENSITY_DPI_UNDEFINED;
@@ -817,7 +847,9 @@ public class TaskStack implements DimLayer.DimLayerUser,
 
     void resetAnimationBackgroundAnimator() {
         mAnimationBackgroundAnimator = null;
-        mAnimationBackgroundSurface.hide();
+        if (mAnimationBackgroundSurface != null) {
+            mAnimationBackgroundSurface.hide();
+        }
     }
 
     void setAnimationBackground(WindowStateAnimator winAnimator, int color) {

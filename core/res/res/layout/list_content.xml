@@ -34,7 +34,9 @@
                 android:textAppearance="?android:attr/textAppearanceSmall"
                 android:text="@string/loading"
                 android:paddingTop="4dip"
-                android:singleLine="true" />
+                android:singleLine="true" 
+                android:ellipsize="none"
+                android:requiresFadingEdge = "horizontal" />
             
     </LinearLayout>
         

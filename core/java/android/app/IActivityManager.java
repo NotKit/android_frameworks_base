@@ -55,9 +55,11 @@ import android.os.PersistableBundle;
 import android.os.RemoteException;
 import android.os.StrictMode;
 import android.service.voice.IVoiceInteractionSession;
+import android.util.ArrayMap;
 import com.android.internal.app.IVoiceInteractor;
 import com.android.internal.os.IResultReceiver;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -489,6 +491,13 @@ public interface IActivityManager extends IInterface {
 
     public long[] getProcessPss(int[] pids) throws RemoteException;
 
+    /// M: Add for getting swap memory usage @{
+    /**
+     * @internal
+     */
+    public long[] getProcessPswap(int[] pids) throws RemoteException;
+    /// @}
+
     public void showBootMessage(CharSequence msg, boolean always) throws RemoteException;
 
     public void keyguardWaitingForActivityDrawn() throws RemoteException;
@@ -682,6 +691,40 @@ public interface IActivityManager extends IInterface {
      * @throws RemoteException
      */
     public boolean canBypassWorkChallenge(PendingIntent intent) throws RemoteException;
+
+    /// M: Mediatek added APIs start
+    /// M: IPO feature @{
+    public void forceKillPackage(String packageName, int userId, String reason)
+            throws RemoteException;
+    /// M: IPO feature @}
+
+    /// M: Wallpaper Slim @{
+    public void setWallpaperProcess(ComponentName className) throws RemoteException;
+    public void updateWallpaperState(boolean isForeground) throws RemoteException;
+    /// M: Wallpaper Slim @}
+
+    /// M: BMW @{
+    public void stickWindow(IBinder token, boolean isSticky) throws RemoteException;
+    public boolean isStickyByMtk(IBinder token) throws RemoteException;
+    public void restoreWindow() throws RemoteException;
+    /// M: BMW @}
+
+    /// M: Running booster @{
+    public String[] getPackageListFromPid(int pid) throws RemoteException;
+    public ArrayMap<Integer, ArrayList<Integer>> getProcessesWithAdj() throws RemoteException;
+    /// M: Running booster @}
+
+    /// M: [process suppression] @{
+    public int readyToGetContentProvider(IApplicationThread caller, String name, int userId)
+            throws RemoteException;
+    /// M: [process suppression] @}
+
+    /// M: App-based AAL @{
+    public void setAalMode(int mode) throws RemoteException;
+    public void setAalEnabled(boolean enabled) throws RemoteException;
+    /// M: App-based AAL @}
+
+    /// M: Mediatek added APIs end
 
     /*
      * Private non-Binder interfaces
@@ -1075,4 +1118,38 @@ public interface IActivityManager extends IInterface {
     int SET_RENDER_THREAD_TRANSACTION = IBinder.FIRST_CALL_TRANSACTION + 378;
     int SET_HAS_TOP_UI = IBinder.FIRST_CALL_TRANSACTION + 379;
     int CAN_BYPASS_WORK_CHALLENGE = IBinder.FIRST_CALL_TRANSACTION + 380;
+
+    /// M: Add for getting swap memory usage
+    int GET_PROCESS_PSWAP_TRANSACTION = IBinder.FIRST_CALL_TRANSACTION + 405;
+    /// @}
+
+    /// M: Start of Mediatek transactions
+    /// M: IPO feature @{
+    int FORCE_KILL_PACKAGE_TRANSACTION = IBinder.FIRST_CALL_TRANSACTION + 500;
+    /// M: IPO feature @}
+
+    /// M: Wallpaper Slim @{
+    int SET_WALLPAPER_PROCESS = IBinder.FIRST_CALL_TRANSACTION + 501;
+    int UPDATE_WALLPAPER_STATE = IBinder.FIRST_CALL_TRANSACTION + 502;
+    /// M: Wallpaper Slim @}
+    /// M: BMW @{
+    int SET_STICK_WINDOW_TRANSACTION = IBinder.FIRST_CALL_TRANSACTION + 503;
+    int GET_STICKY_WINDOW_TRANSACTION = IBinder.FIRST_CALL_TRANSACTION + 504;
+    int RESTORE_WINDOW_TRANSACTION = IBinder.FIRST_CALL_TRANSACTION + 505;
+    /// M: BMW @}
+
+    /// M: Running booster @{
+    int GET_INFO_PACKAGE_LIST_FROM_PID_TRANSACTION = IBinder.FIRST_CALL_TRANSACTION + 506;
+    int GET_INFO_PROCESSES_WITH_ADJ_TRANSACTION = IBinder.FIRST_CALL_TRANSACTION + 507;
+    /// M: Running booster @}
+
+    /// M: [process suppression] @{
+    int READY_TO_GET_CONTENT_PROVIDER_TRANSACTION = IBinder.FIRST_CALL_TRANSACTION + 508;
+    /// M: [process suppression] @}
+
+    /// M: App-based AAL @{
+    int AAL_SET_AAL_MODE = IBinder.FIRST_CALL_TRANSACTION + 509;
+    int AAL_SET_AAL_ENABLED = IBinder.FIRST_CALL_TRANSACTION + 510;
+    /// M: App-based AAL @}
+    /// M: End of Mediatek transactions
 }

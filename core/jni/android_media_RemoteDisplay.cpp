@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2012 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -38,12 +43,24 @@
 
 #include <ScopedUtfChars.h>
 
+#include <media/IMediaDeathNotifier.h>
+
+#ifdef MTK_WFD_SINK_SUPPORT
+#include <gui/Surface.h>
+#endif
+
 namespace android {
 
 static struct {
     jmethodID notifyDisplayConnected;
     jmethodID notifyDisplayDisconnected;
     jmethodID notifyDisplayError;
+#ifdef MTK_AOSP_ENHANCEMENT
+    ///M:@{
+    jmethodID notifyDisplayKeyEvent;
+    jmethodID notifyDisplayGenericMsgEvent;
+    ///@}
+#endif
 } gRemoteDisplayClassInfo;
 
 // ----------------------------------------------------------------------------
@@ -51,7 +68,7 @@ static struct {
 class NativeRemoteDisplayClient : public BnRemoteDisplayClient {
 public:
     NativeRemoteDisplayClient(JNIEnv* env, jobject remoteDisplayObj) :
-            mRemoteDisplayObjGlobal(env->NewGlobalRef(remoteDisplayObj)) {
+        mRemoteDisplayObjGlobal(env->NewGlobalRef(remoteDisplayObj)) {
     }
 
 protected:
@@ -62,7 +79,7 @@ protected:
 
 public:
     virtual void onDisplayConnected(const sp<IGraphicBufferProducer>& bufferProducer,
-            uint32_t width, uint32_t height, uint32_t flags, uint32_t session) {
+                                    uint32_t width, uint32_t height, uint32_t flags, uint32_t session) {
         JNIEnv* env = AndroidRuntime::getJNIEnv();
 
         jobject surfaceObj = android_view_Surface_createFromIGraphicBufferProducer(env, bufferProducer);
@@ -73,8 +90,8 @@ public:
         }
 
         env->CallVoidMethod(mRemoteDisplayObjGlobal,
-                gRemoteDisplayClassInfo.notifyDisplayConnected,
-                surfaceObj, width, height, flags, session);
+                            gRemoteDisplayClassInfo.notifyDisplayConnected,
+                            surfaceObj, width, height, flags, session);
         env->DeleteLocalRef(surfaceObj);
         checkAndClearExceptionFromCallback(env, "notifyDisplayConnected");
     }
@@ -83,7 +100,7 @@ public:
         JNIEnv* env = AndroidRuntime::getJNIEnv();
 
         env->CallVoidMethod(mRemoteDisplayObjGlobal,
-                gRemoteDisplayClassInfo.notifyDisplayDisconnected);
+                            gRemoteDisplayClassInfo.notifyDisplayDisconnected);
         checkAndClearExceptionFromCallback(env, "notifyDisplayDisconnected");
     }
 
@@ -91,9 +108,31 @@ public:
         JNIEnv* env = AndroidRuntime::getJNIEnv();
 
         env->CallVoidMethod(mRemoteDisplayObjGlobal,
-                gRemoteDisplayClassInfo.notifyDisplayError, error);
+                            gRemoteDisplayClassInfo.notifyDisplayError, error);
         checkAndClearExceptionFromCallback(env, "notifyDisplayError");
     }
+#ifdef MTK_AOSP_ENHANCEMENT
+    ///M:@{
+    virtual void onDisplayKeyEvent(uint32_t uniCode, uint32_t flags) {
+        ALOGD("onDisplayKeyEvent ENTRY");
+        JNIEnv* env = AndroidRuntime::getJNIEnv();
+        env->CallVoidMethod(mRemoteDisplayObjGlobal,
+                            gRemoteDisplayClassInfo.notifyDisplayKeyEvent, uniCode, flags);
+        checkAndClearExceptionFromCallback(env, "notifyDisplayKeyEvent");
+        ALOGD("onDisplayKeyEvent EXIT");
+    }
+
+    virtual void onDisplayGenericMsgEvent(uint32_t event) {
+        ALOGD("onDisplayGenericMsgEvent ENTRY");
+        JNIEnv* env = AndroidRuntime::getJNIEnv();
+        env->CallVoidMethod(mRemoteDisplayObjGlobal,
+                            gRemoteDisplayClassInfo.notifyDisplayGenericMsgEvent, event);
+        ALOGD("onDisplayGenericMsgEvent EXIT");
+    }
+
+
+    ///@}
+#endif
 
 private:
     jobject mRemoteDisplayObjGlobal;
@@ -107,14 +146,51 @@ private:
     }
 };
 
+class BinderNotififer : public IBinder::DeathRecipient {
+public:
+    BinderNotififer(const sp<NativeRemoteDisplayClient>& client):
+        mClient(client) {
+    }
+
+    void binderDied(const wp<IBinder>& who) {
+        ALOGE("IMediaPlayerService is died");
+        mClient->onDisplayDisconnected();
+    }
+
+private:
+    sp<NativeRemoteDisplayClient> mClient;
+};
+
 class NativeRemoteDisplay {
 public:
     NativeRemoteDisplay(const sp<IRemoteDisplay>& display,
-            const sp<NativeRemoteDisplayClient>& client) :
-            mDisplay(display), mClient(client) {
+                        const sp<NativeRemoteDisplayClient>& client,
+                        const sp<BinderNotififer>& notififer) :
+        mDisplay(display), mClient(client), mNotifier(notififer) {
     }
 
+#ifdef MTK_AOSP_ENHANCEMENT
+    void nativeSetBitrateControl(int bitrate) {
+        mDisplay->setBitrateControl(bitrate);
+    }
+    int nativeGetWfdParam(int paramType) {
+        return mDisplay->getWfdParam(paramType);
+    }
+#ifdef MTK_WFD_SINK_SUPPORT
+    void nativeSuspendDisplay(bool suspend, const sp<IGraphicBufferProducer> &bufferProducer) {
+        mDisplay->suspendDisplay(suspend, bufferProducer);
+    }
+
+#ifdef MTK_WFD_SINK_UIBC_SUPPORT
+    void nativeSendUibcEvent(String8 eventDesc) {
+        mDisplay->sendUibcEvent(eventDesc);
+    }
+#endif
+#endif
+#endif /* MTK_AOSP_ENHANCEMENT */
+
     ~NativeRemoteDisplay() {
+        ALOGD("~NativeRemoteDisplay");
         mDisplay->dispose();
     }
 
@@ -129,6 +205,7 @@ public:
 private:
     sp<IRemoteDisplay> mDisplay;
     sp<NativeRemoteDisplayClient> mClient;
+    sp<BinderNotififer> mNotifier;
 };
 
 
@@ -141,22 +218,28 @@ static jlong nativeListen(JNIEnv* env, jobject remoteDisplayObj, jstring ifaceSt
 
     sp<IServiceManager> sm = defaultServiceManager();
     sp<IMediaPlayerService> service = interface_cast<IMediaPlayerService>(
-            sm->getService(String16("media.player")));
+                                          sm->getService(String16("media.player")));
     if (service == NULL) {
         ALOGE("Could not obtain IMediaPlayerService from service manager");
         return 0;
     }
 
     sp<NativeRemoteDisplayClient> client(new NativeRemoteDisplayClient(env, remoteDisplayObj));
+
     sp<IRemoteDisplay> display = service->listenForRemoteDisplay(String16(opPackageName.c_str()),
             client, String8(iface.c_str()));
+
     if (display == NULL) {
         ALOGE("Media player service rejected request to listen for remote display '%s'.",
-                iface.c_str());
+              iface.c_str());
         return 0;
     }
 
-    NativeRemoteDisplay* wrapper = new NativeRemoteDisplay(display, client);
+    sp<BinderNotififer> notififer = new BinderNotififer(client);
+    NativeRemoteDisplay* wrapper = new NativeRemoteDisplay(display, client, notififer);
+
+    IInterface::asBinder(service)->linkToDeath(notififer, 0);
+
     return reinterpret_cast<jlong>(wrapper);
 }
 
@@ -170,6 +253,108 @@ static void nativeResume(JNIEnv* env, jobject remoteDisplayObj, jlong ptr) {
     wrapper->resume();
 }
 
+
+static void nativeSetBitrateControl(JNIEnv* env, jobject remoteDisplayObj, jlong ptr, jint bitrate) {
+#ifdef MTK_AOSP_ENHANCEMENT
+    NativeRemoteDisplay* wrapper = reinterpret_cast<NativeRemoteDisplay*>(ptr);
+    wrapper->nativeSetBitrateControl(bitrate);
+#else
+    (void)env;
+    (void)remoteDisplayObj;
+    (void)ptr;
+    (void)bitrate;
+#endif
+}
+
+static jint nativeGetWfdParam(JNIEnv* env, jobject remoteDisplayObj, jlong ptr, jint paramType) {
+#ifdef MTK_AOSP_ENHANCEMENT
+    int result;
+    NativeRemoteDisplay* wrapper = reinterpret_cast<NativeRemoteDisplay*>(ptr);
+    result = wrapper->nativeGetWfdParam(paramType);
+    return (jint)result;;
+#else
+    (void)env;
+    (void)remoteDisplayObj;
+    (void)ptr;
+    (void)paramType;
+    return 0;
+#endif
+
+}
+
+#if defined(MTK_WFD_SINK_SUPPORT)
+static jlong nativeConnect(JNIEnv* env, jobject remoteDisplayObj, jstring ifaceStr,jobject jSurface) {
+    ScopedUtfChars iface(env, ifaceStr);
+
+
+    sp<IServiceManager> sm = defaultServiceManager();
+    sp<IMediaPlayerService> service = interface_cast<IMediaPlayerService>(
+                                          sm->getService(String16("media.player")));
+    if (service == NULL) {
+        ALOGE("Could not obtain IMediaPlayerService from service manager");
+        return 0;
+    }
+
+    sp<IGraphicBufferProducer> bufferProducer;
+    sp<Surface> surface;
+    if (jSurface) {
+        surface = android_view_Surface_getSurface(env, jSurface);
+        if (surface != NULL) {
+            bufferProducer = surface->getIGraphicBufferProducer();
+        }
+    }
+
+    sp<NativeRemoteDisplayClient> client(new NativeRemoteDisplayClient(env, remoteDisplayObj));
+    sp<IRemoteDisplay> display = service->connectForRemoteDisplay(
+                                     client, String8(iface.c_str()), bufferProducer);
+    if (display == NULL) {
+        ALOGE("Media player service rejected request to connect for remote display '%s'.",
+              iface.c_str());
+        return 0;
+    }
+
+    sp<BinderNotififer> notififer = new BinderNotififer(client);
+    NativeRemoteDisplay* wrapper = new NativeRemoteDisplay(display, client, notififer);
+
+    IInterface::asBinder(service)->linkToDeath(notififer, 0);
+
+    return reinterpret_cast<jlong>(wrapper);
+}
+
+
+
+static void nativeSuspendDisplay(JNIEnv* env, jobject remoteDisplayObj, jlong ptr, jboolean suspend, jobject jSurface) {
+
+
+    NativeRemoteDisplay* wrapper = reinterpret_cast<NativeRemoteDisplay*>(ptr);
+
+    sp<IGraphicBufferProducer> bufferProducer;
+    sp<Surface> surface;
+    if (jSurface) {
+        surface = android_view_Surface_getSurface(env, jSurface);
+        if (surface != NULL) {
+            bufferProducer = surface->getIGraphicBufferProducer();
+        }
+    }
+
+    wrapper->nativeSuspendDisplay(suspend, bufferProducer);
+}
+
+static void nativeSendUibcEvent(JNIEnv* env, jobject remoteDisplayObj, jlong ptr, jstring eventDesp) {
+#if defined(MTK_WFD_SINK_UIBC_SUPPORT)
+    ScopedUtfChars eventDesps(env, eventDesp);
+    NativeRemoteDisplay* wrapper = reinterpret_cast<NativeRemoteDisplay*>(ptr);
+
+    wrapper->nativeSendUibcEvent(String8(eventDesps.c_str()));
+#else
+    (void)env;
+    (void)remoteDisplayObj;
+    (void)ptr;
+    (void)eventDesp;
+#endif
+}
+#endif
+
 static void nativeDispose(JNIEnv* env, jobject remoteDisplayObj, jlong ptr) {
     NativeRemoteDisplay* wrapper = reinterpret_cast<NativeRemoteDisplay*>(ptr);
     delete wrapper;
@@ -179,13 +364,34 @@ static void nativeDispose(JNIEnv* env, jobject remoteDisplayObj, jlong ptr) {
 
 static const JNINativeMethod gMethods[] = {
     {"nativeListen", "(Ljava/lang/String;Ljava/lang/String;)J",
-            (void*)nativeListen },
-    {"nativeDispose", "(J)V",
-            (void*)nativeDispose },
-    {"nativePause", "(J)V",
-            (void*)nativePause },
-    {"nativeResume", "(J)V",
-            (void*)nativeResume },
+        (void*)nativeListen
+    },
+    {   "nativeDispose", "(J)V",
+        (void*)nativeDispose
+    },
+    {   "nativePause", "(J)V",
+        (void*)nativePause
+    },
+    {   "nativeResume", "(J)V",
+        (void*)nativeResume
+    },
+    {   "nativeSetBitrateControl", "(JI)V",
+        (void*)nativeSetBitrateControl
+    },
+    {   "nativeGetWfdParam", "(JI)I",
+        (void*)nativeGetWfdParam
+    },
+#ifdef MTK_WFD_SINK_SUPPORT
+    {   "nativeConnect", "(Ljava/lang/String;Landroid/view/Surface;)J",
+        (void*)nativeConnect
+    },
+    {   "nativeSuspendDisplay", "(JZLandroid/view/Surface;)V",
+        (void*)nativeSuspendDisplay
+    },
+    {   "nativeSendUibcEvent", "(JLjava/lang/String;)V",
+        (void*)nativeSendUibcEvent
+    },
+#endif /* MTK_WFD_SINK_SUPPORT */
 };
 
 int register_android_media_RemoteDisplay(JNIEnv* env)
@@ -199,6 +405,16 @@ int register_android_media_RemoteDisplay(JNIEnv* env)
             clazz, "notifyDisplayDisconnected", "()V");
     gRemoteDisplayClassInfo.notifyDisplayError = GetMethodIDOrDie(env,
             clazz, "notifyDisplayError", "(I)V");
+
+#ifdef MTK_AOSP_ENHANCEMENT
+    ///M:@{
+    gRemoteDisplayClassInfo.notifyDisplayKeyEvent =
+        GetMethodIDOrDie(env, clazz, "notifyDisplayKeyEvent", "(II)V");
+    gRemoteDisplayClassInfo.notifyDisplayGenericMsgEvent =
+        GetMethodIDOrDie(env, clazz, "notifyDisplayGenericMsgEvent", "(I)V");
+    ///@}
+#endif
+
     return err;
 }
 

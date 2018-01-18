@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2008 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -645,6 +650,97 @@ public final class Sensor {
             "android.sensor.dynamic_sensor_meta";
 
     /**
+     *@internal
+     * @hide
+     */
+    public static final int TYPE_PEDOMETER = 35;
+    /**
+     * @hide
+     */
+    public static final String STRING_TYPE_PEDOMETER = "android.sensor.pedometer";
+
+    /**
+     *@internal
+     * @hide
+     */
+    public static final int TYPE_IN_POCKET = 36;
+    /**
+     * @hide
+     */
+    public static final String STRING_TYPE_IN_POCKET = "android.sensor.in_pocket";
+
+    /**
+     * @internal
+     * @hide
+     */
+    public static final int TYPE_ACTIVITY = 37;
+    /**
+     * @hide
+     */
+    public static final String STRING_TYPE_ACTIVITY = "android.sensor.activity";
+    /**
+     *@internal
+     * @hide
+     */
+    public static final int TYPE_PDR = 38;
+    /**
+     * @hide
+     */
+    public static final String STRING_TYPE_PDR = "android.sensor.pdr";
+    /**
+     * @hide
+     */
+    public static final int TYPE_FREEFALL = 39;
+    /**
+     * @hide
+     */
+    public static final String STRING_TYPE_FREEFALL = "android.sensor.freefall";
+    /**
+     * @internal
+     * @hide
+     */
+    public static final int TYPE_ACCELEROMETER_UNCALIBRATED = 40;
+    /**
+     * @hide
+     */
+    public static final String STRING_TYPE_ACCELEROMETER_UNCALIBRATED
+        = "android.sensor.accelerometer_uncalibrated";
+    /**
+     * @hide
+     */
+    public static final int TYPE_FACE_DOWN  = 41;
+    /**
+     * @hide
+     */
+    public static final String STRING_TYPE_FACE_DOWN = "android.sensor.face_down";
+    /**
+     * @hide
+     */
+    public static final int TYPE_SHAKE = 42;
+    /**
+     * @hide
+     */
+    public static final String STRING_TYPE_SHAKE = "android.sensor.shake";
+    /* Bring to see is a watch-style gesture which wake up watch and show time or home screen*/
+    /* The gesture just like most people used to see the time of his/her watch */
+    /**
+     * @hide
+     */
+    public static final int TYPE_BRING_TO_SEE  = 43;
+    /**
+     * @hide
+     */
+    public static final String STRING_TYPE_BRING_TO_SEE = "android.sensor.bring_to_see";
+    /**
+     *@internal
+     * @hide
+     */
+    public static final int TYPE_ANSWER_CALL  = 44;
+    /**
+     * @hide
+     */
+    public static final String STRING_TYPE_ANSWERCALL = "android.sensor.answer_call";
+    /**
      * A constant describing all sensor types.
      */
 
@@ -752,6 +848,18 @@ public final class Sensor {
             1, // SENSOR_TYPE_MOTION_DETECT
             1, // SENSOR_TYPE_HEART_BEAT
             2, // SENSOR_TYPE_DYNAMIC_SENSOR_META
+            1, // RESERVED
+            1, // RESERVED
+            4, // SENSOR_TYPE_PEDOMETER
+            1, // SENSOR_TYPE_IN_POCKET
+            12, // SENSOR_TYPE_ACTIVITY
+            3, // SENSOR_TYPE_PDR
+            1, // SENSOR_TYPE_FREE_FALL
+            6, // SENSOR_TYPE_ACCELEROMETER_UNCALIBRATED
+            1, // SENSOR_TYPE_FACE_DOWM
+            1, // SENSOR_TYPE_SHAKE
+            1,  // SENSOR_TYPE_BRING_TO_SEE
+            1   // SENSOR_TYPE_ANSWER_CALL
     };
 
     /**

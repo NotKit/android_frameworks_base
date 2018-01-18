@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -275,7 +280,21 @@ public abstract class BaseStatusBar extends SystemUI implements
 
     @Override  // NotificationData.Environment
     public boolean isDeviceProvisioned() {
-        return mDeviceProvisioned;
+        /// M: There maybe a timing issue that our mDeviceProvisioned is not the latest value,
+        //  This value should not be false for most normal cases, so when mDeviceProvisioned
+        //  is false, just query it again.
+        if (mDeviceProvisioned == false) {
+            Log.d(TAG, "mDeviceProvisioned is false, so get DEVICE_PROVISIONED from db again !!");
+            final boolean provisioned = 0 != Settings.Global.getInt(
+                    mContext.getContentResolver(), Settings.Global.DEVICE_PROVISIONED, 0);
+            if (provisioned != mDeviceProvisioned) {
+                Log.d(TAG, "mDeviceProvisioned is changed, re-call onchange!");
+                mSettingsObserver.onChange(false);
+            }
+            return provisioned;
+        } else {
+            return mDeviceProvisioned;
+        }
     }
 
     private final IVrStateCallbacks mVrStateCallbacks = new IVrStateCallbacks.Stub() {
@@ -614,7 +633,8 @@ public abstract class BaseStatusBar extends SystemUI implements
         @Override
         public void onNotificationPosted(final StatusBarNotification sbn,
                 final RankingMap rankingMap) {
-            if (DEBUG) Log.d(TAG, "onNotificationPosted: " + sbn);
+            /// M: Enable this log for unusual case debug.
+            /*if (DEBUG)*/ Log.d(TAG, "onNotificationPosted: " + sbn);
             if (sbn != null) {
                 mHandler.post(new Runnable() {
                     @Override
@@ -654,7 +674,8 @@ public abstract class BaseStatusBar extends SystemUI implements
         @Override
         public void onNotificationRemoved(StatusBarNotification sbn,
                 final RankingMap rankingMap) {
-            if (DEBUG) Log.d(TAG, "onNotificationRemoved: " + sbn);
+            /// M: Enable this log for unusual case debug.
+            /*if (DEBUG)*/ Log.d(TAG, "onNotificationRemoved: " + sbn);
             if (sbn != null) {
                 final String key = sbn.getKey();
                 mHandler.post(new Runnable() {
@@ -1443,7 +1464,6 @@ public abstract class BaseStatusBar extends SystemUI implements
         if (userHandle == UserHandle.USER_ALL) {
             return true;
         }
-
         if (mUsersAllowingNotifications.indexOfKey(userHandle) < 0) {
             final boolean allowed = 0 != Settings.Secure.getIntForUser(
                     mContext.getContentResolver(),
@@ -1671,6 +1691,9 @@ public abstract class BaseStatusBar extends SystemUI implements
         // bind the click event to the content area
         NotificationContentView contentContainer = row.getPrivateLayout();
         NotificationContentView contentContainerPublic = row.getPublicLayout();
+
+        /// M: Notification UI Support RTL.
+        row.setLayoutDirection(View.LAYOUT_DIRECTION_LOCALE);
 
         row.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
         if (ENABLE_REMOTE_INPUT) {
@@ -2331,6 +2354,8 @@ public abstract class BaseStatusBar extends SystemUI implements
                 Settings.Secure.LOCK_SCREEN_SHOW_NOTIFICATIONS,
                 1,
                 mCurrentUserId) != 0;
+        /// M: Fix ALPS02876316, update the value of lock_screen_show_notifications in time.
+        mUsersAllowingNotifications.put(mCurrentUserId, show);
         final int dpmFlags = mDevicePolicyManager.getKeyguardDisabledFeatures(
                 null /* admin */, mCurrentUserId);
         final boolean allowedByDpm = (dpmFlags
@@ -2362,7 +2387,8 @@ public abstract class BaseStatusBar extends SystemUI implements
     public abstract void removeNotification(String key, RankingMap ranking);
 
     public void updateNotification(StatusBarNotification notification, RankingMap ranking) {
-        if (DEBUG) Log.d(TAG, "updateNotification(" + notification + ")");
+        /// M: Enable this log for debug.
+        /*if (DEBUG)*/ Log.d(TAG, "updateNotification(" + notification + ")");
 
         final String key = notification.getKey();
         Entry entry = mNotificationData.get(key);
@@ -2529,7 +2555,8 @@ public abstract class BaseStatusBar extends SystemUI implements
         }
 
         if (mNotificationData.shouldFilterOut(sbn)) {
-            if (DEBUG) Log.d(TAG, "No peeking: filtered notification: " + sbn.getKey());
+            /// M: Enable this log for debug.
+            /*if (DEBUG)*/ Log.d(TAG, "No peeking: filtered notification: " + sbn.getKey());
             return false;
         }
 
@@ -2543,41 +2570,48 @@ public abstract class BaseStatusBar extends SystemUI implements
         }
 
         if (!inUse) {
-            if (DEBUG) {
+            /// M: Enable this log for debug.
+            if (true /*DEBUG*/) {
                 Log.d(TAG, "No peeking: not in use: " + sbn.getKey());
             }
             return false;
         }
 
         if (mNotificationData.shouldSuppressScreenOn(sbn.getKey())) {
-            if (DEBUG) Log.d(TAG, "No peeking: suppressed by DND: " + sbn.getKey());
+            /// M: Enable this log for debug.
+            /*if (DEBUG)*/ Log.d(TAG, "No peeking: suppressed by DND: " + sbn.getKey());
             return false;
         }
 
         if (entry.hasJustLaunchedFullScreenIntent()) {
-            if (DEBUG) Log.d(TAG, "No peeking: recent fullscreen: " + sbn.getKey());
+            /// M: Enable this log for debug.
+            /*if (DEBUG)*/ Log.d(TAG, "No peeking: recent fullscreen: " + sbn.getKey());
             return false;
         }
 
         if (isSnoozedPackage(sbn)) {
-            if (DEBUG) Log.d(TAG, "No peeking: snoozed package: " + sbn.getKey());
+            /// M: Enable this log for debug.
+            /*if (DEBUG)*/ Log.d(TAG, "No peeking: snoozed package: " + sbn.getKey());
             return false;
         }
 
         if (mNotificationData.getImportance(sbn.getKey()) < IMPORTANCE_HIGH) {
-            if (DEBUG) Log.d(TAG, "No peeking: unimportant notification: " + sbn.getKey());
+            /// M: Enable this log for debug.
+            /*if (DEBUG)*/ Log.d(TAG, "No peeking: unimportant notification: " + sbn.getKey());
             return false;
         }
 
         if (sbn.getNotification().fullScreenIntent != null) {
             if (mAccessibilityManager.isTouchExplorationEnabled()) {
-                if (DEBUG) Log.d(TAG, "No peeking: accessible fullscreen: " + sbn.getKey());
+                /// M: Enable this log for debug.
+                /*if (DEBUG)*/ Log.d(TAG, "No peeking: accessible fullscreen: " + sbn.getKey());
                 return false;
             } else {
                 return true;
             }
         }
-
+        /// M: Add this log for debug.
+        Log.d(TAG, "shouldPeek: true");
         return true;
     }
 

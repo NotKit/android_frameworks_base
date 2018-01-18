@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,6 +26,8 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.drawable.Drawable;
+import android.os.Build;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.ActionProvider;
 import android.view.Menu;
@@ -67,6 +74,12 @@ import com.android.internal.R;
  * @see ActionProvider
  */
 public class ShareActionProvider extends ActionProvider {
+
+    /**
+     * Tag used for logging.
+     */
+    private static final String LOG_TAG = "ShareActionProvider";
+    private static final boolean DBG = "eng".equals(Build.TYPE);
 
     /**
      * Listener for the event of selecting a share target.
@@ -162,9 +175,18 @@ public class ShareActionProvider extends ActionProvider {
     public View onCreateActionView() {
         // Create the view and set its data model.
         ActivityChooserView activityChooserView = new ActivityChooserView(mContext);
+        ActivityChooserModel dataModel = null;
+
         if (!activityChooserView.isInEditMode()) {
-            ActivityChooserModel dataModel = ActivityChooserModel.get(mContext, mShareHistoryFileName);
+            dataModel = ActivityChooserModel.get(mContext, mShareHistoryFileName);
             activityChooserView.setActivityChooserModel(dataModel);
+        }
+
+        if (DBG) {
+            Log.d(LOG_TAG, "onCreateActionView" +
+                    ", mShareHistoryFileName = " + mShareHistoryFileName +
+                    ", dataModel = " + dataModel +
+                    ", activityChooserView = " + activityChooserView + ", this = " + this);
         }
 
         // Lookup and set the expand action icon.
@@ -317,6 +339,11 @@ public class ShareActionProvider extends ActionProvider {
      */
     private void setActivityChooserPolicyIfNeeded() {
         if (mOnShareTargetSelectedListener == null) {
+            /// M: reset listener
+            ActivityChooserModel dataModel =
+                ActivityChooserModel.get(mContext, mShareHistoryFileName);
+
+            dataModel.setOnChooseActivityListener(null);
             return;
         }
         if (mOnChooseActivityListener == null) {

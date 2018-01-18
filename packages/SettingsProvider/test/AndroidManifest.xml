@@ -15,7 +15,9 @@
 -->
 
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-          package="com.android.providers.setting.test">
+          package="com.android.providers.setting.test"
+          android:versionCode="2"
+          android:versionName="1.0.1" >
 
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="21" />
 

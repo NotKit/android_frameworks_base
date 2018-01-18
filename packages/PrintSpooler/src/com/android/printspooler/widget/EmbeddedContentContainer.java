@@ -19,6 +19,9 @@ package com.android.printspooler.widget;
 import android.content.Context;
 import android.util.AttributeSet;
 import android.widget.FrameLayout;
+///M: @{
+import android.animation.LayoutTransition;
+///M: @}
 
 public class EmbeddedContentContainer extends FrameLayout {
     public interface OnSizeChangeListener {
@@ -29,6 +32,16 @@ public class EmbeddedContentContainer extends FrameLayout {
 
     public EmbeddedContentContainer(Context context, AttributeSet attrs) {
         super(context, attrs);
+        ///M: There is a <code>RecyclerView</code> placed under this
+        //      <code>FrameLayout</code>, however there are lots of
+        //      limitations on scroll operation on <code>RecyclerView</code>,
+        //      to leave <code>RecyclerView</code> in a safe operation, all
+        //      animations should be disabled first. @{
+        LayoutTransition mLayoutTransition = getLayoutTransition();
+        if (mLayoutTransition != null) {
+            setLayoutTransition(null);
+        }
+        ///M: @}
     }
 
     public void setOnSizeChangeListener(OnSizeChangeListener listener) {

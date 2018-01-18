@@ -36,6 +36,7 @@ import android.content.res.Configuration;
 import android.content.pm.ApplicationInfo;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -92,6 +93,7 @@ import java.lang.ref.WeakReference;
 public class Dialog implements DialogInterface, Window.Callback,
         KeyEvent.Callback, OnCreateContextMenuListener, Window.OnWindowDismissedCallback {
     private static final String TAG = "Dialog";
+    private static final boolean DBG = "eng".equals(Build.TYPE);
     private Activity mOwnerActivity;
 
     private final WindowManager mWindowManager;
@@ -278,6 +280,10 @@ public class Dialog implements DialogInterface, Window.Callback,
      * that in {@link #onStart}.
      */
     public void show() {
+        if (DBG) {
+            Log.d(TAG, "show");
+        }
+
         if (mShowing) {
             if (mDecor != null) {
                 if (mWindow.hasFeature(Window.FEATURE_ACTION_BAR)) {
@@ -350,6 +356,10 @@ public class Dialog implements DialogInterface, Window.Callback,
     }
 
     void dismissDialog() {
+        if (DBG) {
+            Log.d(TAG, "dismissDialog");
+        }
+
         if (mDecor == null || !mShowing) {
             return;
         }

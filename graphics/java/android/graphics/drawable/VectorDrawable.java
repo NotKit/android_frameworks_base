@@ -389,8 +389,12 @@ public class VectorDrawable extends Drawable {
         }
         if (deltaInBytes > 0) {
             VMRuntime.getRuntime().registerNativeAllocation(deltaInBytes);
+            mVectorState.bt.allocate((long)deltaInBytes);
+            mVectorState.allocatedOnDraw += deltaInBytes;
         } else if (deltaInBytes < 0) {
             VMRuntime.getRuntime().registerNativeFree(-deltaInBytes);
+            mVectorState.bt.free((long)(-deltaInBytes));
+            mVectorState.freedOnDraw += (-deltaInBytes);
         }
     }
 
@@ -633,7 +637,10 @@ public class VectorDrawable extends Drawable {
             // This VD has been used to display other VD resource content, clean up.
             if (mVectorState.mRootGroup != null) {
                 // Subtract the native allocation for all the nodes.
-                VMRuntime.getRuntime().registerNativeFree(mVectorState.mRootGroup.getNativeSize());
+                int nativeGroupChildrenSize = mVectorState.mRootGroup.getNativeGroupChildrenSize();
+                VMRuntime.getRuntime().registerNativeFree(nativeGroupChildrenSize);
+                mVectorState.bt.free((long) nativeGroupChildrenSize);
+                mVectorState.freedRootGroupOnInflate += nativeGroupChildrenSize;
                 // Remove child nodes' reference to tree
                 mVectorState.mRootGroup.setTree(null);
             }
@@ -642,6 +649,8 @@ public class VectorDrawable extends Drawable {
                 // Subtract the native allocation for the tree wrapper, which contains root node
                 // as well as rendering related data.
                 VMRuntime.getRuntime().registerNativeFree(mVectorState.NATIVE_ALLOCATION_SIZE);
+                mVectorState.bt.free((long) mVectorState.NATIVE_ALLOCATION_SIZE);
+                mVectorState.freedNativeTreeOnInflate += mVectorState.NATIVE_ALLOCATION_SIZE;
                 mVectorState.mNativeTree.release();
             }
             mVectorState.createNativeTree(mVectorState.mRootGroup);
@@ -828,6 +837,19 @@ public class VectorDrawable extends Drawable {
         return mVectorState.mAutoMirrored;
     }
 
+    static class BalanceTracker {
+        private long balance = 0;
+        public void allocate(long size) {
+            balance += size;
+        }
+        public void free(long size) {
+            balance -= size;
+        }
+        public long get() {
+            return balance;
+        }
+    }
+
     /**
      * @hide
      */
@@ -836,6 +858,17 @@ public class VectorDrawable extends Drawable {
     }
 
     static class VectorDrawableState extends ConstantState {
+        //M: debug allocate/free native memroy
+        public int allocatedOnCreateNativeTree = 0;
+        public int allocatedOnCreateNativeTreeFromCopy = 0;
+        public int allocatedOnTreeConstructionFinished = 0;
+        public int allocatedOnDraw = 0;
+        public int freedOnDraw = 0;
+        public int freedRootGroupOnInflate = 0;
+        public int freedNativeTreeOnInflate = 0;
+        public long allocatedSizeInTotal = 0;
+        public long freedSizeInFinalize = 0;
+        public BalanceTracker bt = new BalanceTracker();
         // Variables below need to be copied (deep copy if applicable) for mutation.
         int[] mThemeAttrs;
         @Config int mChangingConfigurations;
@@ -925,6 +958,8 @@ public class VectorDrawable extends Drawable {
             mNativeTree = new VirtualRefBasePtr(nCreateTree(rootGroup.mNativePtr));
             // Register tree size
             VMRuntime.getRuntime().registerNativeAllocation(NATIVE_ALLOCATION_SIZE);
+            bt.allocate((long) NATIVE_ALLOCATION_SIZE);
+            allocatedOnCreateNativeTree += NATIVE_ALLOCATION_SIZE;
         }
 
         // Create a new native tree with the given root group, and copy the properties from the
@@ -934,6 +969,8 @@ public class VectorDrawable extends Drawable {
                     copy.mNativeTree.get(), rootGroup.mNativePtr));
             // Register tree size
             VMRuntime.getRuntime().registerNativeAllocation(NATIVE_ALLOCATION_SIZE);
+            bt.allocate((long) NATIVE_ALLOCATION_SIZE);
+            allocatedOnCreateNativeTreeFromCopy += NATIVE_ALLOCATION_SIZE;
         }
 
         // This should be called every time after a new RootGroup and all its subtrees are created
@@ -942,6 +979,8 @@ public class VectorDrawable extends Drawable {
             mRootGroup.setTree(mNativeTree);
             mAllocationOfAllNodes = mRootGroup.getNativeSize();
             VMRuntime.getRuntime().registerNativeAllocation(mAllocationOfAllNodes);
+            bt.allocate(mAllocationOfAllNodes);
+            allocatedOnTreeConstructionFinished += mAllocationOfAllNodes;
         }
 
         long getNativeRenderer() {
@@ -1045,8 +1084,37 @@ public class VectorDrawable extends Drawable {
         public void finalize() throws Throwable {
             super.finalize();
             int bitmapCacheSize = mLastHWCachePixelCount * 4 + mLastSWCachePixelCount * 4;
-            VMRuntime.getRuntime().registerNativeFree(NATIVE_ALLOCATION_SIZE
+            allocatedSizeInTotal =
+                    (allocatedOnCreateNativeTree + allocatedOnCreateNativeTreeFromCopy
+                     + allocatedOnTreeConstructionFinished + allocatedOnDraw);
+            freedSizeInFinalize =
+                    (NATIVE_ALLOCATION_SIZE + mAllocationOfAllNodes + bitmapCacheSize);
+
+            bt.free((long) freedSizeInFinalize);
+            try {
+                VMRuntime.getRuntime().registerNativeFree(NATIVE_ALLOCATION_SIZE
                     + mAllocationOfAllNodes + bitmapCacheSize);
+            } catch (Exception e) {
+                Log.e("VectorDrawable", "---balance tracker find: "
+                  + bt.get()+ " bytes remained\n"
+                  + "---Allocated size in total: " + allocatedSizeInTotal + " bytes\n"
+                  + "allocated On Create Native Tree: "
+                  + allocatedOnCreateNativeTree + " bytes\n"
+                  + "allocated On Create Native Tree From Copy: "
+                  + allocatedOnCreateNativeTreeFromCopy + " bytes\n"
+                  + "allocated On Tree Construction Finished: "
+                  + allocatedOnTreeConstructionFinished + " bytes\n"
+                  + "allocated On Draw: " + allocatedOnDraw + " bytes\n"
+                  + "---vm will free size in finalize: " + freedSizeInFinalize + " bytes\n"
+                  + "---before finalize, freed on draw: " + freedOnDraw + " bytes"
+                  + "  freed RootGroup On Inflate: " + freedRootGroupOnInflate + " bytes\n"
+                  + "  freed NativeTree On Inflate: " + freedNativeTreeOnInflate + " bytes\n"
+                  + "---Last HWCache Pixel Count after HWUI draw: "
+                  + mLastHWCachePixelCount + "\n"
+                  + "---Last SWCache Pixel Count after sw draw: "
+                  + mLastSWCachePixelCount + "\n");
+                throw e;
+            }
         }
 
         /**
@@ -1359,6 +1427,15 @@ public class VectorDrawable extends Drawable {
         int getNativeSize() {
             // Return the native allocation needed for the subtree.
             int size = NATIVE_ALLOCATION_SIZE;
+            for (int i = 0; i < mChildren.size(); i++) {
+                size += mChildren.get(i).getNativeSize();
+            }
+            return size;
+        }
+
+        //M: add for avoid vm double free native RootGroup size(100)
+        int getNativeGroupChildrenSize() {
+            int size = 0;
             for (int i = 0; i < mChildren.size(); i++) {
                 size += mChildren.get(i).getNativeSize();
             }

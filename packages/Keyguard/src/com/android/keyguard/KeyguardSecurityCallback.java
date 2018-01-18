@@ -15,6 +15,8 @@
  */
 package com.android.keyguard;
 
+import com.android.keyguard.KeyguardHostView.OnDismissAction;
+
 public interface KeyguardSecurityCallback {
 
     /**
@@ -47,4 +49,21 @@ public interface KeyguardSecurityCallback {
      * Resets the keyguard view.
      */
     void reset();
+
+    /**
+     * M: Mediatek add for voice unlock.
+     * @return whether has DismissAction
+     */
+    boolean hasOnDismissAction();
+
+    /**
+     * Sets an action to perform after the user successfully enters their credentials.
+     * @param action
+     */
+    void setOnDismissAction(OnDismissAction action);
+
+    /**
+     * Shows the backup security for the current method.  If none available, this call is a no-op.
+     */
+    void showBackupSecurity();
 }

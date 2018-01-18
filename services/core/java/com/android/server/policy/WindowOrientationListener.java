@@ -64,7 +64,7 @@ public abstract class WindowOrientationListener {
 
     /**
      * Creates a new WindowOrientationListener.
-     * 
+     *
      * @param context for the WindowOrientationListener.
      * @param handler Provides the Looper for receiving sensor updates.
      */
@@ -74,12 +74,12 @@ public abstract class WindowOrientationListener {
 
     /**
      * Creates a new WindowOrientationListener.
-     * 
+     *
      * @param context for the WindowOrientationListener.
      * @param handler Provides the Looper for receiving sensor updates.
      * @param rate at which sensor events are processed (see also
      * {@link android.hardware.SensorManager SensorManager}). Use the default
-     * value of {@link android.hardware.SensorManager#SENSOR_DELAY_NORMAL 
+     * value of {@link android.hardware.SensorManager#SENSOR_DELAY_NORMAL
      * SENSOR_DELAY_NORMAL} for simple screen orientation change detection.
      *
      * This constructor is private since no one uses it.
@@ -102,6 +102,7 @@ public abstract class WindowOrientationListener {
                 mOrientationJudge = new AccelSensorJudge(context);
             }
         }
+        Slog.d(TAG, "ctor: " + this);
     }
 
     /**
@@ -115,7 +116,7 @@ public abstract class WindowOrientationListener {
                 return;
             }
             if (mEnabled == false) {
-                if (LOG) {
+                if (true || LOG) {
                     Slog.d(TAG, "WindowOrientationListener enabled");
                 }
                 mOrientationJudge.resetLocked();
@@ -140,7 +141,7 @@ public abstract class WindowOrientationListener {
                 return;
             }
             if (mEnabled == true) {
-                if (LOG) {
+                if (true || LOG) {
                     Slog.d(TAG, "WindowOrientationListener disabled");
                 }
                 mSensorManager.unregisterListener(mOrientationJudge);
@@ -575,6 +576,11 @@ public abstract class WindowOrientationListener {
             int oldProposedRotation;
 
             synchronized (mLock) {
+            	  //guohuajun add
+            	  float temp = event.values[0];
+								event.values[0] = -event.values[1];
+								event.values[1] = temp;
+            	  //guohuajun add end
                 // The vector given in the SensorEvent points straight up (towards the sky) under
                 // ideal conditions (the phone is not accelerating).  I'll call this up vector
                 // elsewhere.

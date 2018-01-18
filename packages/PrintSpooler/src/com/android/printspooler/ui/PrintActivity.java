@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -240,6 +245,20 @@ public class PrintActivity extends Activity implements RemotePrintDocument.Updat
     /** Is doFinish() already in progress */
     private boolean mIsFinishing;
 
+    ///M: Add a variable to handle whether this process has
+    //      started an activity for result.
+    //      It may look a bit tricky, but useful at some critical
+    //      scenarios such as AMS has sent <code>onActivityResult</code>
+    //      to a newly activity which has been brought up just
+    //      for the old one has been killed by LMK @{
+    private boolean mIsWaitingForResult = false;
+    ///M: @}
+
+    ///M: Add a variable to record current configuration @{
+    private Configuration preConfig = new Configuration();
+    ///M: @}
+
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -282,7 +301,15 @@ public class PrintActivity extends Activity implements RemotePrintDocument.Updat
             }
         });
 
+
         getLoaderManager().initLoader(LOADER_ID_ENABLED_PRINT_SERVICES, null, this);
+
+        ///M: @{
+        mIsWaitingForResult = false;
+        preConfig.setTo(getResources().getConfiguration());
+        ///M: @}
+
+        Log.d(LOG_TAG, "PrintSpooler OnCreated");
     }
 
     private void onConnectedToPrintSpooler(final IBinder documentAdapter) {
@@ -322,13 +349,23 @@ public class PrintActivity extends Activity implements RemotePrintDocument.Updat
 
                 // If we are finishing or we are in a state that we do not need any
                 // data from the printing app, then no need to finish.
+                ///M: Just to prevent more operation on RecyclerView, otherwise
+                //      it may face some curious situation @{
+                if (mPrintPreviewController != null) {
+                    mPrintPreviewController.setUiShown(false);
+                 }
+                 ///M: @}
                 if (isFinishing() || isDestroyed() ||
                         (isFinalState(mState) && !mPrintedDocument.isUpdating())) {
                     return;
                 }
                 setState(STATE_PRINT_CANCELED);
+
                 mPrintedDocument.cancel(true);
                 doFinish();
+                ///M: Only Print App has died, need for further operation @{
+                cancelPrint();
+                ///M: @}
             }
         }, PrintActivity.this);
         mProgressMessageController = new ProgressMessageController(
@@ -361,6 +398,13 @@ public class PrintActivity extends Activity implements RemotePrintDocument.Updat
     @Override
     public void onPause() {
         PrintSpoolerService spooler = mSpoolerProvider.getSpooler();
+
+        ///M: No need to do redundant job when it`s null @{
+        if (spooler == null) {
+          super.onPause();
+            return;
+        }
+        ///M: @}
 
         if (mState == STATE_INITIALIZING) {
             if (isFinishing()) {
@@ -409,6 +453,8 @@ public class PrintActivity extends Activity implements RemotePrintDocument.Updat
         }
 
         super.onStop();
+        Log.d(LOG_TAG, "PrintSpooler onPaused");
+
     }
 
     @Override
@@ -477,7 +523,13 @@ public class PrintActivity extends Activity implements RemotePrintDocument.Updat
     public void onActionPerformed() {
         if (mState == STATE_UPDATE_FAILED
                 && canUpdateDocument() && updateDocument(true)) {
-            ensurePreviewUiShown();
+          ///M: Display preview here is so wrong. Since we can not
+          //      be sure that preview is ready or can be displayed, once
+          //      there is error on generating preview, this will bring
+          //      trouble to viewroot, just leave this operation behind,
+          //      onUpdatexxxx will handle it. @{
+            //ensurePreviewUiShown();
+          ///M: @}
             setState(STATE_CONFIGURING);
             updateOptionsUi();
         }
@@ -620,15 +672,28 @@ public class PrintActivity extends Activity implements RemotePrintDocument.Updat
         return !hasErrors();
     }
 
+    ///M: Check if orientation has changed.
+    //      According to the original design by Google, the only
+    //      situation should be concerned is just the orientation @{
+    private boolean isOrientationChanged(Configuration oldConfig, Configuration newConfig) {
+      if (oldConfig.orientation != newConfig.orientation) {
+        return true;
+      }
+      return false;
+    }
+    ///M: @}
+
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
-        super.onConfigurationChanged(newConfig);
-
-        mMediaSizeComparator.onConfigurationChanged(newConfig);
-
+      super.onConfigurationChanged(newConfig);
+      if (isOrientationChanged(preConfig, newConfig)) {
+        if (mMediaSizeComparator != null) {
+            mMediaSizeComparator.onConfigurationChanged(newConfig);
+        }
         if (mPrintPreviewController != null) {
             mPrintPreviewController.onOrientationChanged();
-        }
+          }
+      }
     }
 
     @Override
@@ -644,8 +709,19 @@ public class PrintActivity extends Activity implements RemotePrintDocument.Updat
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+
         switch (requestCode) {
             case ACTIVITY_REQUEST_CREATE_FILE: {
+              ///M: Once activity who starts the create file activity has been killed,
+              //      no need to handle the previous request, just quit this activity @{
+              if (!mIsWaitingForResult) {
+                Log.w(LOG_TAG, "The old activity has already been killed");
+                doFinish();
+                    setState(STATE_PRINT_CANCELED);
+                    mIsWaitingForResult = false;
+                return;
+              }
+              ///M: @}
                 onStartCreateDocumentActivityResult(resultCode, data);
             } break;
 
@@ -671,7 +747,9 @@ public class PrintActivity extends Activity implements RemotePrintDocument.Updat
         intent.setType("application/pdf");
         intent.putExtra(Intent.EXTRA_TITLE, info.getName());
         intent.putExtra(DocumentsContract.EXTRA_PACKAGE_NAME, mCallingPackageName);
-
+        ///M: @{
+        mIsWaitingForResult = true;
+        ///M: @}
         try {
             startActivityForResult(intent, ACTIVITY_REQUEST_CREATE_FILE);
         } catch (Exception e) {
@@ -1006,7 +1084,8 @@ public class PrintActivity extends Activity implements RemotePrintDocument.Updat
     }
 
     private void ensureProgressUiShown() {
-        if (isFinishing() || isDestroyed()) {
+      ///M: None sense to display UI when activity has been paused or stopped @{
+        if (isFinishing() || isDestroyed() || !isResumed()) {
             return;
         }
         if (mUiState != UI_STATE_PROGRESS) {
@@ -1018,7 +1097,8 @@ public class PrintActivity extends Activity implements RemotePrintDocument.Updat
     }
 
     private void ensurePreviewUiShown() {
-        if (isFinishing() || isDestroyed()) {
+      ///M: None sense to display UI when activity has been paused or stopped @{
+        if (isFinishing() || isDestroyed() || !isResumed()) {
             return;
         }
         if (mUiState != UI_STATE_PREVIEW) {
@@ -1029,14 +1109,19 @@ public class PrintActivity extends Activity implements RemotePrintDocument.Updat
     }
 
     private void ensureErrorUiShown(CharSequence message, int action) {
-        if (isFinishing() || isDestroyed()) {
+      ///M: None sense to display UI when activity has been paused or stopped @{
+        if (isFinishing() || isDestroyed() || !isResumed()) {
             return;
         }
         if (mUiState != UI_STATE_ERROR) {
             mUiState = UI_STATE_ERROR;
             mPrintPreviewController.setUiShown(false);
             Fragment fragment = PrintErrorFragment.newInstance(message, action);
-            showFragment(fragment);
+            try {
+                showFragment(fragment);
+            } catch (IllegalStateException ie) {
+                Log.e(LOG_TAG, "Activity is under pausing, no need for fragment anymore");
+            }
         }
     }
 
@@ -1193,10 +1278,15 @@ public class PrintActivity extends Activity implements RemotePrintDocument.Updat
     }
 
     private void cancelPrint() {
-        setState(STATE_PRINT_CANCELED);
+      ///M: Once STATE_PRINT_CANCELED is set here
+      //      PrintDocumentAdapter will never be finished,
+      //      just mark state after finalization has been done.
+      // @{
         updateOptionsUi();
         mPrintedDocument.cancel(true);
         doFinish();
+        setState(STATE_PRINT_CANCELED);
+        ///M: @}
     }
 
     /**
@@ -2056,7 +2146,7 @@ public class PrintActivity extends Activity implements RemotePrintDocument.Updat
     }
 
     private void doFinish() {
-        if (mPrintedDocument != null && mPrintedDocument.isUpdating()) {
+       if (mPrintedDocument != null && mPrintedDocument.isUpdating()) {
             // The printedDocument will call doFinish() when the current command finishes
             return;
         }
@@ -2064,8 +2154,8 @@ public class PrintActivity extends Activity implements RemotePrintDocument.Updat
         if (mIsFinishing) {
             return;
         }
-
         mIsFinishing = true;
+
 
         if (mPrinterRegistry != null) {
             mPrinterRegistry.setTrackedPrinter(null);
@@ -2079,22 +2169,28 @@ public class PrintActivity extends Activity implements RemotePrintDocument.Updat
         if (mSpoolerProvider != null) {
             mSpoolerProvider.destroy();
         }
-
-        if (mProgressMessageController != null) {
-            setState(mProgressMessageController.cancel());
-        }
-
-        if (mState != STATE_INITIALIZING) {
-            mPrintedDocument.finish();
-            mPrintedDocument.destroy();
-            mPrintPreviewController.destroy(new Runnable() {
-                @Override
-                public void run() {
-                    finish();
-                }
-            });
-        } else {
-            finish();
+        ///M: cts will cancel print job ,so use google design
+        if ((mState != STATE_INITIALIZING) ) {
+            ///M: Just to protect this method from NULL pointer exception @{
+            if (mProgressMessageController != null) {
+                setState(mProgressMessageController.cancel());
+            }
+            ///M: Make sure it`s ok for destroying @{
+            if (mPrintedDocument != null && !mPrintedDocument.isDestroyed()) {
+            ///M: @}
+                mPrintedDocument.finish();
+                mPrintedDocument.destroy();
+            }
+            if (mPrintPreviewController != null) {
+                mPrintPreviewController.destroy(new Runnable() {
+                    @Override
+                    public void run() {
+                        finish();
+                    }
+                });
+            }
+        }else {
+           finish();
         }
     }
 
@@ -3009,7 +3105,13 @@ public class PrintActivity extends Activity implements RemotePrintDocument.Updat
 
                 @Override
                 protected void onPostExecute(Void aVoid) {
-                    mContext.unbindService(DocumentTransformer.this);
+                    ///M: FIXME! Workaround to avoid illegal state @{
+                    try {
+                        mContext.unbindService(DocumentTransformer.this);
+                    } catch (IllegalArgumentException ie) {
+                        Log.e(LOG_TAG, "Service has died here");
+                    }
+                    ///M: @}
                     mCallback.run();
                 }
             }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
@@ -3137,3 +3239,4 @@ public class PrintActivity extends Activity implements RemotePrintDocument.Updat
         }
     }
 }
+

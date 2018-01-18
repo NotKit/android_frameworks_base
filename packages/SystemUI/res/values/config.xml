@@ -99,13 +99,14 @@
     <integer name="quick_settings_user_time_settings_tile_span">1</integer>
 
     <!-- The default tiles to display in QuickSettings -->
+    <!-- M: add hotknot tile -->
     <string name="quick_settings_tiles_default" translatable="false">
-        wifi,cell,battery,dnd,flashlight,rotation,bt,airplane
+        wifi,cell,battery,dnd,rotation,bt,airplane,hotknot
     </string>
 
     <!-- Tiles native to System UI. Order should match "quick_settings_tiles_default" -->
     <string name="quick_settings_tiles_stock" translatable="false">
-        wifi,cell,battery,dnd,flashlight,rotation,bt,airplane,location,hotspot,inversion,saver,work,cast,night
+        wifi,cell,battery,dnd,flashlight,rotation,bt,airplane,hotknot,location,hotspot,inversion,saver,work,cast,night
     </string>
 
     <!-- The tiles to display in QuickSettings -->

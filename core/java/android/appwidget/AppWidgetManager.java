@@ -34,6 +34,7 @@ import com.android.internal.appwidget.IAppWidgetService;
 
 import java.util.Collections;
 import java.util.List;
+import android.os.SystemProperties;
 
 /**
  * Updates AppWidget state; gets information about installed AppWidget providers and other
@@ -79,6 +80,11 @@ public class AppWidgetManager {
      * @see #ACTION_APPWIDGET_CONFIGURE
      */
     public static final String ACTION_APPWIDGET_PICK = "android.appwidget.action.APPWIDGET_PICK";
+
+    /**
+     * @hide
+     */
+    private final static String TAG = "AppWidgetManager";
 
     /**
      * Similar to ACTION_APPWIDGET_PICK, but used from keyguard
@@ -1078,5 +1084,24 @@ public class AppWidgetManager {
                 mDisplayMetrics);
         info.minResizeHeight = TypedValue.complexToDimensionPixelSize(info.minResizeHeight,
                 mDisplayMetrics);
+    }
+
+    /**
+     * @hide
+     */
+    public List<ComponentName> getAppWidgetOfHost(String pkg, int uid) {
+        if (mService == null || !isRunningBoosterSupport()) {
+            return Collections.emptyList();
+        }
+        try {
+            return mService.getAppWidgetOfHost(pkg, uid);
+        }
+        catch (RemoteException e) {
+            throw new RuntimeException("system server dead?", e);
+        }
+    }
+
+    private boolean isRunningBoosterSupport() {
+        return SystemProperties.get("persist.runningbooster.support").equals("1");
     }
 }

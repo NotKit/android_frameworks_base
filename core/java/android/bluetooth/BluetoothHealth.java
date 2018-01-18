@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -57,7 +62,7 @@ import java.util.List;
 public final class BluetoothHealth implements BluetoothProfile {
     private static final String TAG = "BluetoothHealth";
     private static final boolean DBG = true;
-    private static final boolean VDBG = false;
+    private static final boolean VDBG = true;
 
     /**
      * Health Profile Source Role - the health device.
@@ -474,6 +479,8 @@ public final class BluetoothHealth implements BluetoothProfile {
         IBluetoothManager mgr = mAdapter.getBluetoothManager();
         if (mgr != null) {
             try {
+                if (VDBG) Log.d(TAG, "Register mBluetoothStateChangeCallback = "
+                    + mBluetoothStateChangeCallback);
                 mgr.registerStateChangeCallback(mBluetoothStateChangeCallback);
             } catch (RemoteException e) {
                 Log.e(TAG,"",e);
@@ -500,6 +507,8 @@ public final class BluetoothHealth implements BluetoothProfile {
         IBluetoothManager mgr = mAdapter.getBluetoothManager();
         if (mgr != null) {
             try {
+                if (VDBG) Log.d(TAG, "Unregister mBluetoothStateChangeCallback = "
+                    + mBluetoothStateChangeCallback);
                 mgr.unregisterStateChangeCallback(mBluetoothStateChangeCallback);
             } catch (Exception e) {
                 Log.e(TAG,"",e);

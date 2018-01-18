@@ -18,6 +18,8 @@ package android.net.wifi;
 
 import android.os.Parcel;
 import android.os.Parcelable;
+import android.os.SystemProperties;
+import android.util.Log;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
@@ -27,7 +29,6 @@ import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CoderResult;
 import java.nio.charset.CodingErrorAction;
 import java.util.Locale;
-
 /**
  * Stores SSID octets and handles conversion.
  *
@@ -45,6 +46,9 @@ public class WifiSsid implements Parcelable {
 
     private static final int HEX_RADIX = 16;
     public static final String NONE = "<unknown ssid>";
+
+    ///M: For GBK
+    private boolean mIsGbkEncoding = false;
 
     private WifiSsid() {
     }
@@ -72,6 +76,8 @@ public class WifiSsid implements Parcelable {
             }
             a.octets.write(val);
         }
+        ///M: For GBK
+        a.checkAndSetIsGbkEncoding();
         return a;
     }
 
@@ -157,6 +163,8 @@ public class WifiSsid implements Parcelable {
                     break;
             }
         }
+        ///M: For GBK
+        checkAndSetIsGbkEncoding();
     }
 
     @Override
@@ -167,7 +175,12 @@ public class WifiSsid implements Parcelable {
         // behavior of returning empty string for this case.
         if (octets.size() <= 0 || isArrayAllZeroes(ssidBytes)) return "";
         // TODO: Handle conversion to other charsets upon failure
+        boolean DBG = SystemProperties.get("persist.wifi.gbk.debug").equals("1");
+        boolean ssidGbkEncoding = SystemProperties.get("persist.wifi.gbk.encoding").equals("1");
         Charset charset = Charset.forName("UTF-8");
+        if (ssidGbkEncoding || mIsGbkEncoding) {
+            charset = Charset.forName("GB2312");
+        }
         CharsetDecoder decoder = charset.newDecoder()
                 .onMalformedInput(CodingErrorAction.REPLACE)
                 .onUnmappableCharacter(CodingErrorAction.REPLACE);
@@ -178,6 +191,8 @@ public class WifiSsid implements Parcelable {
         if (result.isError()) {
             return NONE;
         }
+        if (DBG) Log.d(TAG, "persist.wifi.gbk.encoding: " + ssidGbkEncoding
+                + ", isGbk: " + mIsGbkEncoding + ", toString: " + out.toString());
         return out.toString();
     }
 
@@ -217,6 +232,7 @@ public class WifiSsid implements Parcelable {
     public void writeToParcel(Parcel dest, int flags) {
         dest.writeInt(octets.size());
         dest.writeByteArray(octets.toByteArray());
+        dest.writeInt(mIsGbkEncoding? 1 : 0);
     }
 
     /** Implement the Parcelable interface {@hide} */
@@ -228,6 +244,7 @@ public class WifiSsid implements Parcelable {
                 byte b[] = new byte[length];
                 in.readByteArray(b);
                 ssid.octets.write(b, 0, length);
+                ssid.mIsGbkEncoding = in.readInt() != 0;
                 return ssid;
             }
 
@@ -235,4 +252,124 @@ public class WifiSsid implements Parcelable {
                 return new WifiSsid[size];
             }
         };
+
+    ///M: For GBK @{
+    private static boolean isGBK(byte[] byteArray, int ssidStartPos,
+                          int ssidEndPos) {
+        boolean DBG = SystemProperties.get("persist.wifi.gbk.debug").equals("1");
+        if (isNotUtf8(byteArray, ssidStartPos, ssidEndPos)) {
+            if (DBG) Log.d(TAG, "is not utf8");
+            return true;
+        } else {
+            if (DBG) Log.d(TAG, "is utf8 format");
+            return false;
+        }
+    }
+
+    private static boolean isNotUtf8(byte[] input, int ssidStartPos, int ssidEndPos) {
+        int nBytes = 0, lastWildcar = 0;
+        byte chr;
+        boolean isAllAscii = true;
+        boolean isAllGBK = true;
+        boolean isWildcardChar = false;
+        for (int i = ssidStartPos; i < ssidEndPos && i < input.length; i++) {
+            chr = input[i];
+            if (!isASCII(chr)) {
+                isAllAscii = false;
+                isWildcardChar = !isWildcardChar;
+                if (isWildcardChar && i < input.length - 1) {
+                    byte chr1 = input[i + 1];
+                    if (!isGBKChar(chr, chr1)) {
+                        isAllGBK = false;
+                    }
+                }
+            } else {
+                isWildcardChar = false;
+            }
+            if (0 == nBytes) {
+                if ((chr & 0xFF) >= (0x80 & 0xFF)) {
+                    lastWildcar = i;
+                    nBytes = getUtf8CharLen(chr);
+                    if (nBytes == 0) {
+                        return true;
+                    }
+                    nBytes--;
+                }
+            } else {
+                if ((chr & 0xC0) != 0x80) {
+                    break;
+                }
+                nBytes--;
+            }
+        }
+        //Log.d(TAG, "nBytes > 0: " + (nBytes > 0) + ", isAllAscii: " + isAllAscii);
+        if (nBytes > 0) {
+            if (isAllAscii) {
+                return false;
+            } else if (isAllGBK) {
+                return true;
+            } else {
+                nBytes = getUtf8CharLen(input[lastWildcar]);
+                for (int j = lastWildcar; j < (lastWildcar + nBytes) &&  j < input.length; j++) {
+                    if (!isASCII(input[j])) {
+                        input[j] = 0x20;
+                    }
+                }
+                return false;
+            }
+        }
+        return false;
+    }
+
+    private static int getUtf8CharLen(byte firstByte) {
+        int nBytes = 0;
+        if (firstByte >= (byte) 0xFC && firstByte <= (byte) 0xFD) {
+            nBytes = 6;
+        } else if (firstByte >= (byte) 0xF8) {
+            nBytes = 5;
+        } else if (firstByte >= (byte) 0xF0) {
+            nBytes = 4;
+        } else if (firstByte >= (byte) 0xE0) {
+            nBytes = 3;
+        } else if (firstByte >= (byte) 0xC0) {
+            nBytes = 2;
+        } else {
+            return 0;
+        }
+        return nBytes;
+    }
+
+    private static boolean isASCII(byte b) {
+        if ((b & 0x80) == 0) {
+            return true;
+        }
+        return false;
+    }
+
+    private static boolean isGBKChar(byte head, byte tail) {
+        int b0 = head & 0xff;
+        int b1 = tail & 0xff;
+        if ((b0 >= 0xA1 && b0 <= 0xA9 && b1 >= 0xA1 && b1 <= 0xFE) ||
+            (b0 >= 0xB0 && b0 <= 0xF7 && b1 >= 0xA1 && b1 <= 0xFE) ||
+            (b0 >= 0x81 && b0 <= 0xA0 && b1 >= 0x40 && b1 <= 0xFE) ||
+            (b0 >= 0xAA && b0 <= 0xFE && b1 >= 0x40 && b1 <= 0xA0 && b1 != 0x7F) ||
+            (b0 >= 0xA8 && b0 <= 0xA9 && b1 >= 0x40 && b1 <= 0xA0 && b1 != 0x7F) ||
+            (b0 >= 0xAA && b0 <= 0xAF && b1 >= 0xA1 && b1 <= 0xFE && b1 != 0x7F) ||
+            (b0 >= 0xF8 && b0 <= 0xFE && b1 >= 0xA1 && b1 <= 0xFE) ||
+            (b0 >= 0xA1 && b0 <= 0xA7 && b1 >= 0x40 && b1 <= 0xA0 && b1 != 0x7F)) {
+                return true;
+            }
+        return false;
+    }
+
+    private void checkAndSetIsGbkEncoding() {
+        byte[] ssidBytes = octets.toByteArray();
+        mIsGbkEncoding = isGBK(ssidBytes, 0, ssidBytes.length);
+    }
+
+    /** @hide */
+    public boolean isGBK(){
+        return mIsGbkEncoding;
+    }
+    ///@}
 }

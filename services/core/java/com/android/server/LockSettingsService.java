@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2012 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -238,17 +243,6 @@ public class LockSettingsService extends ILockSettings.Stub {
         final int parentId = mUserManager.getProfileParent(managedUserId).id;
         if (!mStorage.hasPassword(parentId) && !mStorage.hasPattern(parentId)) {
             if (DEBUG) Slog.v(TAG, "Parent does not have a screen lock");
-            return;
-        }
-        // Do not tie when the parent has no SID (but does have a screen lock).
-        // This can only happen during an upgrade path where SID is yet to be
-        // generated when the user unlocks for the first time.
-        try {
-            if (getGateKeeperService().getSecureUserId(parentId) == 0) {
-                return;
-            }
-        } catch (RemoteException e) {
-            Slog.e(TAG, "Failed to talk to GateKeeper service", e);
             return;
         }
         if (DEBUG) Slog.v(TAG, "Tie managed profile to parent now!");
@@ -1388,6 +1382,12 @@ public class LockSettingsService extends ILockSettings.Stub {
             return VerifyCredentialResponse.ERROR;
         }
 
+        // M : for file destory, after user input a pwd, settings crash.
+        if (storedHash == null || storedHash.hash.length == 0) {
+            // storedHash == null, file destory, need unlock.
+            return VerifyCredentialResponse.OK;
+        }
+
         if (storedHash.version == CredentialHash.VERSION_LEGACY) {
             byte[] hash = credentialUtil.toHash(credential, userId);
             if (Arrays.equals(hash, storedHash.hash)) {
@@ -1646,7 +1646,10 @@ public class LockSettingsService extends ILockSettings.Stub {
         LockPatternUtils.LOCK_PASSWORD_SALT_KEY,
         LockPatternUtils.DISABLE_LOCKSCREEN_KEY,
         LockPatternUtils.LOCKSCREEN_OPTIONS,
-        LockPatternUtils.LOCKSCREEN_BIOMETRIC_WEAK_FALLBACK,
+        LockPatternUtils.LOCKSCREEN_BIOMETRIC_WEAK_FALLBACK, /// M: no use - replaced by followings
+        LockPatternUtils.LOCKSCREEN_WEAK_FALLBACK,           /// M: whether fallback has been set
+        LockPatternUtils.LOCKSCREEN_WEAK_FALLBACK_FOR,       /// M: fallback has been set for which, face or voice
+        LockPatternUtils.VOICE_WEAK_FALLBACK_SET_KEY,        /// M: whether voice unlock fallback has been set
         LockPatternUtils.BIOMETRIC_WEAK_EVER_CHOSEN_KEY,
         LockPatternUtils.LOCKSCREEN_POWER_BUTTON_INSTANTLY_LOCKS,
         LockPatternUtils.PASSWORD_HISTORY_KEY,

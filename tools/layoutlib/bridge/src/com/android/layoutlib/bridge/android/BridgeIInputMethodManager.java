@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -240,6 +245,23 @@ public class BridgeIInputMethodManager implements IInputMethodManager {
     public IBinder asBinder() {
         // TODO Auto-generated method stub
         return null;
+    }
+
+    /// M: Feature for Switch IME from hard Key. @{
+    @Override
+    public void switchInputMethodFromWindowManager(boolean isForward) throws RemoteException {
+    }
+    /// @}
+
+    /// M: Feature for UIBC Characters input. @{
+    @Override
+    public void sendCharacterToCurClient(int unicode) throws RemoteException {
+    }
+    /// @}
+
+    /// M: refreshImeWindowstatus when show keygurad
+     @Override
+    public void refreshImeWindowVisibilityLocked() throws RemoteException {
     }
 
     @Override

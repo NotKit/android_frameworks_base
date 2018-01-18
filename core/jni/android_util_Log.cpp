@@ -1,3 +1,8 @@
+/*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
 /* //device/libs/android_runtime/android_util_Log.cpp
 **
 ** Copyright 2006, The Android Open Source Project
@@ -81,6 +86,8 @@ bool android_util_Log_isVerboseLogEnabled(const char* tag) {
  * In class android.util.Log:
  *  public static native int println_native(int buffer, int priority, String tag, String msg)
  */
+
+
 static jint android_util_Log_println_native(JNIEnv* env, jobject clazz,
         jint bufID, jint priority, jstring tagObj, jstring msgObj)
 {
@@ -101,7 +108,24 @@ static jint android_util_Log_println_native(JNIEnv* env, jobject clazz,
         tag = env->GetStringUTFChars(tagObj, NULL);
     msg = env->GetStringUTFChars(msgObj, NULL);
 
-    int res = __android_log_buf_write(bufID, (android_LogPriority)priority, tag, msg);
+    int res = -1;
+    int flag_m = 0;
+    int count = 0;
+    char new_tag[50];
+    if (tag != NULL && (strncmp(tag, "@M_", 3) == 0)) {
+        flag_m = 1;
+        while(tag[count+3]) {
+            new_tag[count] = tag[count+3];
+            count++;
+        }
+        new_tag[count] = 0;
+    }
+
+    if (flag_m == 1) {
+       res = __android_log_buf_write(bufID, (android_LogPriority)priority, new_tag, msg);
+    } else {
+       res = __android_log_buf_write(bufID, (android_LogPriority)priority, tag, msg);
+    }
 
     if (tag != NULL)
         env->ReleaseStringUTFChars(tagObj, tag);

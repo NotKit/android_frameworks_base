@@ -81,10 +81,14 @@ void PatchCache::clear() {
 
     if (mMeshBuffer) {
         mRenderState.meshState().unbindMeshBuffer();
-        glDeleteBuffers(1, &mMeshBuffer);
+        TIME_LOG("glDeleteBuffers", glDeleteBuffers(1, &mMeshBuffer));
         mMeshBuffer = 0;
         mSize = 0;
     }
+
+    /// M: [ALPS01877772] Clear operation will need to update generation id as well
+    ///                   because the status has changed.
+    mGenerationId++;
 }
 
 void PatchCache::clearCache() {
@@ -265,13 +269,15 @@ const Patch* PatchCache::get(const AssetAtlas::Entry* entry,
 
 #if DEBUG_PATCHES
 void PatchCache::dumpFreeBlocks(const char* prefix) {
-    String8 dump;
-    BufferBlock* block = mFreeBlocks;
-    while (block) {
-        dump.appendFormat("->(%d, %d)", block->positionOffset, block->size);
-        block = block->next;
+    if (g_HWUI_DEBUG_PATCHES) {
+        String8 dump;
+        BufferBlock* block = mFreeBlocks;
+        while (block) {
+            dump.appendFormat("->(%d, %d)", block->offset, block->size);
+            block = block->next;
+        }
+        ALOGD("%s: Free blocks%s", prefix, dump.string());
     }
-    ALOGD("%s: Free blocks%s", prefix, dump.string());
 }
 #endif
 

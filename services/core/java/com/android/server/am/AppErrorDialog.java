@@ -34,7 +34,7 @@ import android.widget.TextView;
 
 import static com.android.server.am.ActivityManagerService.IS_USER_BUILD;
 
-final class AppErrorDialog extends BaseErrorDialog implements View.OnClickListener {
+public final class AppErrorDialog extends BaseErrorDialog implements View.OnClickListener {
 
     private final ActivityManagerService mService;
     private final AppErrorResult mResult;
@@ -202,11 +202,12 @@ final class AppErrorDialog extends BaseErrorDialog implements View.OnClickListen
         }
     };
 
-    static class Data {
+    public static class Data {
         AppErrorResult result;
         TaskRecord task;
         boolean repeating;
         ProcessRecord proc;
+        public String exceptionMsg;
         boolean isRestartableForService;
     }
 }

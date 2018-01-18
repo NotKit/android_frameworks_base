@@ -23,6 +23,7 @@ import android.graphics.Bitmap;
 import android.media.session.MediaSessionLegacyHelper;
 import android.media.session.PlaybackState;
 import android.media.session.MediaSession;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -60,7 +61,7 @@ import java.lang.IllegalArgumentException;
 @Deprecated public class RemoteControlClient
 {
     private final static String TAG = "RemoteControlClient";
-    private final static boolean DEBUG = false;
+    private final static boolean DEBUG = false || !"user".equals(Build.TYPE);
 
     /**
      * Playback state of a RemoteControlClient which is stopped.
@@ -658,6 +659,10 @@ import java.lang.IllegalArgumentException;
 
     private void setPlaybackStateInt(int state, long timeInMs, float playbackSpeed,
             boolean hasPosition) {
+        if (DEBUG) {
+            Log.d(TAG, "setPlaybackStateInt" + ",state=:" + state + ",timeInMs=:" + timeInMs
+                    + ",hasPosition=:" + hasPosition);
+        }
         synchronized(mCacheLock) {
             if ((mPlaybackState != state) || (mPlaybackPositionMs != timeInMs)
                     || (mPlaybackSpeed != playbackSpeed)) {

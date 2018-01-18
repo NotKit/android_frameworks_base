@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -45,6 +50,9 @@ import android.webkit.WebViewClient;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
@@ -80,6 +88,10 @@ public class CaptivePortalLoginActivity extends Activity {
             // System misconfigured, bail out in a way that at least provides network access.
             Log.e(TAG, "Invalid captive portal URL, url=" + url);
             done(Result.WANTED_AS_IS);
+            /// M: Finish App immediately. @{
+            finish();
+            return;
+            /// @}
         }
         mNetwork = getIntent().getParcelableExtra(ConnectivityManager.EXTRA_NETWORK);
         mCaptivePortal = getIntent().getParcelableExtra(ConnectivityManager.EXTRA_CAPTIVE_PORTAL);
@@ -114,6 +126,14 @@ public class CaptivePortalLoginActivity extends Activity {
         final WebView myWebView = (WebView) findViewById(R.id.webview);
         myWebView.clearCache(true);
         WebSettings webSettings = myWebView.getSettings();
+        /// M: Set zoom and overview mode. @{
+        webSettings.setUseWideViewPort(true);
+        webSettings.setSupportZoom(true);
+        webSettings.setBuiltInZoomControls(true);
+        webSettings.setLoadWithOverviewMode(true);
+        // Set the mixed content mode
+        webSettings.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
+        /// @}
         webSettings.setJavaScriptEnabled(true);
         webSettings.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
         mWebViewClient = new MyWebViewClient();
@@ -169,7 +189,8 @@ public class CaptivePortalLoginActivity extends Activity {
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
-        getMenuInflater().inflate(R.menu.captive_portal_login, menu);
+        /// M: Not show the menu
+        // getMenuInflater().inflate(R.menu.captive_portal_login, menu);
         return true;
     }
 
@@ -185,6 +206,8 @@ public class CaptivePortalLoginActivity extends Activity {
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
+        /// M: Not show the menu. @{
+        /*
         int id = item.getItemId();
         if (id == R.id.action_use_network) {
             done(Result.WANTED_AS_IS);
@@ -195,6 +218,9 @@ public class CaptivePortalLoginActivity extends Activity {
             return true;
         }
         return super.onOptionsItemSelected(item);
+        */
+        return true;
+        /// @}
     }
 
     @Override
@@ -237,6 +263,24 @@ public class CaptivePortalLoginActivity extends Activity {
                     urlConnection.setUseCaches(false);
                     urlConnection.getInputStream();
                     httpResponseCode = urlConnection.getResponseCode();
+
+                    /** M: using another captive server @{*/
+                    if (httpResponseCode == 200) {
+                        String contentType = urlConnection.getContentType();
+                        if (contentType == null) {
+                            Log.e(TAG, "contentType is null");
+                        } else if (contentType.contains("text/html")) {
+                            InputStreamReader in = new InputStreamReader(
+                                (InputStream) urlConnection.getContent());
+                            BufferedReader buff = new BufferedReader(in);
+                            String line = buff.readLine();
+                            if (line.contains("Success")) {
+                                httpResponseCode = 204;
+                                Log.v(TAG, "Internet detected!");
+                            }
+                        }
+                    }
+                    /* @}*/
                 } catch (IOException e) {
                 } finally {
                     if (urlConnection != null) urlConnection.disconnect();
@@ -282,12 +326,18 @@ public class CaptivePortalLoginActivity extends Activity {
                 myUrlBar.setText(url);
             }
             testForCaptivePortal();
+
+            Log.e(TAG, "onPageStarted: firstPageLoad=" + mPagesLoaded + ", url=" + url);
+
         }
 
         @Override
         public void onPageFinished(WebView view, String url) {
             mPagesLoaded++;
             if (mPagesLoaded == 1) {
+
+                Log.e(TAG, "onPageFinished: firstPageLoad=" + mPagesLoaded + ", url=" + url);
+
                 // Now that WebView has loaded at least one page we know it has read in the proxy
                 // settings.  Now prompt the WebView read the Network-specific proxy settings.
                 setWebViewProxy();
@@ -298,7 +348,8 @@ public class CaptivePortalLoginActivity extends Activity {
                 // Prevent going back to empty first page.
                 view.clearHistory();
             }
-            testForCaptivePortal();
+            /// M: Not test here
+             testForCaptivePortal();
         }
 
         // Convert Android device-independent-pixels (dp) to HTML size.

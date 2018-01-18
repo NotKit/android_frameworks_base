@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -508,7 +513,7 @@ public class BackDropperFilter extends Filter {
     public BackDropperFilter(String name) {
         super(name);
 
-        mLogVerbose = Log.isLoggable(TAG, Log.VERBOSE);
+        mLogVerbose = true; //Log.isLoggable(TAG, Log.VERBOSE);
 
         String adjStr = SystemProperties.get("ro.media.effect.bgdropper.adj");
         if (adjStr.length() > 0) {
@@ -695,6 +700,7 @@ public class BackDropperFilter extends Filter {
     }
 
     public void process(FilterContext context) {
+        refreshSaveOption();
         // Grab inputs and ready intermediate frames and outputs.
         Frame video = pullInput("video");
         Frame background = pullInput("background");
@@ -722,7 +728,9 @@ public class BackDropperFilter extends Filter {
         // Make copies for input frames to GLFrames
 
         copyShaderProgram.process(video, mVideoInput);
+        if (isOptionEnabled(FLAG_SAVE_VIDEOINPUT)) saveOutput(mVideoInput, "mVideoInput");
         copyShaderProgram.process(background, mBgInput);
+        if (isOptionEnabled(FLAG_SAVE_BGINPUT)) saveOutput(mBgInput, "mBgInput");
 
         mVideoInput.generateMipMap();
         mVideoInput.setTextureParameter(GLES20.GL_TEXTURE_MIN_FILTER,
@@ -737,20 +745,28 @@ public class BackDropperFilter extends Filter {
             mStartLearning = false;
         }
 
+        if (isOptionEnabled(FLAG_SAVE_BGMEAN)) saveOutput(mBgMean[inputIndex], "mBgMean[" + inputIndex + "]");
+        if (isOptionEnabled(FLAG_SAVE_BGVARIANCE)) saveOutput(mBgVariance[inputIndex], "mBgVariance[" + inputIndex + "]");
         // Process shaders
         Frame[] distInputs = { mVideoInput, mBgMean[inputIndex], mBgVariance[inputIndex] };
         mBgDistProgram.process(distInputs, mDistance);
+        if (isOptionEnabled(FLAG_SAVE_DISTANCE)) saveOutput(mDistance, "mDistance");
+
         mDistance.generateMipMap();
         mDistance.setTextureParameter(GLES20.GL_TEXTURE_MIN_FILTER,
                                       GLES20.GL_LINEAR_MIPMAP_NEAREST);
 
+        saveDistanceMipmapOutput(context);
+
         mBgMaskProgram.process(mDistance, mMask);
+        if (isOptionEnabled(FLAG_SAVE_MASK)) saveOutput(mMask, "mMask");
         mMask.generateMipMap();
         mMask.setTextureParameter(GLES20.GL_TEXTURE_MIN_FILTER,
                                   GLES20.GL_LINEAR_MIPMAP_NEAREST);
 
         Frame[] autoWBInputs = { mVideoInput, mBgInput };
         mAutomaticWhiteBalanceProgram.process(autoWBInputs, mAutoWB);
+        if (isOptionEnabled(FLAG_SAVE_AUTOWB)) saveOutput(mAutoWB, "mAutoWB");
 
         if (mFrameCount <= mLearningDuration) {
             // During learning
@@ -758,6 +774,7 @@ public class BackDropperFilter extends Filter {
 
             if (mFrameCount == mLearningDuration - mLearningVerifyDuration) {
                 copyShaderProgram.process(mMask, mMaskVerify[outputIndex]);
+                if (isOptionEnabled(FLAG_SAVE_MASKVERIFY)) saveOutput(mMaskVerify[outputIndex], "mMaskVerify[" + outputIndex + "]");
 
                 mBgUpdateMeanProgram.setHostValue("bg_adapt_rate", mAdaptRateBg);
                 mBgUpdateMeanProgram.setHostValue("fg_adapt_rate", mAdaptRateFg);
@@ -770,6 +787,7 @@ public class BackDropperFilter extends Filter {
                 //   with weights grow exponentially with time
                 Frame[] maskVerifyInputs = {mMaskVerify[inputIndex], mMask};
                 mMaskVerifyProgram.process(maskVerifyInputs, mMaskVerify[outputIndex]);
+                if (isOptionEnabled(FLAG_SAVE_MASKVERIFY)) saveOutput(mMaskVerify[outputIndex], "mMaskVerify[" + outputIndex + "]");
                 mMaskVerify[outputIndex].generateMipMap();
                 mMaskVerify[outputIndex].setTextureParameter(GLES20.GL_TEXTURE_MIN_FILTER,
                                                              GLES20.GL_LINEAR_MIPMAP_NEAREST);
@@ -779,6 +797,8 @@ public class BackDropperFilter extends Filter {
                 // In the last verification frame, verify if the verification mask is almost blank
                 // If not, restart learning
                 copyShaderProgram.process(mMaskVerify[outputIndex], mMaskAverage);
+                if (isOptionEnabled(FLAG_SAVE_MASKAVERAGE)) saveOutput(mMaskAverage, "mMaskAverage");
+
                 ByteBuffer mMaskAverageByteBuffer = mMaskAverage.getData();
                 byte[] mask_average = mMaskAverageByteBuffer.array();
                 int bi = (int)(mask_average[3] & 0xFF);
@@ -802,6 +822,7 @@ public class BackDropperFilter extends Filter {
             Frame output = context.getFrameManager().newFrame(video.getFormat());
             Frame[] subtractInputs = { video, background, mMask, mAutoWB };
             mBgSubtractProgram.process(subtractInputs, output);
+            if (isOptionEnabled(FLAG_SAVE_OUTPUT)) saveOutput(output, "output");
             pushOutput("video", output);
             output.release();
         }
@@ -995,4 +1016,95 @@ public class BackDropperFilter extends Filter {
         return (int)Math.floor(Math.log10(size) / Math.log10(2)) - 1;
     }
 
+    /// M: for debug @{
+    private static int FLAG_SAVE_VIDEOINPUT =           0x00000001;
+    private static int FLAG_SAVE_BGINPUT =              0x00000002;
+    private static int FLAG_SAVE_DISTANCE =             0x00000004;
+    private static int FLAG_SAVE_MASK =                 0x00000008;
+    private static int FLAG_SAVE_AUTOWB =               0x00000010;
+    private static int FLAG_SAVE_MASKVERIFY =           0x00000020;
+    private static int FLAG_SAVE_MASKAVERAGE =          0x00000040;
+    private static int FLAG_SAVE_OUTPUT =               0x00000080;
+    private static int FLAG_SAVE_BGMEAN =               0x00000100;
+    private static int FLAG_SAVE_BGVARIANCE =           0x00000200;
+    private static int FLAG_SAVE_DISTANCE_LEVEL =       0x00000400;
+
+    private static final String mMipmapShaderExp =
+        "precision mediump float;\n" +
+        "uniform sampler2D tex_sampler_0;\n" +
+        "uniform float exp_level;\n" +
+        "varying vec2 v_texcoord;\n" +
+        "void main() {\n" +
+        "  gl_FragColor = texture2D(tex_sampler_0, v_texcoord, exp_level);\n" +
+        "}\n";
+
+    private ShaderProgram mBgDistanceProgramLrg;
+    private ShaderProgram mBgDistanceProgramMid;
+    private ShaderProgram mBgDistanceProgramSml;
+    private GLFrame mDistanceLrg;
+    private GLFrame mDistanceMid;
+    private GLFrame mDistanceSml;
+    private boolean mDistanceLevelInitilized;
+
+    private void saveDistanceMipmapOutput(FilterContext context) {
+        if (isOptionEnabled(FLAG_SAVE_DISTANCE_LEVEL)) {
+            if (!mDistanceLevelInitilized) {
+                mDistanceLrg = (GLFrame) context.getFrameManager().newFrame(mMaskFormat);
+                mDistanceMid = (GLFrame) context.getFrameManager().newFrame(mMaskFormat);
+                mDistanceSml = (GLFrame) context.getFrameManager().newFrame(mMaskFormat);
+                mBgDistanceProgramLrg = new ShaderProgram(context, mSharedUtilShader + mMipmapShaderExp);
+                mBgDistanceProgramLrg.setHostValue("exp_level", (float) (mSubsampleLevel + mHierarchyLrgExp));
+                mBgDistanceProgramMid = new ShaderProgram(context, mSharedUtilShader + mMipmapShaderExp);
+                mBgDistanceProgramMid.setHostValue("exp_level", (float) (mSubsampleLevel + mHierarchyMidExp));
+                mBgDistanceProgramSml = new ShaderProgram(context, mSharedUtilShader + mMipmapShaderExp);
+                mBgDistanceProgramSml.setHostValue("exp_level", (float) (mSubsampleLevel + mHierarchySmlExp));
+                mDistanceLevelInitilized = true;
+            }
+            if (mBgDistanceProgramLrg != null && mDistanceLrg != null) {
+                mBgDistanceProgramLrg.process(mDistance, mDistanceLrg);
+                if (isOptionEnabled(FLAG_SAVE_DISTANCE_LEVEL)) saveOutput(mDistanceLrg, "mDistanceLrg");
+            }
+            if (mBgDistanceProgramMid != null && mDistanceMid != null) {
+                mBgDistanceProgramMid.process(mDistance, mDistanceMid);
+                if (isOptionEnabled(FLAG_SAVE_DISTANCE_LEVEL)) saveOutput(mDistanceMid, "mDistanceMid");
+            }
+            if (mBgDistanceProgramSml != null && mDistanceSml != null) {
+                mBgDistanceProgramSml.process(mDistance, mDistanceSml);
+                if (isOptionEnabled(FLAG_SAVE_DISTANCE_LEVEL)) saveOutput(mDistanceSml, "mDistanceSml");
+            }
+        } else {
+            if (mDistanceLevelInitilized) {
+                if (mDistanceLrg != null) {
+                    mDistanceLrg.release();
+                    mDistanceLrg = null;
+                }
+                if (mDistanceMid != null) {
+                    mDistanceMid.release();
+                    mDistanceMid = null;
+                }
+                if (mDistanceSml != null) {
+                    mDistanceSml.release();
+                    mDistanceSml = null;
+                }
+                mDistanceLevelInitilized = false;
+            }
+        }
+    }
+
+    private int mSaveOption = 0;
+    private void refreshSaveOption() {
+        if (mLogVerbose) {
+            mSaveOption = SystemProperties.getInt("debug.bdf.output", 0);
+        }
+    }
+    private boolean isOptionEnabled(int flag) {
+        return mLogVerbose && (mSaveOption & flag) != 0;
+    }
+
+    private void saveOutput(Frame frame, String name) {
+        if (frame != null) {
+            frame.saveFrame(name);
+        }
+    }
+    /// @}
 }

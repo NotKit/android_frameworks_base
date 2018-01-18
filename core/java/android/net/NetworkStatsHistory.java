@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -44,6 +49,8 @@ import java.net.ProtocolException;
 import java.util.Arrays;
 import java.util.Random;
 
+import android.util.Log;
+
 /**
  * Collection of historical network statistics, recorded into equally-sized
  * "buckets" in time. Internally it stores data in {@code long} series for more
@@ -56,6 +63,8 @@ import java.util.Random;
  * @hide
  */
 public class NetworkStatsHistory implements Parcelable {
+    private static final String TAG = "NetworkStatsHistory";
+
     private static final int VERSION_INIT = 1;
     private static final int VERSION_ADD_PACKETS = 2;
     private static final int VERSION_ADD_ACTIVE = 3;
@@ -315,7 +324,7 @@ public class NetworkStatsHistory implements Parcelable {
         final int startIndex = getIndexAfter(end);
         for (int i = startIndex; i >= 0; i--) {
             final long curStart = bucketStart[i];
-            final long curEnd = curStart + bucketDuration;
+            final long curEnd = bucketStart[i] + bucketDuration;
 
             // bucket is older than record; we're finished
             if (curEnd < start) break;
@@ -324,6 +333,23 @@ public class NetworkStatsHistory implements Parcelable {
 
             final long overlap = Math.min(curEnd, end) - Math.max(curStart, start);
             if (overlap <= 0) continue;
+
+            ///M: error handling
+            if (duration <= 0) {
+
+                Log.d(TAG, "recordData error i=" + i + " duration=" + duration + " start=" + start
+                    + " end=" + end + " overlap=" + overlap + " curEnd=" + curEnd
+                    + " curStart=" + curStart + " bucketDuration=" + bucketDuration);
+
+                Log.d(TAG, "bucket bucketCount=" + bucketCount
+                    + " startIndex=" + getIndexAfter(end));
+                for (int k = getIndexAfter(end); k >= 0; k--) {
+                    Log.d(TAG, "bucket bucketStart[" + k + "]=" + bucketStart[k]);
+                }
+                break;
+            }
+
+
 
             // integer math each time is faster than floating point
             final long fracRxBytes = rxBytes * overlap / duration;

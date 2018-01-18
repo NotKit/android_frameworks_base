@@ -50,6 +50,9 @@ import com.android.systemui.statusbar.policy.UserInfoController;
 import com.android.systemui.statusbar.policy.UserSwitcherController;
 import com.android.systemui.statusbar.policy.ZenModeController;
 
+/// M: Add other tiles
+import com.mediatek.systemui.statusbar.policy.HotKnotController;
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Objects;
@@ -266,9 +269,14 @@ public abstract class QSTile<TState extends State> {
     private void handleStateChanged() {
         boolean delayAnnouncement = shouldAnnouncementBeDelayed();
         if (mCallbacks.size() != 0) {
+            /// M: [ALPS02724123]copy value for fixing racing condition @{
+            // QSTileView.setIcon will use different thread to access the state
+            TState state = newTileState();
+            mState.copyTo(state);
             for (int i = 0; i < mCallbacks.size(); i++) {
-                mCallbacks.get(i).onStateChanged(mState);
+                mCallbacks.get(i).onStateChanged(state);
             }
+            /// @}
             if (mAnnounceNextStateChange && !delayAnnouncement) {
                 String announcement = composeChangeAnnouncement();
                 if (announcement != null) {
@@ -452,6 +460,13 @@ public abstract class QSTile<TState extends State> {
         void removeTile(String tileSpec);
         ManagedProfileController getManagedProfileController();
 
+        /// M: add HotKnot in quicksetting
+        /**
+         *
+         * @getHotKnotController : get HotKnot Controller.
+         * @return HotKnotController
+         */
+        HotKnotController getHotKnotController();
 
         public interface Callback {
             void onTilesChanged();

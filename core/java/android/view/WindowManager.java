@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -649,6 +654,13 @@ public interface WindowManager extends ViewManager {
          * @hide
          */
         public static final int TYPE_SCREENSHOT = FIRST_SYSTEM_WINDOW + 36;
+
+        /**
+         * M:
+         * Window type: Top most
+         * @hide
+         */
+        public static final int TYPE_TOP_MOST = FIRST_SYSTEM_WINDOW + 37;
 
         /**
          * End of types of system windows.
@@ -1792,6 +1804,18 @@ public interface WindowManager extends ViewManager {
          * @hide
          */
         public long hideTimeoutMilliseconds = -1;
+
+        /// M: @{
+        // BYTE#3 low4 for PQ control
+        /** @hide */
+        public static final int FLAG_EX_PQ_MASK            = 0x01000000;   // for PQ on/off
+        /** @hide */
+        public static final int FLAG_EX_PQ_ON              = 0x01000000;
+        /** @hide */
+        public static final int FLAG_EX_INIT_VALUE = 0;
+        /** @hide */
+        public int flagsEx = FLAG_EX_INIT_VALUE;
+        /// @}
 
         public LayoutParams() {
             super(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT);

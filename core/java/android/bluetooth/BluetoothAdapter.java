@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2016 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2009-2016 The Android Open Source Project
  * Copyright (C) 2015 Samsung LSI
  *
@@ -102,7 +107,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 public final class BluetoothAdapter {
     private static final String TAG = "BluetoothAdapter";
     private static final boolean DBG = true;
-    private static final boolean VDBG = false;
+    private static final boolean VDBG = true;
 
     /**
      * Default MAC address reported to a client that does not have the
@@ -615,6 +620,7 @@ public final class BluetoothAdapter {
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH)
     public boolean isEnabled() {
+        if (DBG) Log.d(TAG, "isEnabled");
         try {
             mServiceLock.readLock().lock();
             if (mService != null) return mService.isEnabled();
@@ -899,6 +905,7 @@ public final class BluetoothAdapter {
             return true;
         }
         try {
+            if (DBG) Log.d(TAG, "enable");
             return mManagerService.enable();
         } catch (RemoteException e) {Log.e(TAG, "", e);}
         return false;
@@ -931,6 +938,7 @@ public final class BluetoothAdapter {
     @RequiresPermission(Manifest.permission.BLUETOOTH_ADMIN)
     public boolean disable() {
         try {
+            if (DBG) Log.d(TAG, "disable");
             return mManagerService.disable(true);
         } catch (RemoteException e) {Log.e(TAG, "", e);}
         return false;
@@ -947,8 +955,8 @@ public final class BluetoothAdapter {
      * @hide
      */
     public boolean disable(boolean persist) {
-
         try {
+            if (DBG) Log.d(TAG, "disable: persist = " + persist);
             return mManagerService.disable(persist);
         } catch (RemoteException e) {Log.e(TAG, "", e);}
         return false;
@@ -963,6 +971,7 @@ public final class BluetoothAdapter {
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH)
     public String getAddress() {
+        if (DBG) Log.d(TAG, "getAddress");
         try {
             return mManagerService.getAddress();
         } catch (RemoteException e) {Log.e(TAG, "", e);}
@@ -977,6 +986,7 @@ public final class BluetoothAdapter {
      * @return the Bluetooth name, or null on error
      */
     public String getName() {
+        if (DBG) Log.d(TAG, "getName");
         try {
             return mManagerService.getName();
         } catch (RemoteException e) {Log.e(TAG, "", e);}
@@ -1039,6 +1049,7 @@ public final class BluetoothAdapter {
      * @hide
      */
     public ParcelUuid[] getUuids() {
+        if (DBG) Log.d(TAG, "getUuids");
         if (getState() != STATE_ON) return null;
         try {
             mServiceLock.readLock().lock();
@@ -1068,6 +1079,7 @@ public final class BluetoothAdapter {
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_ADMIN)
     public boolean setName(String name) {
+        if (DBG) Log.d(TAG, "setName: name = " + name);
         if (getState() != STATE_ON) return false;
         try {
             mServiceLock.readLock().lock();
@@ -1099,6 +1111,7 @@ public final class BluetoothAdapter {
     @RequiresPermission(Manifest.permission.BLUETOOTH)
     @ScanMode
     public int getScanMode() {
+        if (DBG) Log.d(TAG, "getScanMode");
         if (getState() != STATE_ON) return SCAN_MODE_NONE;
         try {
             mServiceLock.readLock().lock();
@@ -1140,6 +1153,7 @@ public final class BluetoothAdapter {
      * @hide
      */
     public boolean setScanMode(@ScanMode int mode, int duration) {
+        if (DBG) Log.d(TAG, "setScanMode: mode = " + mode + ", duration = " + duration);
         if (getState() != STATE_ON) return false;
         try {
             mServiceLock.readLock().lock();
@@ -1154,6 +1168,7 @@ public final class BluetoothAdapter {
 
     /** @hide */
     public boolean setScanMode(int mode) {
+        if (DBG) Log.d(TAG, "setScanMode: mode = " + mode + ", getDiscoverableTimeout() = " + getDiscoverableTimeout());
         if (getState() != STATE_ON) return false;
         /* getDiscoverableTimeout() to use the latest from NV than use 0 */
         return setScanMode(mode, getDiscoverableTimeout());
@@ -1161,6 +1176,7 @@ public final class BluetoothAdapter {
 
     /** @hide */
     public int getDiscoverableTimeout() {
+        if (DBG) Log.d(TAG, "getDiscoverableTimeout");
         if (getState() != STATE_ON) return -1;
         try {
             mServiceLock.readLock().lock();
@@ -1175,6 +1191,7 @@ public final class BluetoothAdapter {
 
     /** @hide */
     public void setDiscoverableTimeout(int timeout) {
+        if (DBG) Log.d(TAG, "setDiscoverableTimeout: timeout = " + timeout);
         if (getState() != STATE_ON) return;
         try {
             mServiceLock.readLock().lock();
@@ -1218,6 +1235,7 @@ public final class BluetoothAdapter {
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_ADMIN)
     public boolean startDiscovery() {
+        if (DBG) Log.d(TAG, "startDiscovery");
         if (getState() != STATE_ON) return false;
         try {
             mServiceLock.readLock().lock();
@@ -1249,6 +1267,7 @@ public final class BluetoothAdapter {
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_ADMIN)
     public boolean cancelDiscovery() {
+        if (DBG) Log.d(TAG, "cancelDiscovery");
         if (getState() != STATE_ON) return false;
         try {
             mServiceLock.readLock().lock();
@@ -1282,6 +1301,7 @@ public final class BluetoothAdapter {
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH)
     public boolean isDiscovering() {
+        if (DBG) Log.d(TAG, "isDiscovering");
         if (getState() != STATE_ON) return false;
         try {
             mServiceLock.readLock().lock();
@@ -2027,6 +2047,7 @@ public final class BluetoothAdapter {
                 try {
                     mServiceLock.writeLock().lock();
                     mService = null;
+                    /// M: ALPS01774610: Google issue caused by L new feature
                     if (mLeScanClients != null) mLeScanClients.clear();
                     if (sBluetoothLeAdvertiser != null) sBluetoothLeAdvertiser.cleanup();
                     if (sBluetoothLeScanner != null) sBluetoothLeScanner.cleanup();
@@ -2065,6 +2086,7 @@ public final class BluetoothAdapter {
             return true;
         }
         try {
+            if (DBG) Log.d(TAG, "enableNoAutoConnect");
             return mManagerService.enableNoAutoConnect();
         } catch (RemoteException e) {Log.e(TAG, "", e);}
         return false;

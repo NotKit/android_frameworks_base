@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,6 +23,8 @@
 package android.provider;
 
 import android.content.ContentProvider;
+
+
 import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Context;
@@ -37,6 +44,7 @@ import android.telecom.PhoneAccount;
 import android.telecom.PhoneAccountHandle;
 import android.telecom.TelecomManager;
 import android.telephony.PhoneNumberUtils;
+import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.Log;
 
@@ -45,12 +53,14 @@ import com.android.internal.telephony.PhoneConstants;
 
 import java.util.List;
 
+
 /**
  * The CallLog provider contains information about placed and received calls.
  */
 public class CallLog {
     private static final String LOG_TAG = "CallLog";
-    private static final boolean VERBOSE_LOG = false; // DON'T SUBMIT WITH TRUE.
+    ///M:enable log
+    private static final boolean VERBOSE_LOG = true;// DON'T SUBMIT WITH TRUE.
 
     public static final String AUTHORITY = "call_log";
 
@@ -203,6 +213,13 @@ public class CallLog {
          * device other than the current one.
          */
         public static final int ANSWERED_EXTERNALLY_TYPE = 7;
+
+        /**
+         * M: Call log type for auto rejected calls.
+         * @hide
+         * @internal
+         */
+        public static final int AUTO_REJECT_TYPE = 8;
 
         /**
          * Bit-mask describing features of the call (e.g. video).
@@ -592,6 +609,53 @@ public class CallLog {
                 int features, PhoneAccountHandle accountHandle, long start, int duration,
                 Long dataUsage, boolean addForAllUsers, UserHandle userToBeInsertedTo,
                 boolean is_read) {
+             /// M: Add a parameter for Volte Conference call Calllog
+            return addCall(ci, context, number, postDialDigits, viaNumber, presentation, callType,
+                    features, accountHandle, start, duration, dataUsage, addForAllUsers,
+                    userToBeInsertedTo, is_read, -1);
+        }
+
+        /**
+         * M: Add a parameter for Volte Conference call Calllog
+         * Adds a call to the call log.
+         *
+         * @param ci the CallerInfo object to get the target contact from.  Can be null
+         * if the contact is unknown.
+         * @param context the context used to get the ContentResolver
+         * @param number the phone number to be added to the calls db
+         * @param postDialDigits the post-dial digits that were dialed after the number,
+         *        if it was outgoing. Otherwise it is ''.
+         * @param viaNumber the secondary number that the incoming call received with. If the
+         *        call was received with the SIM assigned number, then this field must be ''.
+         * @param presentation enum value from PhoneConstants.PRESENTATION_xxx, which
+         *        is set by the network and denotes the number presenting rules for
+         *        "allowed", "payphone", "restricted" or "unknown"
+         * @param callType enumerated values for "incoming", "outgoing", or "missed"
+         * @param features features of the call (e.g. Video).
+         * @param accountHandle The accountHandle object identifying the provider of the call
+         * @param start time stamp for the call in milliseconds
+         * @param duration call duration in seconds
+         * @param dataUsage data usage for the call in bytes, null if data usage was not tracked for
+         *                  the call.
+         * @param addForAllUsers If true, the call is added to the call log of all currently
+         *        running users. The caller must have the MANAGE_USERS permission if this is true.
+         * @param userToBeInsertedTo {@link UserHandle} of user that the call is going to be
+         *                           inserted to. null if it is inserted to the current user. The
+         *                           value is ignored if @{link addForAllUsers} is true.
+         * @param is_read Flag to show if the missed call log has been read by the user or not.
+         *                Used for call log restore of missed calls.
+         * @param conferenceCallId The conference call id in database.
+         *
+         * @result The URI of the call log entry belonging to the user that made or received this
+         *        call.  This could be of the shadow provider.  Do not return it to non-system apps,
+         *        as they don't have permissions.
+         * {@hide}
+         */
+        public static Uri addCall(CallerInfo ci, Context context, String number,
+                String postDialDigits, String viaNumber, int presentation, int callType,
+                int features, PhoneAccountHandle accountHandle, long start, int duration,
+                Long dataUsage, boolean addForAllUsers, UserHandle userToBeInsertedTo,
+                boolean is_read, long conferenceCallId) {
             if (VERBOSE_LOG) {
                 Log.v(LOG_TAG, String.format("Add call: number=%s, user=%s, for all=%s",
                         number, userToBeInsertedTo, addForAllUsers));
@@ -711,6 +775,25 @@ public class CallLog {
                 }
             }
 
+            /// M: new feature:IP dial enhancement start @{
+            String ipPrefix = null;
+            if (tm != null) {
+                PhoneAccount phoneAccount = tm.getPhoneAccount(accountHandle);
+                int subId = TelephonyManager.from(context).getSubIdForPhoneAccount(phoneAccount);
+                ipPrefix = Settings.System.getString(resolver, "ipprefix" + subId);
+            }
+            if (null != ipPrefix && null != number && number.startsWith(ipPrefix)
+                    && !number.equals(ipPrefix) && callType == Calls.OUTGOING_TYPE) {
+                values.put(IP_PREFIX, ipPrefix);
+                String tmpNumber = number.substring(ipPrefix.length(), number.length());
+                values.put(NUMBER, tmpNumber);
+            }
+            /// @}
+
+            /// M: Add for Volte Conference call Calllog @{
+            values.put(CONFERENCE_CALL_ID, conferenceCallId);
+            /// @}
+
             /*
                 Writing the calllog works in the following way:
                 - All user entries
@@ -769,6 +852,10 @@ public class CallLog {
                     }
 
                     if (!shouldHaveSharedCallLogEntries(context, userManager, userId)) {
+                        ///M: add log
+                        if (VERBOSE_LOG) {
+                            Log.v(LOG_TAG, "Shouldn't have calllog entries. userId=" + userId);
+                        }
                         // Shouldn't have calllog entries.
                         continue;
                     }
@@ -850,6 +937,10 @@ public class CallLog {
 
             try {
                 final Uri result = resolver.insert(uri, values);
+                ///M:add log
+                if (VERBOSE_LOG) {
+                    Log.v(LOG_TAG, String.format("Inserting result %s", result));
+                }
                 resolver.delete(uri, "_id IN " +
                         "(SELECT _id FROM calls ORDER BY " + DEFAULT_SORT_ORDER
                         + " LIMIT -1 OFFSET 500)", null);
@@ -907,5 +998,84 @@ public class CallLog {
             }
             return countryIso;
         }
+
+        /// M: Code added by Mediatek inc. @{
+        /**
+         * save call log corresponding phone number ID
+         * @hide
+         * @internal
+         */
+        public static final String DATA_ID = "data_id";
+
+        /**
+         * save raw contact id of a call log corresponding to phone number
+         * @hide
+         * @internal
+         */
+        public static final String RAW_CONTACT_ID = "raw_contact_id";
+
+        /**
+         * save IP prefix of a call log
+         * @hide
+         * @internal
+         */
+        public static final String IP_PREFIX = "ip_prefix";
+
+        /**
+         * save conference call id of a call log in a conference call
+         * @hide
+         */
+        public static final String CONFERENCE_CALL_ID = "conference_call_id";
+
+        /**
+         * the projection of calls date or conference call date
+         * @hide
+         */
+        public static final String SORT_DATE = "sort_date";
+
+       /**
+        * An opaque value that indicate contact store location.
+        * "-1", indicates phone contacts, others, indicate sim id of a sim contact
+        * @hide
+        */
+        public static final String CACHED_INDICATE_PHONE_SIM = "indicate_phone_or_sim_contact";
+
+        /**
+         * For SIM contact's flag, SDN's contacts value is 1,
+         * ADN's contacts value is 0 card.
+         * @hide
+         */
+        public static final String CACHED_IS_SDN_CONTACT = "is_sdn_contact";
+        /// @}
     }
+
+    /// M: Code added by Mediatek inc. @{
+    /**
+     * Columns for conference calls table
+     * @hide
+     */
+    public static final class ConferenceCalls implements BaseColumns {
+        private ConferenceCalls() {
+        }
+
+        /**
+         * The content:// style URL for this table
+         * @hide
+         */
+        public static final Uri CONTENT_URI =
+                Uri.parse("content://call_log/conference_calls");
+
+        /**
+         * Save group id if the conference call is started from a contacts group
+         * @hide
+         */
+        public static final String GROUP_ID = "group_id";
+
+        /**
+         * Save conference call date, in milliseconds since the epoch
+         * @hide
+         */
+        public static final String CONFERENCE_DATE = "conference_date";
+    }
+    /// @}
 }

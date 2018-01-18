@@ -33,7 +33,7 @@ import java.util.List;
 
 public final class A2dpProfile implements LocalBluetoothProfile {
     private static final String TAG = "A2dpProfile";
-    private static boolean V = false;
+    private static boolean V = true;
 
     private BluetoothA2dp mService;
     private boolean mIsProfileReady;
@@ -116,6 +116,14 @@ public final class A2dpProfile implements LocalBluetoothProfile {
         List<BluetoothDevice> sinks = getConnectedDevices();
         if (sinks != null) {
             for (BluetoothDevice sink : sinks) {
+                /// M: avoid apps disconnecting A2DP that is connecting
+                if(sink != null && device!= null
+                    && (getConnectionStatus(sink) == BluetoothProfile.STATE_CONNECTING
+                    || getConnectionStatus(sink) == BluetoothProfile.STATE_CONNECTED)
+                    && sink.getAddress().equals(device.getAddress())) {
+                    Log.d(TAG, "The target device is connecting or connected");
+                    continue;
+                }
                 mService.disconnect(sink);
             }
         }

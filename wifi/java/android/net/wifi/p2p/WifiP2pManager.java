@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -42,6 +47,14 @@ import com.android.internal.util.Protocol;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+///M:@{
+import android.net.wifi.p2p.link.WifiP2pLinkInfo;
+import android.os.Process;
+
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+///@}
 
 /**
  * This class provides the API for managing Wi-Fi peer-to-peer connectivity. This lets an
@@ -283,6 +296,29 @@ public class WifiP2pManager {
     public static final String EXTRA_HANDOVER_MESSAGE =
             "android.net.wifi.p2p.EXTRA_HANDOVER_MESSAGE";
 
+    ///M:  @{
+    /**
+     * The lookup key for remove client message.
+     * @hide
+     */
+    public static final String EXTRA_CLIENT_MESSAGE =
+            "android.net.wifi.p2p.EXTRA_CLIENT_MESSAGE";
+
+    /**
+     * The lookup key for pin code of wps input/show pin method.
+     * @hide
+     */
+    public static final String EXTRA_PIN_CODE =
+            "android.net.wifi.p2p.EXTRA_PIN_CODE";
+
+    /**
+     * The lookup key for pin method of wps.
+     * @hide
+     */
+    public static final String EXTRA_PIN_METHOD =
+            "android.net.wifi.p2p.EXTRA_PIN_METHOD";
+    ///@}
+
     IWifiP2pManager mService;
 
     private static final int BASE = Protocol.BASE_WIFI_P2P_MANAGER;
@@ -468,6 +504,64 @@ public class WifiP2pManager {
     /** @hide */
     public static final int REPORT_NFC_HANDOVER_FAILED              = BASE + 81;
 
+    ///M:@{
+    /** @hide */
+    public static final int REQUEST_LINK_INFO                       = BASE + 85;
+    /** @hide */
+    public static final int RESPONSE_LINK_INFO                      = BASE + 86;
+
+    /** @hide */
+    public static final int SET_AUTO_CHANNEL_SELECT                 = BASE + 87;
+    /** @hide */
+    public static final int SET_AUTO_CHANNEL_SELECT_FAILED          = BASE + 88;
+    /** @hide */
+    public static final int SET_AUTO_CHANNEL_SELECT_SUCCEEDED       = BASE + 89;
+
+    /** @hide */
+    public static final int PEER_CONNECTION_USER_ACCEPT_FROM_OUTER  = BASE + 90;
+    /** @hide */
+    public static final int PEER_CONNECTION_USER_REJECT_FROM_OUTER  = BASE + 91;
+
+    /** @hide */
+    public static final int FREQ_CONFLICT_EX_RESULT                 = BASE + 92;
+
+    /** @hide */
+    public static final int REMOVE_CLIENT                           = BASE + 93;
+    /** @hide */
+    public static final int REMOVE_CLIENT_FAILED                    = BASE + 94;
+    /** @hide */
+    public static final int REMOVE_CLIENT_SUCCEEDED                 = BASE + 95;
+
+    /** @hide */
+    public static final int STOP_P2P_FIND_ONLY                      = BASE + 96;
+
+    /** @hide */
+    public static final int ADD_PERSISTENT_GROUP                 = BASE + 97;
+    /** @hide */
+    public static final int ADD_PERSISTENT_GROUP_FAILED          = BASE + 98;
+    /** @hide */
+    public static final int ADD_PERSISTENT_GROUP_SUCCEEDED     = BASE + 99;
+    /** @hide */
+    public static final int RESPONSE_ADD_PERSISTENT_GROUP       = BASE + 100;
+
+    /** @hide */
+    public static final int UPPER_BOUND                             = BASE + 128;
+
+    /** @hide */
+    public static final int BEAM_MODE_ENABLE      = 0;
+
+    /** @hide */
+    public static final int BEAM_GO_MODE_ENABLE      = 1;
+
+    /** @hide */
+    public static final int BEAM_MODE_DISABLE      = 2;
+
+    /** @hide */
+    public static final int BEAM_GO_MODE_DISABLE      = 3;
+
+    /** @hide */
+    public static final int BEAM_DISCOVERY_TIMEOUT      = 123;
+    ///@}
 
     /**
      * Create a new WifiP2pManager instance. Applications use
@@ -656,6 +750,20 @@ public class WifiP2pManager {
         public void onHandoverMessageAvailable(String handoverMessage);
     }
 
+    ///M:@{
+    /** Interface for callback invocation when Handover add persistent group succeed {@hide} */
+    public interface AddPersistentGroupListener {
+            /**
+         * The requested added group is available.
+         *
+         * <p>This function is invoked when the added group is avialable.
+         *
+         * @param group The added Wi-Fi p2p group info
+         */
+        public void onAddPersistentGroupAdded(WifiP2pGroup group);
+    }
+    ///@}
+
     /**
      * A channel that connects the application to the Wifi p2p framework.
      * Most p2p operations require a Channel as an argument. An instance of Channel is obtained
@@ -718,6 +826,10 @@ public class WifiP2pManager {
                     case STOP_LISTEN_FAILED:
                     case SET_CHANNEL_FAILED:
                     case REPORT_NFC_HANDOVER_FAILED:
+                    ///M:  @{
+                    case REMOVE_CLIENT_FAILED:
+                    case ADD_PERSISTENT_GROUP_FAILED:
+                    ///@}
                         if (listener != null) {
                             ((ActionListener) listener).onFailure(message.arg1);
                         }
@@ -744,6 +856,9 @@ public class WifiP2pManager {
                     case STOP_LISTEN_SUCCEEDED:
                     case SET_CHANNEL_SUCCEEDED:
                     case REPORT_NFC_HANDOVER_SUCCEEDED:
+                    ///M:  @{
+                    case REMOVE_CLIENT_SUCCEEDED:
+                    ///@}
                         if (listener != null) {
                             ((ActionListener) listener).onSuccess();
                         }
@@ -757,7 +872,8 @@ public class WifiP2pManager {
                     case RESPONSE_CONNECTION_INFO:
                         WifiP2pInfo wifiP2pInfo = (WifiP2pInfo) message.obj;
                         if (listener != null) {
-                            ((ConnectionInfoListener) listener).onConnectionInfoAvailable(wifiP2pInfo);
+                            ((ConnectionInfoListener) listener).
+                                onConnectionInfoAvailable(wifiP2pInfo);
                         }
                         break;
                     case RESPONSE_GROUP_INFO:
@@ -787,6 +903,21 @@ public class WifiP2pManager {
                                     .onHandoverMessageAvailable(handoverMessage);
                         }
                         break;
+                    ///M:@{
+                    case WifiP2pManager.RESPONSE_LINK_INFO:
+                        WifiP2pLinkInfo s = (WifiP2pLinkInfo) message.obj;
+                        if (listener != null) {
+                            ((WifiP2pLinkInfoListener) listener).onLinkInfoAvailable(s);
+                        }
+                        break;
+                    case WifiP2pManager.RESPONSE_ADD_PERSISTENT_GROUP:
+                        group = (WifiP2pGroup) message.obj;
+                        if (listener != null) {
+                            ((AddPersistentGroupListener) listener)
+                                    .onAddPersistentGroupAdded(group);
+                        }
+                        break;
+                    ///@}
                     default:
                         Log.d(TAG, "Ignored " + message);
                         break;
@@ -852,6 +983,14 @@ public class WifiP2pManager {
                 return mListenerMap.remove(key);
             }
         }
+
+        ///M: ALPS00713080: apk clean listener when it is onDestroy() @{
+        private void clearListener() {
+            synchronized (mListenerMapLock) {
+                mListenerMap.clear();
+            }
+        }
+        ///@}
     }
 
     private static void checkChannel(Channel c) {
@@ -872,6 +1011,20 @@ public class WifiP2pManager {
             throw new IllegalArgumentException("deviceAddress cannot be empty");
         }
     }
+
+    ///M: for removeClient()  @{
+    // Format: xx:xx:xx:xx:xx:xx
+    private static final Pattern macPattern = Pattern
+        .compile("((?:[0-9a-f]{2}:){5}[0-9a-f]{2})");
+
+    private void checkMac(String mac) {
+        Matcher match = macPattern.matcher(mac);
+
+        if (!match.find()) {
+            throw new IllegalArgumentException("MAC needs to be well-formed");
+        }
+    }
+    ///@}
 
     /**
      * Registers the application with the Wi-Fi framework. This function
@@ -928,6 +1081,11 @@ public class WifiP2pManager {
      * @param listener for callbacks on success or failure. Can be null.
      */
     public void discoverPeers(Channel c, ActionListener listener) {
+        ///M: MTK added on logs  @{
+        Log.d(TAG, Thread.currentThread().getStackTrace()[2].getMethodName() +
+            "(), pid: " + Process.myPid() + ", tid: " + Process.myTid() + ", uid: " +
+            Process.myUid());
+        ///@}
         checkChannel(c);
         c.mAsyncChannel.sendMessage(DISCOVER_PEERS, 0, c.putListener(listener));
     }
@@ -944,6 +1102,11 @@ public class WifiP2pManager {
      * @param listener for callbacks on success or failure. Can be null.
      */
     public void stopPeerDiscovery(Channel c, ActionListener listener) {
+        ///M: MTK added on logs  @{
+        Log.d(TAG, Thread.currentThread().getStackTrace()[2].getMethodName() +
+            "(), pid: " + Process.myPid() + ", tid: " + Process.myTid() + ", uid: " +
+            Process.myUid());
+        ///@}
         checkChannel(c);
         c.mAsyncChannel.sendMessage(STOP_DISCOVERY, 0, c.putListener(listener));
     }
@@ -971,6 +1134,11 @@ public class WifiP2pManager {
      * @param listener for callbacks on success or failure. Can be null.
      */
     public void connect(Channel c, WifiP2pConfig config, ActionListener listener) {
+        ///M: MTK added on logs  @{
+        Log.d(TAG, Thread.currentThread().getStackTrace()[2].getMethodName() +
+            "(), pid: " + Process.myPid() + ", tid: " + Process.myTid() + ", uid: " +
+            Process.myUid());
+        ///@}
         checkChannel(c);
         checkP2pConfig(config);
         c.mAsyncChannel.sendMessage(CONNECT, 0, c.putListener(listener), config);
@@ -988,6 +1156,11 @@ public class WifiP2pManager {
      * @param listener for callbacks on success or failure. Can be null.
      */
     public void cancelConnect(Channel c, ActionListener listener) {
+        ///M: MTK added on logs  @{
+        Log.d(TAG, Thread.currentThread().getStackTrace()[2].getMethodName() +
+            "(), pid: " + Process.myPid() + ", tid: " + Process.myTid() + ", uid: " +
+            Process.myUid());
+        ///@}
         checkChannel(c);
         c.mAsyncChannel.sendMessage(CANCEL_CONNECT, 0, c.putListener(listener));
     }
@@ -1012,6 +1185,11 @@ public class WifiP2pManager {
      * @param listener for callbacks on success or failure. Can be null.
      */
     public void createGroup(Channel c, ActionListener listener) {
+        ///M: MTK added on logs  @{
+        Log.d(TAG, Thread.currentThread().getStackTrace()[2].getMethodName() +
+            "(), pid: " + Process.myPid() + ", tid: " + Process.myTid() + ", uid: " +
+            Process.myUid());
+        ///@}
         checkChannel(c);
         c.mAsyncChannel.sendMessage(CREATE_GROUP, WifiP2pGroup.PERSISTENT_NET_ID,
                 c.putListener(listener));
@@ -1029,6 +1207,11 @@ public class WifiP2pManager {
      * @param listener for callbacks on success or failure. Can be null.
      */
     public void removeGroup(Channel c, ActionListener listener) {
+        ///M: MTK added on logs  @{
+        Log.d(TAG, Thread.currentThread().getStackTrace()[2].getMethodName() +
+            "(), pid: " + Process.myPid() + ", tid: " + Process.myTid() + ", uid: " +
+            Process.myUid());
+        ///@}
         checkChannel(c);
         c.mAsyncChannel.sendMessage(REMOVE_GROUP, 0, c.putListener(listener));
     }
@@ -1367,6 +1550,28 @@ public class WifiP2pManager {
         }
     }
 
+    ///M: wfd sink MCC mechanism  @{
+    /** Internal use only @hide */
+    public void setMiracastMode(int mode, int freq) {
+        try {
+            mService.setMiracastModeEx(mode, freq);
+        } catch (RemoteException e) {
+           // ignore
+        }
+    }
+    ///@}
+
+    ///M: crossmount  @{
+    /** Internal use only @hide */
+    public void setCrossmountMode(int mode, int freq) {
+        try {
+            mService.setMiracastModeEx(mode, freq);
+        } catch(RemoteException e) {
+           // ignore
+        }
+    }
+    ///@}
+
     /**
      * Get a reference to WifiP2pService handler. This is used to establish
      * an AsyncChannel communication with WifiService
@@ -1440,4 +1645,287 @@ public class WifiP2pManager {
         c.mAsyncChannel.sendMessage(RESPONDER_REPORT_NFC_HANDOVER, 0,
                 c.putListener(listener), bundle);
     }
+
+    ///M:@{
+    /**
+     * Interface for callback invocation when p2p link information is available
+     * @hide
+     */
+    public interface WifiP2pLinkInfoListener {
+        /**
+         * The requested p2p link info is available
+         * @param status Wi-Fi p2p link info.
+         */
+        public void onLinkInfoAvailable(WifiP2pLinkInfo status);
+    }
+
+    /**
+     * get p2p interface MAC address
+     * @hide
+     */
+    public String getMacAddress() {
+        try {
+            return mService.getMacAddress();
+        } catch (RemoteException e) {
+            return null;
+        }
+    }
+
+    /**
+     * request wifi p2p link info
+     *
+     * @param c is the channel created at {@link #initialize}
+     * @param interfaceAddress is the "interfaceAddress" attribute in WifiP2pDevice.java
+     * @param listener for callback when wifi p2p link info is available. Can be null.
+     * @hide
+     */
+    public void requestWifiP2pLinkInfo(Channel c, String interfaceAddress,
+            WifiP2pLinkInfoListener listener) {
+        WifiP2pLinkInfo info = new WifiP2pLinkInfo();
+        info.interfaceAddress = interfaceAddress;
+        checkChannel(c);
+        c.mAsyncChannel.sendMessage(REQUEST_LINK_INFO, 0, c
+                .putListener(listener), info);
+    }
+
+    /**
+     * set p2p auto channel selection
+     *
+     * @param c is the channel created at {@link #initialize}
+     * @param enable is the auto channel selection willing to set
+     * @param listener for callbacks on success or failure. Can be null.
+     * @hide
+     */
+    public void setP2pAutoChannel(Channel c, boolean enable, ActionListener listener) {
+        checkChannel(c);
+        c.mAsyncChannel.sendMessage(SET_AUTO_CHANNEL_SELECT, (enable ? 1 : 0),
+            c.putListener(listener));
+    }
+
+    /**
+     * Clear all registered listener
+     * M: ALPS00713080: apk should clean listener when it is onDestroy()
+     *
+     * @param c is the channel created at {@link #initialize}
+     * @hide
+     */
+    public void deinitialize(Channel c) {
+        Log.i(TAG, "deinitialize()");
+        checkChannel(c);
+        //can't use this
+        //c.mAsyncChannel.disconnect();
+        c.clearListener();
+    }
+
+    /**
+     * Get peer device IP after group formed
+     *
+     * @param peerMacAddress is the peer device p2p MAC
+     * @hide
+     * @internal
+     */
+    public String getPeerIpAddress(String peerMacAddress) {
+        try {
+            return mService.getPeerIpAddress(peerMacAddress);
+        } catch (RemoteException e) {
+            return null;
+        }
+    }
+
+    /**
+     * This device acts as GO, and accept/ignore invitation from GC request
+     *
+     * @param c is the channel created at {@link #initialize}
+     * @param accept is the invitation result from user
+     * @param goIntent is the go intent for group negotiation
+     * @param listener for callbacks on success or failure. Can be null.
+     * @hide
+     */
+    public void setGCInviteResult(Channel c, boolean accept, int goIntent,
+            ActionListener listener) {
+        checkChannel(c);
+        if (true == accept) {
+            c.mAsyncChannel.sendMessage(PEER_CONNECTION_USER_ACCEPT_FROM_OUTER, goIntent,
+                c.putListener(listener));
+        } else {
+            c.mAsyncChannel.sendMessage(PEER_CONNECTION_USER_REJECT_FROM_OUTER, -1,
+                c.putListener(listener));
+        }
+    }
+
+    /**
+     * This device to accept/ignore invitation from peer request.
+     *
+     * @param c is the channel created at {@link #initialize}
+     * @param accept is the invitation result from user
+     * @param goIntent is the go intent for group negotiation
+     * @param pinMethod is the pin method for wps from user
+     * @param pinCode is the pin code for wps input pin method
+     * @param listener for callbacks on success or failure. Can be null.
+     * @hide
+     */
+    public void setGCInviteResult(Channel c, boolean accept, int goIntent, int pinMethod,
+            String pinCode, ActionListener listener) {
+        checkChannel(c);
+        if (pinCode == null) {
+            throw new IllegalArgumentException("pinCode needs to be configured");
+        }
+        if (pinMethod!=WpsInfo.KEYPAD && pinMethod!=WpsInfo.DISPLAY) {
+            throw new IllegalArgumentException(
+                "pinMethod needs to be WpsInfo.KEYPAD/WpsInfo.DISPLAY");
+        }
+
+        Bundle bundle = new Bundle();
+        bundle.putString(EXTRA_PIN_CODE, pinCode);
+        bundle.putInt(EXTRA_PIN_METHOD, pinMethod);
+
+        if (true == accept) {
+            c.mAsyncChannel.sendMessage(PEER_CONNECTION_USER_ACCEPT_FROM_OUTER, goIntent,
+                c.putListener(listener), bundle);
+        } else {
+            c.mAsyncChannel.sendMessage(PEER_CONNECTION_USER_REJECT_FROM_OUTER, -1,
+                c.putListener(listener), bundle);
+        }
+    }
+
+    /**
+     * The decision of freqency conflict enhancement flow
+     *
+     * @param c is the channel created at {@link #initialize}
+     * @param accept is the freqency conflict enhancement result from user
+     * @param listener for callbacks on success or failure. Can be null.
+     * @hide
+     */
+    public void setFreqConflictExResult(Channel c, boolean accept, ActionListener listener) {
+        checkChannel(c);
+        c.mAsyncChannel.sendMessage(FREQ_CONFLICT_EX_RESULT, (accept ? 1 : 0),
+            c.putListener(listener));
+    }
+
+
+    /**
+     * Disconnect specific gc for go role.
+     *
+     * @param c is the channel created at {@link #initialize}
+     * @param mac is this specific gc wifi p2p device mac
+     * @param listener for callbacks on success or failure. Can be null.
+     * @hide
+     */
+    public void removeClient(Channel c, String mac, ActionListener listener) {
+        Log.d(TAG, Thread.currentThread().getStackTrace()[2].getMethodName() +
+            "(), pid: " + Process.myPid() + ", tid: " + Process.myTid() + ", uid: " +
+            Process.myUid());
+        checkChannel(c);
+        checkMac(mac);
+        Bundle bundle = new Bundle();
+        bundle.putString(EXTRA_CLIENT_MESSAGE, mac);
+        c.mAsyncChannel.sendMessage(REMOVE_CLIENT, 0,
+                c.putListener(listener), bundle);
+    }
+
+    /**
+     * Set wifi p2p IE for crossmount.
+     *
+     * @param isAdd true for adding, otherwise remove IE
+     * @param hexData
+     *                  Hex string in IE Value(TLV) field.
+     *                  Max hex string length is 500 bytes.
+     *                  (For ASCII string, max length is 250 bytes)
+     * @hide
+     */
+    public void setCrossMountIE(boolean isAdd, String hexData) {
+        try {
+            mService.setCrossMountIE(isAdd, hexData);
+        } catch (RemoteException e) {
+            return;
+        }
+    }
+
+     /**
+       * Stop an ongoing peer discovery only
+       *
+       * <p> The function call immediately returns after sending a stop request
+       * to the framework. The application is notified of a success or failure to initiate
+       * stop through listener callbacks {@link ActionListener#onSuccess} or
+       * {@link ActionListener#onFailure}.
+       * <p> This function won't trigger p2pFlush().
+       *
+       * @param c is the channel created at {@link #initialize}
+       * @param listener for callbacks on success or failure. Can be null.
+       * @hide
+       */
+     public void stopP2pFindOnly(Channel c, ActionListener listener) {
+        Log.d(TAG, Thread.currentThread().getStackTrace()[2].getMethodName() +
+            "(), pid: " + Process.myPid() + ", tid: " + Process.myTid() + ", uid: " +
+            Process.myUid());
+        checkChannel(c);
+        c.mAsyncChannel.sendMessage(STOP_P2P_FIND_ONLY, 0, c.putListener(listener));
+    }
+
+     /**
+     * Create a p2p group with net ID specified. This essentially creates
+     * an access point that can accept connections from legacy clients as well as other p2p
+     * devices.
+     *
+     * @param c is the channel created at {@link #initialize}
+     * @param netId is the persistent network ID.
+     * @param listener for callbacks on success or failure. Can be null.
+     * @hide
+     */
+    public void createGroup(Channel c, int netId, ActionListener listener) {
+        checkChannel(c);
+        c.mAsyncChannel.sendMessage(CREATE_GROUP, netId, c.putListener(listener));
+    }
+
+    /**
+     * Initiate peer discovery with timeout specified. A discovery process involves scanning for
+     * available Wi-Fi peers for the purpose of establishing a connection.
+     *
+     * @param c is the channel created at {@link #initialize}
+     * @param timeout is the discovery timeout
+     * @param listener for callbacks on success or failure. Can be null.
+     * @hide
+     */
+
+    public void discoverPeers(Channel c, int timeout, ActionListener listener) {
+        checkChannel(c);
+        c.mAsyncChannel.sendMessage(DISCOVER_PEERS, timeout, c.putListener(listener));
+    }
+
+    /**
+     * Add a  persistent group with variables.
+     *
+     * @param c is the channel created at {@link #initialize}
+     * @param variables is the variables for the persistent group.
+     * @param listener for callbacks on success or failure. Can be null.
+     * @hide
+     */
+   public void addPersistentGroup(Channel c, Map<String, String> variables,
+            AddPersistentGroupListener listener) {
+        checkChannel(c);
+        Bundle bundle = new Bundle();
+        HashMap<String, String> hVariables = new HashMap<String, String>();
+        if (variables != null && variables instanceof HashMap<?, ?>) {
+            hVariables = (HashMap<String, String>) variables;
+        } else if (variables != null) {
+            hVariables.putAll(variables);
+        }
+        bundle.putSerializable("variables", hVariables);
+        c.mAsyncChannel.sendMessage(ADD_PERSISTENT_GROUP, 0, c.putListener(listener), bundle);
+   }
+
+    /**
+     * Set the beam mode for P2P beam fast connect.
+     *
+     * @param mode for beam mode and set to wifi driver.
+     * @hide
+     */
+    public void setBeamMode(int mode) {
+        try {
+            mService.setBeamMode(mode);
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
+    }
+    ///@}
 }

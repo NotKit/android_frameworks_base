@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -49,4 +54,8 @@ oneway interface IVideoProvider {
     void requestCallDataUsage();
 
     void setPauseImage(in Uri uri);
+
+    /* M: ViLTE part start */
+    void setUIMode(int mode);
+    /* M: ViLTE part end */
 }

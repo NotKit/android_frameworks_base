@@ -18,4 +18,7 @@
 -->
 <resources>
     <bool name="config_use_sim_language_file">false</bool>
+    <bool translatable="false" name="config_device_volte_available">true</bool>
+    <bool translatable="false" name="config_device_vt_available">true</bool>
+    <bool translatable="false" name="config_device_wfc_ims_available">true</bool>
 </resources>

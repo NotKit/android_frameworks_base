@@ -29,6 +29,7 @@ import android.app.AlertDialog;
 import android.app.AlertDialog.Builder;
 import android.app.Dialog;
 import android.app.ProgressDialog;
+import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.os.RemoteException;
 import android.os.ServiceManager;
@@ -37,8 +38,11 @@ import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.util.AttributeSet;
 import android.util.Log;
+import android.view.View;
 import android.view.WindowManager;
 import android.widget.ImageView;
+import android.widget.TextView;
+
 
 /**
  * Displays a PIN pad for unlocking.
@@ -52,15 +56,36 @@ public class KeyguardSimPinView extends KeyguardPinBasedInputView {
     private CheckSimPin mCheckSimPinThread;
 
     private AlertDialog mRemainingAttemptsDialog;
+    //M:
+    KeyguardUtils mKeyguardUtils;
     private int mSubId;
     private ImageView mSimImageView;
 
+    //M:
+    private int mPhoneId = 0;
+
     KeyguardUpdateMonitorCallback mUpdateMonitorCallback = new KeyguardUpdateMonitorCallback() {
         @Override
-        public void onSimStateChanged(int subId, int slotId, State simState) {
-           if (DEBUG) Log.v(TAG, "onSimStateChanged(subId=" + subId + ",state=" + simState + ")");
-           resetState();
-       };
+        // public void onSimStateChanged(int phoneId, /*int slotId,*/ State simState) {
+        public void onSimStateChangedUsingPhoneId(int phoneId, IccCardConstants.State simState) {
+            // if (DEBUG)
+            // Log.v(TAG, "onSimStateChanged(subId=" + subId + ",state=" + simState + ")");
+            // resetState();
+            if (DEBUG) {
+                Log.d(TAG, "onSimStateChangedUsingSubId: " + simState + ", phoneId=" + phoneId);
+            }
+
+            switch (simState) {
+                case NOT_READY:
+                case ABSENT:
+                    if (phoneId == mPhoneId) {
+                        KeyguardUpdateMonitor.getInstance(getContext())
+                            .reportSimUnlocked(mPhoneId);
+                        mCallback.dismiss(true);
+                    }
+                    break;
+            }
+       }
     };
 
     public KeyguardSimPinView(Context context) {
@@ -69,13 +94,14 @@ public class KeyguardSimPinView extends KeyguardPinBasedInputView {
 
     public KeyguardSimPinView(Context context, AttributeSet attrs) {
         super(context, attrs);
+        mKeyguardUtils = new KeyguardUtils(context);
     }
 
     @Override
     public void resetState() {
         super.resetState();
         if (DEBUG) Log.v(TAG, "Resetting state");
-        KeyguardUpdateMonitor monitor = KeyguardUpdateMonitor.getInstance(mContext);
+        /** KeyguardUpdateMonitor monitor = KeyguardUpdateMonitor.getInstance(mContext);
         mSubId = monitor.getNextSubIdForState(IccCardConstants.State.PIN_REQUIRED);
         if (SubscriptionManager.isValidSubscriptionId(mSubId)) {
             int count = TelephonyManager.getDefault().getSimCount();
@@ -94,7 +120,8 @@ public class KeyguardSimPinView extends KeyguardPinBasedInputView {
             }
             mSecurityMessageDisplay.setMessage(msg, true);
             mSimImageView.setImageTintList(ColorStateList.valueOf(color));
-        }
+        } **/
+        mSecurityMessageDisplay.setMessage(R.string.kg_sim_pin_instructions, true);
     }
 
     @Override
@@ -141,11 +168,24 @@ public class KeyguardSimPinView extends KeyguardPinBasedInputView {
     protected void onFinishInflate() {
         super.onFinishInflate();
 
+        mPhoneId = KeyguardUpdateMonitor.getInstance(getContext()).getSimPinLockPhoneId();
+        if (KeyguardUtils.getNumOfPhone() > 1) {
+            View simIcon = findViewById(R.id.keyguard_sim);
+            if (simIcon != null) {
+                simIcon.setVisibility(View.GONE);
+            }
+            View simInfoMsg = findViewById(R.id.sim_info_message);
+            if (simInfoMsg != null) {
+                simInfoMsg.setVisibility(View.VISIBLE);
+            }
+            dealwithSIMInfoChanged();
+        }
+
         mSecurityMessageDisplay.setTimeout(0); // don't show ownerinfo/charging status by default
         if (mEcaView instanceof EmergencyCarrierArea) {
             ((EmergencyCarrierArea) mEcaView).setCarrierTextVisible(true);
         }
-        mSimImageView = (ImageView) findViewById(R.id.keyguard_sim);
+        // mSimImageView = (ImageView) findViewById(R.id.keyguard_sim);
     }
 
     @Override
@@ -179,11 +219,11 @@ public class KeyguardSimPinView extends KeyguardPinBasedInputView {
      */
     private abstract class CheckSimPin extends Thread {
         private final String mPin;
-        private int mSubId;
+        // private int mSubId;
 
-        protected CheckSimPin(String pin, int subId) {
+        protected CheckSimPin(String pin/**, int subId**/) {
             mPin = pin;
-            mSubId = subId;
+            // mSubId = subId;
         }
 
         abstract void onSimCheckResponse(final int result, final int attemptsRemaining);
@@ -194,6 +234,8 @@ public class KeyguardSimPinView extends KeyguardPinBasedInputView {
                 if (DEBUG) {
                     Log.v(TAG, "call supplyPinReportResultForSubscriber(subid=" + mSubId + ")");
                 }
+                Log.d(TAG, "call supplyPinReportResultForSubscriber() mPhoneId = " + mPhoneId);
+                int subId = KeyguardUtils.getSubIdUsingPhoneId(mPhoneId);
                 final int[] result = ITelephony.Stub.asInterface(ServiceManager
                         .checkService("phone")).supplyPinReportResultForSubscriber(mSubId, mPin);
                 if (DEBUG) {
@@ -261,7 +303,8 @@ public class KeyguardSimPinView extends KeyguardPinBasedInputView {
         getSimUnlockProgressDialog().show();
 
         if (mCheckSimPinThread == null) {
-            mCheckSimPinThread = new CheckSimPin(mPasswordEntry.getText(), mSubId) {
+            // mCheckSimPinThread = new CheckSimPin(mPasswordEntry.getText(), mSubId) {
+            mCheckSimPinThread = new CheckSimPin(mPasswordEntry.getText()) {
                 @Override
                 void onSimCheckResponse(final int result, final int attemptsRemaining) {
                     post(new Runnable() {
@@ -270,11 +313,13 @@ public class KeyguardSimPinView extends KeyguardPinBasedInputView {
                             if (mSimUnlockProgressDialog != null) {
                                 mSimUnlockProgressDialog.hide();
                             }
-                            resetPasswordText(true /* animate */,
-                                    result != PhoneConstants.PIN_RESULT_SUCCESS /* announce */);
+                            //resetPasswordText(true /* animate */,
+                            //        result != PhoneConstants.PIN_RESULT_SUCCESS /* announce */);
                             if (result == PhoneConstants.PIN_RESULT_SUCCESS) {
+                                // KeyguardUpdateMonitor.getInstance(getContext())
+                                //         .reportSimUnlocked(mSubId);
                                 KeyguardUpdateMonitor.getInstance(getContext())
-                                        .reportSimUnlocked(mSubId);
+                                        .reportSimUnlocked(mPhoneId);
                                 mCallback.dismiss(true);
                             } else {
                                 if (result == PhoneConstants.PIN_PASSWORD_INCORRECT) {
@@ -295,6 +340,9 @@ public class KeyguardSimPinView extends KeyguardPinBasedInputView {
                                 if (DEBUG) Log.d(LOG_TAG, "verifyPasswordAndUnlock "
                                         + " CheckSimPin.onSimCheckResponse: " + result
                                         + " attemptsRemaining=" + attemptsRemaining);
+                                //M:
+                                resetPasswordText(true /* animate */,
+                                        result != PhoneConstants.PIN_RESULT_SUCCESS /* announce */);
                             }
                             mCallback.userActivity();
                             mCheckSimPinThread = null;
@@ -314,6 +362,50 @@ public class KeyguardSimPinView extends KeyguardPinBasedInputView {
     @Override
     public boolean startDisappearAnimation(Runnable finishRunnable) {
         return false;
+    }
+
+    private void dealwithSIMInfoChanged() {
+        String operName = null;
+
+        try {
+            operName = mKeyguardUtils.getOptrNameUsingPhoneId(mPhoneId, mContext);
+        } catch (IndexOutOfBoundsException e) {
+            Log.w(TAG, "getOptrNameBySlot exception, mPhoneId=" + mPhoneId);
+        }
+        if (DEBUG) {
+            Log.i(TAG, "dealwithSIMInfoChanged, mPhoneId=" + mPhoneId + ", operName=" + operName);
+        }
+        TextView forText = (TextView) findViewById(R.id.for_text);
+        ImageView subIcon = (ImageView) findViewById(R.id.sub_icon);
+        TextView simCardName = (TextView) findViewById(R.id.sim_card_name);
+        if (null == operName) { //this is the new SIM card inserted
+            if (DEBUG) {
+                Log.d(TAG, "mPhoneId " + mPhoneId + " is new subInfo record");
+            }
+            setForTextNewCard(mPhoneId, forText);
+            subIcon.setVisibility(View.GONE);
+            simCardName.setVisibility(View.GONE);
+        } else {
+            if (DEBUG) {
+                Log.d(TAG, "dealwithSIMInfoChanged, show operName for mPhoneId=" + mPhoneId);
+            }
+            forText.setText(mContext.getString(R.string.kg_slot_id, mPhoneId + 1) + " ");
+            simCardName.setText(null == operName ?
+                    mContext.getString(R.string.kg_detecting_simcard) : operName);
+            Bitmap iconBitmap = mKeyguardUtils.getOptrBitmapUsingPhoneId(mPhoneId, mContext);
+            subIcon.setImageBitmap(iconBitmap);
+            subIcon.setVisibility(View.VISIBLE);
+            simCardName.setVisibility(View.VISIBLE);
+        }
+    }
+
+    private void setForTextNewCard(int phoneId, TextView forText) {
+        StringBuffer forSb = new StringBuffer();
+
+        forSb.append(mContext.getString(R.string.kg_slot_id, phoneId + 1));
+        forSb.append(" ");
+        forSb.append(mContext.getText(R.string.kg_new_simcard));
+        forText.setText(forSb.toString());
     }
 }
 

@@ -266,6 +266,10 @@ class FocusManager implements View.OnFocusChangeListener {
      * @param pos
      */
     private void focusItem(final int pos) {
+        if (pos == RecyclerView.NO_POSITION) {
+            Log.d(TAG, "Skip focus invalid position");
+            return;
+        }
         focusItem(pos, null);
     }
 

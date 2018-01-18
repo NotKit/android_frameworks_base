@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -37,12 +42,15 @@ import android.os.ParcelFileDescriptor;
 import android.service.media.CameraPrewarmService;
 import android.util.Log;
 
+
+import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Arrays;
+
 
 /**
  * The Media provider contains meta data for all available media on both internal
@@ -222,6 +230,25 @@ public final class MediaStore {
     public static final String EXTRA_FINISH_ON_COMPLETION = "android.intent.extra.finishOnCompletion";
 
     /**
+     * M: The name of Intent-extra used to control the loop behavoir of a MovieView.
+     * This is a boolean property that specifies whether or not to loop the sent uris.
+     * If you sent one uri, it will loop one. otheriwise, it will loop the list.
+     *
+     * @hide
+     * @internal
+     */
+    public static final String EXTRA_LOOP_PLAYBACK = "android.intent.extra.loopPlayback";
+
+    /**
+     * M: The name of Intent-extra used to tell MovieView to play a list of Uris.
+     * It can be used with {@link MediaStore#EXTRA_LOOP_PLAYBACK}.
+     *
+     * @hide
+     * @internal
+     */
+    public static final String EXTRA_URI_LIST = "android.intent.extra.uriList";
+
+    /**
      * The name of the Intent action used to launch a camera in still image mode.
      */
     @SdkConstant(SdkConstantType.ACTIVITY_INTENT_ACTION)
@@ -381,7 +408,6 @@ public final class MediaStore {
     /**
      * Common fields for most MediaProvider tables
      */
-
     public interface MediaColumns extends BaseColumns {
         /**
          * Path to the file on disk.
@@ -460,6 +486,61 @@ public final class MediaStore {
          * The height of the image/video in pixels.
          */
         public static final String HEIGHT = "height";
+
+        /// M: Defined drm columns to support drm in MediaProvider
+        /**
+         * M: <br>Type: TEXT
+         * @hide
+         */
+        public static final String DRM_CONTENT_URI = "drm_content_uri";
+
+        /**
+         * M: <br>Type: INTEGER (numeric)
+         * @hide
+         */
+        public static final String DRM_OFFSET = "drm_offset";
+
+        /**
+         * M: <br>Type: INTEGER (numeric)
+         * @hide
+         */
+        public static final String DRM_DATA_LEN = "drm_dataLen";
+
+        /**
+         * M: <br>Type: TEXT
+         * @hide
+         */
+        public static final String DRM_RIGHTS_ISSUER = "drm_rights_issuer";
+
+        /**
+         * M: <br>Type: TEXT
+         * @hide
+         */
+        public static final String DRM_CONTENT_NAME = "drm_content_name";
+
+        /**
+         * M: <br>Type: TEXT
+         * @hide
+         */
+        public static final String DRM_CONTENT_DESCRIPTION = "drm_content_description";
+
+        /**
+         * M: <br>Type: TEXT
+         * @hide
+         */
+        public static final String DRM_CONTENT_VENDOR = "drm_content_vendor";
+
+        /**
+         * M: <br>Type: TEXT
+         * @hide
+         */
+        public static final String DRM_ICON_URI = "drm_icon_uri";
+
+        /**
+         * M: <br>Type: INTEGER (numeric)
+         * @hide
+         */
+        public static final String DRM_METHOD = "drm_method";
      }
 
     /**
@@ -594,6 +675,23 @@ public final class MediaStore {
              * Constant for the {@link #MEDIA_TYPE} column indicating that file is a playlist file.
              */
             public static final int MEDIA_TYPE_PLAYLIST = 4;
+
+            /// M: Add two new columns in files table for file search feature in FileManager.
+            /**
+             * M: File name with extension.
+             * <P>Type: TEXT</P>
+             * @hide
+             * @internal
+             */
+            public static final String FILE_NAME = "file_name";
+
+            /**
+             * M: File type.
+             * <P>Type: INTEGER</P>
+             * @hide
+             * @internal
+             */
+            public static final String FILE_TYPE = "file_type";
         }
     }
 
@@ -606,6 +704,8 @@ public final class MediaStore {
         private static final int FULL_SCREEN_KIND = 2;
         private static final int MICRO_KIND = 3;
         private static final String[] PROJECTION = new String[] {_ID, MediaColumns.DATA};
+        private static final String[] SELECTION = new String[] {_ID, MediaColumns.DATA, Images.Thumbnails.WIDTH,
+                Images.Thumbnails.HEIGHT};
         static final int DEFAULT_GROUP_ID = 0;
         private static final Object sThumbBufLock = new Object();
         private static byte[] sThumbBuf;
@@ -675,28 +775,55 @@ public final class MediaStore {
         static Bitmap getThumbnail(ContentResolver cr, long origId, long groupId, int kind,
                 BitmapFactory.Options options, Uri baseUri, boolean isVideo) {
             Bitmap bitmap = null;
-            // Log.v(TAG, "getThumbnail: origId="+origId+", kind="+kind+", isVideo="+isVideo);
-            // If the magic is non-zero, we simply return thumbnail if it does exist.
-            // querying MediaProvider and simply return thumbnail.
+            long thumb_ID = 0;
+            Log.v(TAG, "getThumbnail: origId=" + origId + ", kind=" + kind + ", Uri=" + baseUri + ", isVideo=" + isVideo);
+            /// M: If the magic is non-zero, we simply return thumbnail if it does exist.
+            /// querying MediaProvider and simply return thumbnail.
             MiniThumbFile thumbFile = new MiniThumbFile(isVideo ? Video.Media.EXTERNAL_CONTENT_URI
                     : Images.Media.EXTERNAL_CONTENT_URI);
             Cursor c = null;
+            MiniThumbFile.ThumbResult result = new MiniThumbFile.ThumbResult();
             try {
                 long magic = thumbFile.getMagic(origId);
                 if (magic != 0) {
                     if (kind == MICRO_KIND) {
-                        synchronized (sThumbBufLock) {
-                            if (sThumbBuf == null) {
-                                sThumbBuf = new byte[MiniThumbFile.BYTES_PER_MINTHUMB];
-                            }
-                            if (thumbFile.getMiniThumbFromFile(origId, sThumbBuf) != null) {
-                                bitmap = BitmapFactory.decodeByteArray(sThumbBuf, 0, sThumbBuf.length);
-                                if (bitmap == null) {
-                                    Log.w(TAG, "couldn't decode byte array.");
+                        if (!isVideo) {
+                            thumb_ID = getImageThumbnailId(cr, baseUri, origId);
+                        } else {
+                            thumb_ID = getVideoThumbnailId(cr, baseUri, origId);
+                        }
+
+                        if (magic == thumb_ID) {
+                            synchronized (sThumbBufLock) {
+                                if (sThumbBuf == null) {
+                                    sThumbBuf = new byte[MiniThumbFile.BYTES_PER_MINTHUMB];
+                                }
+                                if (thumbFile.getMiniThumbFromFile(origId, sThumbBuf, result) != null) {
+//                                    bitmap = BitmapFactory.decodeByteArray(sThumbBuf, 0, sThumbBuf.length);
+                                    bitmap = BitmapFactory.decodeByteArray(sThumbBuf, 0, sThumbBuf.length, options);
+                                    if (bitmap == null) {
+                                        Log.w(TAG, "couldn't decode byte array.");
+                                    }
                                 }
                             }
+                            if (result.getDetail() == MiniThumbFile.ThumbResult.WRONG_CHECK_CODE) {
+                                /// M: wrong check code, let media provider to re-create the thumbnail from file.
+                                ContentValues values = new ContentValues();
+                                values.put(Images.Media.MINI_THUMB_MAGIC, "0");
+                                String where = "_id=? ";
+                                String[] whereArgs = new String[]{String.valueOf(origId)};
+                                if (!isVideo) {
+                                    cr.update(Images.Media.EXTERNAL_CONTENT_URI, values, where, whereArgs);
+                                } else {
+                                    cr.update(Video.Media.EXTERNAL_CONTENT_URI, values, where, whereArgs);
+                                }
+                                /// M: reget the thumbnail from MiniThumbFile.
+                                thumb_ID = 0;
+                            } else {
+                                /// M: original logic
+                                return bitmap;
+                            }
                         }
-                        return bitmap;
                     } else if (kind == MINI_KIND) {
                         String column = isVideo ? "video_id=" : "image_id=";
                         c = cr.query(baseUri, PROJECTION, column + origId, null, null);
@@ -713,21 +840,32 @@ public final class MediaStore {
                         .appendQueryParameter("orig_id", String.valueOf(origId))
                         .appendQueryParameter("group_id", String.valueOf(groupId)).build();
                 if (c != null) c.close();
-                c = cr.query(blockingUri, PROJECTION, null, null, null);
+                //c = cr.query(blockingUri, PROJECTION, null, null, null);
+                c = cr.query(blockingUri, SELECTION, null, null, null);
                 // This happens when original image/video doesn't exist.
                 if (c == null) return null;
 
                 // Assuming thumbnail has been generated, at least original image exists.
-                if (kind == MICRO_KIND) {
-                    synchronized (sThumbBufLock) {
-                        if (sThumbBuf == null) {
-                            sThumbBuf = new byte[MiniThumbFile.BYTES_PER_MINTHUMB];
-                        }
-                        Arrays.fill(sThumbBuf, (byte)0);
-                        if (thumbFile.getMiniThumbFromFile(origId, sThumbBuf) != null) {
-                            bitmap = BitmapFactory.decodeByteArray(sThumbBuf, 0, sThumbBuf.length);
-                            if (bitmap == null) {
-                                Log.w(TAG, "couldn't decode byte array.");
+                /// M: If check code is wrong, here to get the new thumbnail created by provider.
+                if (kind == MICRO_KIND && (thumb_ID == 0)) {
+                    if (!isVideo) {
+                        thumb_ID = getImageThumbnailId(cr, baseUri, origId);
+                    } else {
+                        thumb_ID = getVideoThumbnailId(cr, baseUri, origId);
+                    }
+
+                    long thumb_id = thumbFile.getMagic(origId);
+                    if (0 != thumb_ID && thumb_id == thumb_ID) {
+                        synchronized (sThumbBufLock) {
+                            if (sThumbBuf == null) {
+                                sThumbBuf = new byte[MiniThumbFile.BYTES_PER_MINTHUMB];
+                            }
+                            if (thumbFile.getMiniThumbFromFile(origId, sThumbBuf) != null) {
+//                                bitmap = BitmapFactory.decodeByteArray(sThumbBuf, 0, sThumbBuf.length);
+                                bitmap = BitmapFactory.decodeByteArray(sThumbBuf, 0, sThumbBuf.length, options);
+                                if (bitmap == null) {
+                                    Log.w(TAG, "couldn't decode byte array.");
+                                }
                             }
                         }
                     }
@@ -735,6 +873,8 @@ public final class MediaStore {
                     if (c.moveToFirst()) {
                         bitmap = getMiniThumbFromFile(c, baseUri, cr, options);
                     }
+                } else if (thumb_ID != 0) {
+                    Log.w(TAG, "------for thumb_ID !=null------");
                 } else {
                     throw new IllegalArgumentException("Unsupported kind: " + kind);
                 }
@@ -758,10 +898,29 @@ public final class MediaStore {
                         } else {
                             bitmap = ThumbnailUtils.createImageThumbnail(filePath, kind);
                         }
+
+                        /// M: for GIF file format, first draw the 8888 bitmap to a
+                        /// white bitmap to create its white background. @{
+                        String mimeType = android.media.MediaFile.getMimeTypeForFile(filePath);
+                        if (bitmap != null && "image/gif".equals(mimeType)) {
+                            Bitmap b = Bitmap.createBitmap(bitmap.getWidth(),
+                                                    bitmap.getHeight(), Bitmap.Config.ARGB_8888);
+                            if (b != null) {
+                                android.graphics.Canvas canvas = new android.graphics.Canvas(b);
+                                //draw buffer white
+                                canvas.drawColor(0xFFFFFFFF);
+                                //draw original bitmap onto white buffer
+                                canvas.drawBitmap(bitmap, new android.graphics.Matrix(), null);
+                                bitmap.recycle();
+                                bitmap = b;
+                                b = null;
+                            }
+                        }
+                        /// @}
                     }
                 }
             } catch (SQLiteException ex) {
-                Log.w(TAG, ex);
+                Log.w(TAG, "", ex);
             } finally {
                 if (c != null) c.close();
                 // To avoid file descriptor leak in application process.
@@ -840,6 +999,113 @@ public final class MediaStore {
              * <P>Type: TEXT</P>
              */
             public static final String BUCKET_DISPLAY_NAME = "bucket_display_name";
+
+            /// M: Add new columns in image view for gallery and camera new feature
+            /**
+             * M: Indicates group id of continuous shots images.
+             * <P>Type: INTEGER</P>
+             * @hide
+             * @internal
+             */
+            public static final String GROUP_ID = "group_id";
+
+            /**
+             * M: Indicates index of continuous shots images within a group.
+             * <P>Type: INTEGER</P>
+             * @hide
+             * @internal
+             */
+            public static final String GROUP_INDEX = "group_index";
+
+            /**
+             * M: Indicates high focus valus of best shots images.
+             * <P>Type: INTEGER</P>
+             * @hide
+             * @internal
+             */
+            public static final String FOCUS_VALUE_HIGH = "focus_value_high";
+
+            /**
+             * M: Indicates low focus valus of best shots images.
+             * <P>Type: INTEGER</P>
+             * @hide
+             * @internal
+             */
+            public static final String FOCUS_VALUE_LOW = "focus_value_low";
+
+            /**
+             * M: Indicates whether marked as best shot.
+             * <P>Type: INTEGER</P>
+             * @hide
+             * @internal
+             */
+            public static final String IS_BEST_SHOT = "is_best_shot";
+
+            /**
+             * M: Indicates continus shot group count.
+             * <P>Type: INTEGER</P>
+             * @hide
+             * @internal
+             */
+            public static final String GROUP_COUNT = "group_count";
+
+            /// Add new constants for three 3D feature(both in video and image).
+            /**
+             * M: Constant for the stereo type indicating
+             * video stereo type is 2d.
+             * @hide
+             */
+            public static final int STEREO_TYPE_2D = 0;
+
+            /**
+             * M: Constant for the stereo type indicating
+             * video stereo type is frame_sequence 3d.
+             * @hide
+             */
+            public static final int STEREO_TYPE_FRAME_SEQUENCE = 1;
+
+            /**
+             * M: Constant for the stereo type indicating
+             * video stereo type is side_by_side 3d.
+             * @hide
+             */
+            public static final int STEREO_TYPE_SIDE_BY_SIDE = 2;
+
+            /**
+             * M: Constant for the stereo type indicating
+             * video stereo type is top_botton 3d.
+             * @hide
+             */
+            public static final int STEREO_TYPE_TOP_BOTTOM = 3;
+            /**
+             * M: Constant for the stereo type indicating
+             * the left and rigth was swapped by user.
+             * @hide
+             */
+            public static final int STEREO_TYPE_SWAP_LEFT_RIGHT = 4;
+
+            /**
+             * M: Constant for the stereo type indicating
+             * the top and bottom was swapped by user.
+             * @hide
+             */
+            public static final int STEREO_TYPE_SWAP_TOP_BOTTOM = 5;
+
+            /**
+             * M: Constant for the stereo type indicating
+             * the stereo type is unknown.
+             * @hide
+             */
+            public static final int STEREO_TYPE_UNKNOWN = -1;
+
+            /// add for camera refocus feature
+            /**
+             * M: Indicates camera refocus
+             * <P>Type: INTEGER</P>
+             * @hide
+             * @internal
+             */
+            public static final String CAMERA_REFOCUS = "camera_refocus";
         }
 
         public static final class Media implements ImageColumns {
@@ -898,6 +1164,7 @@ public final class MediaStore {
                     try {
                         stream.close();
                     } catch (IOException e) {
+                        Log.e(TAG, "insertImage: IOException! path=" + imagePath, e);
                     }
                 }
             }
@@ -935,12 +1202,36 @@ public final class MediaStore {
                     thumb.compress(Bitmap.CompressFormat.JPEG, 100, thumbOut);
                     thumbOut.close();
                     return thumb;
-                }
-                catch (FileNotFoundException ex) {
+                } catch (FileNotFoundException ex) {
+                    Log.e(TAG, "StoreThumbnail: FileNotFoundException! uri=" + url, ex);
+                    return null;
+                } catch (IOException ex) {
+                    Log.e(TAG, "StoreThumbnail: IOException! uri=" + url, ex);
                     return null;
                 }
-                catch (IOException ex) {
-                    return null;
+            }
+
+            /// M: Add to make sure insert image file has exist to avoid cts fail.
+            private static boolean ensureFileExists(String path) {
+                File file = new File(path);
+                if (file.exists()) {
+                    return true;
+                } else {
+                    // we will not attempt to create the first directory in the path
+                    // (for example, do not create /sdcard if the SD card is not mounted)
+                    int secondSlash = path.indexOf('/', 1);
+                    if (secondSlash < 1) return false;
+                    String directoryPath = path.substring(0, secondSlash);
+                    File directory = new File(directoryPath);
+                    if (!directory.exists())
+                        return false;
+                    file.getParentFile().mkdirs();
+                    try {
+                        return file.createNewFile();
+                    } catch (IOException ioe) {
+                        Log.e(TAG, "File creation failed", ioe);
+                    }
+                    return false;
                 }
             }
 
@@ -1342,6 +1633,24 @@ public final class MediaStore {
              * @hide
              */
             public static final String GENRE = "genre";
+
+            /// M: Add new columns in audio view for music pinyin key new feature
+            /**
+             * M: A pinyin key calculated from the TITLE, used for
+             * sorting and grouping
+             * <P>Type: TEXT</P>
+             * @hide
+             * @internal
+             */
+            public static final String TITLE_PINYIN_KEY = "title_pinyin_key";
+
+            /**
+             * M: Non-zero if the audio file is record file
+             * <P>Type: INTEGER (boolean)</P>
+             * @hide
+             * @internal
+             */
+            public static final String IS_RECORD = "is_record";
         }
 
         /**
@@ -1635,6 +1944,16 @@ public final class MediaStore {
              * <P>Type: INTEGER (long)</P>
              */
             public static final String DATE_MODIFIED = "date_modified";
+
+            /// M: Add new columns in playlist table for music pinyin key new feature
+            /**
+             * M: A pinyin key calculated from the NAME, used for
+             * sorting and grouping
+             * <P>Type: TEXT</P>
+             * @hide
+             * @internal
+             */
+            public static final String NAME_PINYIN_KEY = "name_pinyin_key";
         }
 
         /**
@@ -1775,6 +2094,16 @@ public final class MediaStore {
              * The number of albums in the database for this artist
              */
             public static final String NUMBER_OF_TRACKS = "number_of_tracks";
+
+            /// M: Add new columns in artist table for music pinyin key new feature
+            /**
+             * M: A pinyin key calculated from the ARTIST, used for
+             * sorting and grouping
+             * <P>Type: TEXT</P>
+             * @hide
+             * @internal
+             */
+            public static final String ARTIST_PINYIN_KEY = "artist_pinyin_key";
         }
 
         /**
@@ -1901,6 +2230,16 @@ public final class MediaStore {
              * <P>Type: TEXT</P>
              */
             public static final String ALBUM_ART = "album_art";
+
+            /// M: Add new columns in album table for music pinyin key new feature
+            /**
+             * M: A pinyin key calculated from the ALBUM, used for
+             * sorting and grouping
+             * <P>Type: TEXT</P>
+             * @hide
+             * @internal
+             */
+            public static final String ALBUM_PINYIN_KEY = "album_pinyin_key";
         }
 
         /**
@@ -2073,6 +2412,81 @@ public final class MediaStore {
              * <P>Type: INTEGER</P>
              */
             public static final String BOOKMARK = "bookmark";
+
+            /// M: Add new columns in video view for camera new feature
+            /**
+             * M: Indicates whether marked as live photo.
+             * <P>Type: INTEGER</P>
+             * @hide
+             * @internal
+             */
+            public static final String IS_LIVE_PHOTO = "is_live_photo";
+
+            /**
+             * M: Slow motion speed.
+             * <P>Type: TEXT</P>
+             * @hide
+             * @internal
+             */
+            public static final String SLOW_MOTION_SPEED = "slow_motion_speed";
+
+            /**
+             * M: The orientation for the video expressed as degrees.
+             * Only degrees 0, 90, 180, 270 will work.
+             * <P>Type: INTEGER</P>
+             * @hide
+             * @internal
+             */
+            public static final String ORIENTATION = "orientation";
+
+            /// Add new constants for three 3D feature(both in video and image).
+            /**
+             * M: Constant for the stereo type indicating
+             * video stereo type is 2d.
+             * @hide
+             */
+            public static final int STEREO_TYPE_2D = 0;
+
+            /**
+             * M: Constant for the stereo type indicating
+             * video stereo type is frame_sequence 3d.
+             * @hide
+             */
+            public static final int STEREO_TYPE_FRAME_SEQUENCE = 1;
+
+            /**
+             * M: Constant for the stereo type indicating
+             * video stereo type is side_by_side 3d.
+             * @hide
+             */
+            public static final int STEREO_TYPE_SIDE_BY_SIDE = 2;
+
+            /**
+             * M: Constant for the stereo type indicating
+             * video stereo type is top_botton 3d.
+             * @hide
+             */
+            public static final int STEREO_TYPE_TOP_BOTTOM = 3;
+            /**
+             * M: Constant for the stereo type indicating
+             * the left and rigth was swapped by user.
+             * @hide
+             */
+            public static final int STEREO_TYPE_SWAP_LEFT_RIGHT = 4;
+
+            /**
+             * M: Constant for the stereo type indicating
+             * the top and bottom was swapped by user.
+             * @hide
+             */
+            public static final int STEREO_TYPE_SWAP_TOP_BOTTOM = 5;
+
+            /**
+             * M: Constant for the stereo type indicating
+             * the stereo type is unknown.
+             * @hide
+             */
+            public static final int STEREO_TYPE_UNKNOWN = -1;
         }
 
         public static final class Media implements VideoColumns {
@@ -2296,5 +2710,223 @@ public final class MediaStore {
             }
         }
         return null;
+    }
+
+    /**
+     * M: Streaming setting info for OMA. @{
+     *
+     * @hide
+     * @internal
+     */
+    public static final class Streaming {
+
+        /**
+         * Key for oma rtsp setting. All this will be stored in Settings.db
+         *
+         * @hide
+         */
+        public interface OmaRtspSettingColumns {
+            /**
+             * User displayable name for Streaming settings.
+             * <br>Type: TEXT
+             */
+            public static final String NAME = "mtk_rtsp_name";
+            /**
+             * Allows application settings to be binded to this specific RTSP setting.
+             * <br>Type: TEXT
+             */
+            public static final String PROVIDER_ID = "mtk_rtsp_provider_id";
+            /**
+             * Logical proxy ID for the RTSP proxy to use. To avoid confusion
+             * with other proxies, streaming should use a separate logical
+             * proxy (PLogICAL) containing only one physical proxy (PXPHYSICAL).
+             * It conrrespondes to the proxyid of apn setting.
+             * <br>Type: TEXT
+             */
+            public static final String TO_PROXY = "mtk_rtsp_to_proxy";
+            /**
+             * Required if direct use of Network Access Point supported.
+             * It conrespondes to the napid of apn setting.
+             * <br>Type: TEXT
+             */
+            public static final String TO_NAPID = "mtk_rtsp_to_napid";
+            /**
+             * Maximum sustainable bandwidth for all transfer media, in bits
+             * per second, indicating the maximum media data throughput in
+             * the network. The default value is product-specific.
+             * If transfer medium specific bandwidth values are used,
+             * this value is the absolute maximum value for all media.
+             * <br>Type: TEXT
+             */
+            public static final String MAX_BANDWIDTH = "mtk_rtsp_max_bandwidth";
+            /**
+             * Network performance characteristics for a transfer medium.
+             * The NETINFO parameter defines the performance the client should
+             * expect for audio/video streaming, and may differ from the
+             * theoretical network capabilities.
+             *
+             * The parameters defined for NAPDEF characteristics are not sufficient
+             * for a number of reasons: The actual transfer medium
+             * and hence the bitrate used may vary even when the same NAP is used,
+             * while NAPDEF only defines a single bandwidth value.
+             * For example, even if a network supports WCDMA,
+             * only GSM coverage may be currently available.
+             * NAPDEF/BEARER also does not differentiate between GSM-GPRS and EDGE-GPRS,
+             * but their performance is different.
+             * Finally, the operator may desire to limit the bandwidth used
+             * for streaming to a fraction of the total bandwidth available.
+             * <br>Type: TEXT
+             */
+            public static final String NETINFO = "mtk_rtsp_netinfo";
+            /**
+             * Minimum UDP port number used for media data traffic (RTP).
+             * The default value is product-specific. The value has to be even.
+             * <br>Type: TEXT
+             */
+            public static final String MIN_UDP_PORT = "mtk_rtsp_min_udp_port";
+            /**
+             * Maximum UDP port number used for media data traffic (RTP).
+             * The default value is product-specific.
+             * The value must be at least MIN-UDP-PORT + 5 to have enough ports
+             * for three media streams (audio, video, timed text), preferably much higher.
+             * <br>Type: TEXT
+             */
+            public static final String MAX_UDP_PORT = "mtk_rtsp_max_udp_port";
+            /**
+             * The sim card id.
+             * <br>Type: INTEGER
+             */
+            public static final String SIM_ID = "mtk_rtsp_sim_id";
+        }
+
+        /**
+         * Contains all oma rtsp setting. Generally, it only has one row.
+         * @hide
+         */
+        public static final class OmaRtspSetting implements OmaRtspSettingColumns {
+            /**
+             * The content:// style URI for the oma rts setting.
+             */
+            public static final Uri CONTENT_URI =
+                Uri.parse(CONTENT_AUTHORITY_SLASH + "internal/streaming/omartspsetting");
+            /**
+             * The MIME type for this table.
+             */
+            public static final String CONTENT_TYPE = "vnd.android.cursor.dir/omartspsetting";
+
+        }
+
+        /**
+         * Keys for streaming settings.
+         * Oma has defined many keys for streamign, so here we just define some other keys.
+         * @hide
+         */
+        public interface SettingColumns {
+            /**
+             * Whether enable rtsp proxy or not.
+             */
+            public static final String RTSP_PROXY_ENABLED = "mtk_rtsp_proxy_enabled";
+            /**
+             * The rtsp proxy host.
+             * <br>Type: TEXT
+             */
+            public static final String RTSP_PROXY_HOST = "mtk_rtsp_proxy_host";
+            /**
+             * The rtsp proxy port
+             * <br>Type: INTEGER
+             */
+            public static final String RTSP_PROXY_PORT = "mtk_rtsp_proxy_port";
+            /**
+             * Whether enable http proxy or not.
+             */
+            public static final String HTTP_PROXY_ENABLED = "mtk_http_proxy_enabled";
+            /**
+             * The http proxy host.
+             * <br>Type: TEXT
+             */
+            public static final String HTTP_PROXY_HOST = "mtk_http_proxy_host";
+            /**
+             * The http proxy port
+             * <br>Type: INTEGER
+             */
+            public static final String HTTP_PROXY_PORT = "mtk_http_proxy_port";
+        }
+
+        public static final class Setting implements OmaRtspSettingColumns, SettingColumns {
+
+        }
+    }
+    /** M: @} */
+
+    /**
+     * M: Uri for querying the file path that being transferred through MTP.
+     *
+     * @hide
+     * @internal
+     */
+    public static Uri getMtpTransferFileUri() {
+        return Uri.parse(CONTENT_AUTHORITY_SLASH + "none/mtp_transfer_file");
+    }
+
+    /**
+     * M: Path of file being transferred.
+     *
+     * @hide
+     * @internal
+     */
+    public static final String MTP_TRANSFER_FILE_PATH = "mtp_transfer_file_path";
+
+    /**
+     * M: Gets thumbnail's magic for an image.
+     */
+    private static long getImageThumbnailId(ContentResolver cr, Uri baseUri, long origId) {
+        String tmpUri = baseUri.toString();
+        Uri imagesUri = Uri.parse("content://media/external/images/media/");
+        long thumb_Id = 0;
+        Cursor c = null;
+        try {
+            c = cr.query(imagesUri, new String[]{Images.ImageColumns.MINI_THUMB_MAGIC}, "_id = " + origId, null, null);
+            if (c == null) {
+                Log.e(TAG, "getImageThumbnailId: Null cursor! id=" + origId);
+                return thumb_Id;
+            }
+            if (c.moveToFirst()) {
+                thumb_Id = c.getLong(0);
+            }
+        } catch (SQLiteException ex) {
+            Log.e(TAG, "getImageThumbnailId: SQLiteException!", ex);
+        } finally {
+            if (c != null) {
+                c.close();
+            }
+        }
+        return thumb_Id;
+    }
+
+    /**
+     * M: Gets thumbnail's magic for a video.
+     */
+    private static long getVideoThumbnailId(ContentResolver cr, Uri baseUri, long origId) {
+        String tmpUri = baseUri.toString();
+        Uri imagesUri = Uri.parse("content://media/external/video/media/");
+        long thumb_Id = 0;
+        Cursor c = null;
+        try {
+            c = cr.query(imagesUri, new String[]{Video.VideoColumns.MINI_THUMB_MAGIC}, "_id = " + origId, null, null);
+            if (c == null) {
+                Log.e(TAG, "getVideoThumbnailId: Null cursor! id=" + origId);
+                return thumb_Id;
+            }
+            if (c.moveToFirst()) {
+                thumb_Id = c.getLong(0);
+            }
+        } catch (SQLiteException ex) {
+            Log.e(TAG, "getVideoThumbnailId: SQLiteException!", ex);
+        } finally {
+            if (c != null) {
+                c.close();
+            }
+        }
+        return thumb_Id;
     }
 }

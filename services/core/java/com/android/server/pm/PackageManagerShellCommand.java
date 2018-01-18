@@ -768,10 +768,13 @@ class PackageManagerShellCommand extends ShellCommand {
             return runRemoveSplit(packageName, splitName);
         }
 
+        /// M: [Operator] Operator package SHOULD NOT have PackageManager.DELETE_ALL_USERS flag.
+        boolean deleteAll = false;
         userId = translateUserId(userId, "runUninstall");
         if (userId == UserHandle.USER_ALL) {
             userId = UserHandle.USER_SYSTEM;
             flags |= PackageManager.DELETE_ALL_USERS;
+            deleteAll = true;
         } else {
             final PackageInfo info = mInterface.getPackageInfo(packageName, 0, userId);
             if (info == null) {
@@ -787,6 +790,19 @@ class PackageManagerShellCommand extends ShellCommand {
                 flags |= PackageManager.DELETE_SYSTEM_APP;
             }
         }
+
+        /// M: [Operator] Operator package SHOULD NOT have PackageManager.DELETE_ALL_USERS flag.  @{
+        final PackageInfo info2 = mInterface.getPackageInfo(packageName, 0, userId);
+        if (info2 == null && !deleteAll) {
+            pw.println("Failure - not installed for " + userId);
+            return 1;
+        }
+
+        if (info2 != null
+             && (info2.applicationInfo.flagsEx & ApplicationInfo.FLAG_EX_OPERATOR) != 0) {
+            flags &= ~PackageManager.DELETE_ALL_USERS;
+        }
+        /// @}
 
         final LocalIntentReceiver receiver = new LocalIntentReceiver();
         mInterface.getPackageInstaller().uninstall(packageName, null /*callerPackageName*/, flags,

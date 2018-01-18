@@ -25,6 +25,13 @@
 #include "CanvasContext.h"
 #include "RenderThread.h"
 
+/// M: PerfBoost include
+#include <dlfcn.h>
+#include "PerfServiceNative.h"
+void (*perfNotifyRenderTime)(float) = NULL;
+typedef void (*notify_render_time)(float);
+#define NANOS_TO_MILLIS_FLOAT(nanos) ((nanos) * 0.000001f)
+
 namespace android {
 namespace uirenderer {
 namespace renderthread {
@@ -33,6 +40,17 @@ DrawFrameTask::DrawFrameTask()
         : mRenderThread(nullptr)
         , mContext(nullptr)
         , mSyncResult(SyncResult::OK) {
+
+    /// M: PerfBoost
+    void *handle, *func;
+    handle = dlopen("libperfservicenative.so", RTLD_NOW);
+
+    func = dlsym(handle, "PerfServiceNative_notifyRenderTime");
+    perfNotifyRenderTime = reinterpret_cast<notify_render_time>(func);
+    if (perfNotifyRenderTime == NULL) {
+        ALOGE("PerfServiceNative_notifyRenderTime init fail!");
+    }
+    /// @}
 }
 
 DrawFrameTask::~DrawFrameTask() {
@@ -87,6 +105,8 @@ void DrawFrameTask::run() {
 
     bool canUnblockUiThread;
     bool canDrawThisFrame;
+    /// M: PerfBoost
+    nsecs_t begin = systemTime(CLOCK_MONOTONIC);
     {
         TreeInfo info(TreeInfo::MODE_FULL, *mContext);
         info.observer = mObserver;
@@ -112,6 +132,11 @@ void DrawFrameTask::run() {
     if (!canUnblockUiThread) {
         unblockUiThread();
     }
+
+    /// M:PerfBoost include @{
+    nsecs_t end = systemTime(CLOCK_MONOTONIC);
+    if(perfNotifyRenderTime) perfNotifyRenderTime(NANOS_TO_MILLIS_FLOAT(end - begin));
+    /// @}
 }
 
 bool DrawFrameTask::syncFrameState(TreeInfo& info) {
@@ -150,6 +175,7 @@ bool DrawFrameTask::syncFrameState(TreeInfo& info) {
 
 void DrawFrameTask::unblockUiThread() {
     AutoMutex _lock(mLock);
+    ATRACE_CALL_L1();
     mSignal.signal();
 }
 

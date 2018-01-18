@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +25,8 @@ import android.os.SystemClock;
 import android.util.Log;
 import java.util.HashMap;
 
+import android.os.SystemProperties;
+
 /**
  * @hide
  */
@@ -38,6 +45,9 @@ class StopWatch {
         mStartTime = -1;
         mTotalTime = 0;
         mNumCalls = 0;
+
+        STOP_WATCH_LOGGING_PERIOD = SystemProperties.getInt("debug.swm.period", 200);
+        Log.v(TAG, "StopWatch param: period= " + STOP_WATCH_LOGGING_PERIOD);
     }
 
     public void start() {
@@ -53,6 +63,8 @@ class StopWatch {
              throw new RuntimeException(
                  "Calling stop with StopWatch already stopped");
         }
+        Frame.wait3DReady();
+
         long stopTime = SystemClock.elapsedRealtime();
         mTotalTime += stopTime - mStartTime;
         ++mNumCalls;
@@ -75,6 +87,9 @@ public class StopWatchMap {
 
     public StopWatchMap() {
         mStopWatches = new HashMap<String, StopWatch>();
+
+        LOG_MFF_RUNNING_TIMES = SystemProperties.getBoolean("debug.swm.log", false);
+        Log.v("MFF", "StopWatchMap param: log=" + LOG_MFF_RUNNING_TIMES);
     }
 
     public void start(String stopWatchName) {

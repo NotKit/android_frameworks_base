@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2008 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -373,4 +378,58 @@ public class NetworkUtils {
         result = builder.toString();
         return result;
     }
+
+    // M:
+    public native static int runPPPOE(String interfaceName, int timeout,
+                String username, String password, int interval, int failure,
+                int mtu, int mru, int mss, DhcpResults ipInfo);
+    public native static boolean stopPPPOE(String interfaceName);
+    public native static String getPPPOEError();
+
+    /**
+        add PD corresponding java declaration.
+     */
+    public native static boolean runDhcpv6PD(String interfaceName, DhcpResults dhcpResults);
+    public native static boolean runDhcpv6PDRenew(String interfaceName, DhcpResults dhcpResults);
+    public native static boolean stopDhcpv6PD(String interfaceName);
+    public native static String getDhcpv6PDError();
+
+    /**
+     * Reset IPv6 or IPv4 sockets that are connected via the named interface.
+     *
+     * @param interfaceName is the interface to reset
+     * @param mask {@see #RESET_IPV4_ADDRESSES} and {@see #RESET_IPV6_ADDRESSES}
+     * @hide
+     */
+    public native static int resetConnections(String interfaceName, int mask);
+
+    /**
+     * Get the flag of IPv6 Routing Advertisement message.
+     * @param interfaceName the interface name of network
+     * @return the value of flag
+     * @hide
+     * @internal
+     */
+    public native static int getRaFlags(String interfaceName);
+
+    /// M: utility function - reset the socket connection of the process by uid
+    /**
+     * Reset the socket connection of the process by uid
+     * @param uid the uid of the process
+     * @hide
+     * @internal
+     */
+    public native static int resetConnectionByUid(int uid);
+
+    /// M: utility function - reset the socket connection of the process
+    /// by uid with special error number
+    /**
+     * Reset the socket connection of the process by uid with special error number
+     * @param uid the uid of the process
+     * @param error number which is expected.
+     * @hide
+     * @internal
+     */
+    public native static int resetConnectionByUidErrNum(int uid, int err);
+
 }

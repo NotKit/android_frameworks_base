@@ -106,6 +106,7 @@ public final class BluetoothLeAdvertiser {
     public void startAdvertising(AdvertiseSettings settings,
             AdvertiseData advertiseData, AdvertiseData scanResponse,
             final AdvertiseCallback callback) {
+        Log.d(TAG, "startAdvertising");
         synchronized (mLeAdvertisers) {
             BluetoothLeUtils.checkAdapterStateOn(mBluetoothAdapter);
             if (callback == null) {
@@ -151,6 +152,7 @@ public final class BluetoothLeAdvertiser {
      * @param callback {@link AdvertiseCallback} identifies the advertising instance to stop.
      */
     public void stopAdvertising(final AdvertiseCallback callback) {
+        Log.d(TAG, "stopAdvertising");
         synchronized (mLeAdvertisers) {
             if (callback == null) {
                 throw new IllegalArgumentException("callback cannot be null");
@@ -167,6 +169,7 @@ public final class BluetoothLeAdvertiser {
      * @hide
      */
     public void cleanup() {
+        Log.d(TAG, "cleanup");
         mLeAdvertisers.clear();
     }
 
@@ -366,6 +369,7 @@ public final class BluetoothLeAdvertiser {
         mHandler.post(new Runnable() {
             @Override
             public void run() {
+                Log.d(TAG, "postStartFailure() - errorCode = " + error);
                 callback.onStartFailure(error);
             }
         });

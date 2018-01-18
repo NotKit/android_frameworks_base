@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -163,6 +168,20 @@ public interface IApplicationThread extends IInterface {
     void schedulePictureInPictureModeChanged(IBinder token, boolean isInPictureInPictureMode) throws RemoteException;
     void scheduleLocalVoiceInteractionStarted(IBinder token, IVoiceInteractor voiceInteractor) throws RemoteException;
 
+    /// M: Mediatek added functions start
+
+    /// M: ANR mechanism for Message History/Queue @{
+    void enableLooperLog() throws RemoteException;
+    void dumpMessageHistory() throws RemoteException;
+    /// M: ANR mechanism for Message History/Queue @}
+    /// M: ANR mechanism for Message History/Queue for system server
+    void dumpAllMessageHistory() throws RemoteException;
+    /// M: Dynamically enable AMS ActivityThread logs @{
+    void configActivityLogTag(String tag, boolean on) throws RemoteException;
+    /// M: Dynamically enable AMS ActivityThread logs @}
+
+    /// M: Mediatek added functions end
+
     String descriptor = "android.app.IApplicationThread";
 
     int SCHEDULE_PAUSE_ACTIVITY_TRANSACTION = IBinder.FIRST_CALL_TRANSACTION;
@@ -225,4 +244,18 @@ public interface IApplicationThread extends IInterface {
     int SCHEDULE_MULTI_WINDOW_CHANGED_TRANSACTION = IBinder.FIRST_CALL_TRANSACTION+58;
     int SCHEDULE_PICTURE_IN_PICTURE_CHANGED_TRANSACTION = IBinder.FIRST_CALL_TRANSACTION+59;
     int SCHEDULE_LOCAL_VOICE_INTERACTION_STARTED_TRANSACTION = IBinder.FIRST_CALL_TRANSACTION+60;
+
+    /// M: Mediatek added functions start
+
+    /// M: ANR mechanism for Message History/Queue @{
+    int DUMP_MESSAGE_HISTORY_TRANSACTION = IBinder.FIRST_CALL_TRANSACTION + 101;
+    int ENABLE_LOOPER_LOG = IBinder.FIRST_CALL_TRANSACTION + 102;
+    /// M: ANR mechanism for Message History/Queue @}
+    /// M: ANR mechanism for Message History/Queue for system server
+    int DUMP_ALL_MESSAGE_HISTORY_TRANSACTION = IBinder.FIRST_CALL_TRANSACTION + 105;
+    /// M: Dynamically enable AMS ActivityThread logs @{
+    int CONFIG_ACTIVITY_LOG_TAG  = IBinder.FIRST_CALL_TRANSACTION + 106;
+    /// M: Dynamically enable AMS ActivityThread logs @}
+
+    /// M: Mediatek added functions end
 }

@@ -30,7 +30,7 @@ public class SettingsProviderPerformanceTest extends BaseSettingsProviderTest {
 
     private static final int MICRO_SECONDS_IN_MILLISECOND = 1000;
 
-    private static final long MAX_AVERAGE_SET_AND_GET_SETTING_DURATION_MILLIS = 20;
+    private static final long MAX_AVERAGE_SET_AND_GET_SETTING_DURATION_MILLIS = 40;
 
     public void testSetAndGetPerformanceForGlobalViaFrontEndApi() throws Exception {
         // Start with a clean slate.

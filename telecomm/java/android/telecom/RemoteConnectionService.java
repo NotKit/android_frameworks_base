@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -379,6 +384,16 @@ final class RemoteConnectionService {
                         extras);
             }
         }
+
+        /// M: For Volte @{
+        @Override
+        public void handleCreateConferenceComplete(
+                String conferenceId,
+                ConnectionRequest request,
+                ParcelableConference parcelConference) {
+            // TODO: maybe should add function here
+        }
+        /// @}
     };
 
     private final ConnectionServiceAdapterServant mServant =

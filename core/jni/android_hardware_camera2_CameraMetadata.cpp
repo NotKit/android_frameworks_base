@@ -100,6 +100,27 @@ status_t CameraMetadata_getNativeMetadata(JNIEnv* env, jobject thiz,
     return OK;
 }
 
+status_t CameraMetadata_setNativeMetadata(JNIEnv* env, jobject thiz,
+        /*in*/CameraMetadata* metadata) {
+    if (!thiz) {
+        ALOGE("%s: Invalid java metadata object.", __FUNCTION__);
+        return BAD_VALUE;
+    }
+
+    if (!metadata) {
+        ALOGE("%s: Invalid output metadata object.", __FUNCTION__);
+        return BAD_VALUE;
+    }
+    CameraMetadata* nativePtr = reinterpret_cast<CameraMetadata*>(env->GetLongField(thiz,
+            fields.metadata_ptr));
+    if (nativePtr == NULL) {
+        ALOGE("%s: Invalid native pointer in java metadata object.", __FUNCTION__);
+        return BAD_VALUE;
+    }
+    nativePtr->acquire(*metadata);
+    return OK;
+}
+
 } /*namespace android*/
 
 namespace {

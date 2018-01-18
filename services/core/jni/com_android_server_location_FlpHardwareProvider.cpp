@@ -619,6 +619,11 @@ static void ReportData(char* data, int length) {
 
   sCallbackEnv->CallVoidMethod(sCallbacksObj, sOnDataReport, stringData);
   CheckExceptions(sCallbackEnv, __FUNCTION__);
+  //MTK add release ref count everytime
+  if (stringData) {
+    sCallbackEnv->DeleteLocalRef(stringData);
+  }
+  //MTK end
 }
 
 FlpDiagnosticCallbacks sFlpDiagnosticCallbacks = {

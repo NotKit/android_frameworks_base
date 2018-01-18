@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,7 +23,6 @@ package android.text;
 
 import android.annotation.ColorInt;
 import android.graphics.Paint;
-
 /**
  * TextPaint is an extension of Paint that leaves room for some extra
  * data used during text measuring and drawing.
@@ -83,4 +87,26 @@ public class TextPaint extends Paint {
         underlineColor = color;
         underlineThickness = thickness;
     }
+
+    /// M: new FontMetrics method for complex text support.@{
+    /**
+     * @hide
+     */
+    public int getFontMetricsInt(CharSequence text, FontMetricsInt fm) {
+        if (TextUtils.isEmpty(text)) {
+            return super.getFontMetricsInt(fm);
+        }
+        return getStringFontMetricsInt(fm, text.toString());
+    }
+
+    /**
+     * @hide
+     */
+    public int getFontMetricsInt(char[] text, FontMetricsInt fm, int pos, int len) {
+        if (text == null || text.length == 0) {
+            return super.getFontMetricsInt(fm);
+        }
+        return getStringFontMetricsInt(fm, String.valueOf(text, pos, len));
+    }
+    /// M: new FontMetrics method for complex text support. }@
 }

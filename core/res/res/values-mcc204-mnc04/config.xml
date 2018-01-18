@@ -45,4 +45,8 @@
     </string-array>
 
     <string translatable="false" name="prohibit_manual_network_selection_in_gobal_mode">true;BAE0000000000000</string>
+
+    <bool translatable="false" name="config_device_volte_available">true</bool>
+    <bool translatable="false" name="config_device_vt_available">false</bool>
+    <bool translatable="false" name="config_device_wfc_ims_available">true</bool>
 </resources>

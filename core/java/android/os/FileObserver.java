@@ -122,7 +122,7 @@ public abstract class FileObserver {
                 try {
                     observer.onEvent(mask, path);
                 } catch (Throwable throwable) {
-                    Log.wtf(LOG_TAG, "Unhandled exception in FileObserver " + observer, throwable);
+                    Log.e(LOG_TAG, "Unhandled exception in FileObserver " + observer);
                 }
             }
         }

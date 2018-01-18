@@ -62,6 +62,13 @@
 namespace android {
 namespace uirenderer {
 
+#if DEBUG_SHADOW
+    #ifdef ALOGD
+    #undef ALOGD
+    #endif
+    #define ALOGD(...) ALOGD_IF(CC_UNLIKELY(g_HWUI_DEBUG_SHADOW), __VA_ARGS__);
+#endif
+
 /**
  *  Local utility functions.
  */
@@ -320,12 +327,14 @@ void AmbientShadow::createAmbientShadow(bool isCasterOpaque,
     ShadowTessellator::checkOverflow(umbraIndex, totalUmbraCount, "Ambient Umbra Buffer");
 
 #if DEBUG_SHADOW
-    for (int i = 0; i < vertexBufferIndex; i++) {
-        ALOGD("vertexBuffer i %d, (%f, %f %f)", i, shadowVertices[i].x, shadowVertices[i].y,
-                shadowVertices[i].alpha);
-    }
-    for (int i = 0; i < indexBufferIndex; i++) {
-        ALOGD("indexBuffer i %d, indexBuffer[i] %d", i, indexBuffer[i]);
+    if (g_HWUI_DEBUG_SHADOW) {
+        for (int i = 0; i < vertexBufferIndex; i++) {
+            ALOGD("vertexBuffer i %d, (%f, %f %f)", i, shadowVertices[i].x, shadowVertices[i].y,
+                    shadowVertices[i].alpha);
+        }
+        for (int i = 0; i < indexBufferIndex; i++) {
+            ALOGD("indexBuffer i %d, indexBuffer[i] %d", i, indexBuffer[i]);
+        }
     }
 #endif
 }

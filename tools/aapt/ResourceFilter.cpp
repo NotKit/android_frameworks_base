@@ -1,3 +1,8 @@
+/*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
 //
 // Copyright 2014 The Android Open Source Project
 //
@@ -100,7 +105,7 @@ WeakResourceFilter::match(const ResTable_config& config) const
     uint32_t mask = mDefault.diff(config);
     if ((mConfigMask & mask) == 0) {
         // The two configurations don't have any common axis.
-        return true;
+                return true;
     }
 
     uint32_t matchedAxis = 0x0;

@@ -87,6 +87,7 @@
         <item>de-LI</item> <!-- German (Liechtenstein) -->
         <item>de-LU</item> <!-- German (Luxembourg) -->
         <item>dje-NE</item> <!-- Zarma (Niger) -->
+        <item>doi-IN</item> <!-- Dogri (India) -->
         <item>dsb-DE</item> <!-- Lower Sorbian (Germany) -->
         <item>dua-CM</item> <!-- Duala (Cameroon) -->
         <item>dyo-SN</item> <!-- Jola-Fonyi (Senegal) -->
@@ -331,6 +332,7 @@
         <item>ko-KP</item> <!-- Korean (North Korea) -->
         <item>ko-KR</item> <!-- Korean (South Korea) -->
         <item>kok-IN</item> <!-- Konkani (India) -->
+        <item>ks-IN</item> <!-- Kashmiri (India) -->
         <item>ksb-TZ</item> <!-- Shambala (Tanzania) -->
         <item>ksf-CM</item> <!-- Bafia (Cameroon) -->
         <item>ksh-DE</item> <!-- Colognian (Germany) -->
@@ -350,6 +352,7 @@
         <item>luo-KE</item> <!-- Luo (Kenya) -->
         <item>luy-KE</item> <!-- Luyia (Kenya) -->
         <item>lv-LV</item> <!-- Latvian (Latvia) -->
+        <item>mai-IN</item> <!-- Maithili (India) -->
         <item>mas-KE</item> <!-- Masai (Kenya) -->
         <item>mas-TZ</item> <!-- Masai (Tanzania) -->
         <item>mer-KE</item> <!-- Meru (Kenya) -->
@@ -360,6 +363,7 @@
         <item>mk-MK</item> <!-- Macedonian (Macedonia (FYROM)) -->
         <item>ml-IN</item> <!-- Malayalam (India) -->
         <item>mn-MN</item> <!-- Mongolian (Mongolia) -->
+        <item>mni-IN</item> <!-- Manipuri (India) -->
         <item>mr-IN</item> <!-- Marathi (India) -->
         <item>ms-BN</item> <!-- Malay (Brunei) -->
         <item>ms-MY</item> <!-- Malay (Malaysia) -->
@@ -419,9 +423,13 @@
         <item>ru-UA</item> <!-- Russian (Ukraine) -->
         <item>rw-RW</item> <!-- Kinyarwanda (Rwanda) -->
         <item>rwk-TZ</item> <!-- Rwa (Tanzania) -->
+        <item>sa-IN</item> <!-- Sanskrit (India) -->
         <item>sah-RU</item> <!-- Sakha (Russia) -->
         <item>saq-KE</item> <!-- Samburu (Kenya) -->
+        <item>sat-IN</item> <!-- Santali (India) -->
         <item>sbp-TZ</item> <!-- Sangu (Tanzania) -->
+        <item>sd-IN</item> <!--  Sindhi (India) -->
+        <item>sdi-IN</item> <!-- Sindhi Devanagri (India) -->
         <item>se-FI</item> <!-- Northern Sami (Finland) -->
         <item>se-NO</item> <!-- Northern Sami (Norway) -->
         <item>se-SE</item> <!-- Northern Sami (Sweden) -->

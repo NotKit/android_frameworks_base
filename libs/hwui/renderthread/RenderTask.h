@@ -19,6 +19,7 @@
 
 #include <cutils/compiler.h>
 #include <utils/Timers.h>
+#include "../Debug.h"
 
 namespace android {
 class Mutex;
@@ -73,16 +74,19 @@ typedef void* (*RunnableMethod)(void* data);
 
 class MethodInvokeRenderTask : public RenderTask {
 public:
-    MethodInvokeRenderTask(RunnableMethod method)
-        : mMethod(method), mReturnPtr(nullptr) {}
+    MethodInvokeRenderTask(RunnableMethod method, const char* label)
+        : mMethod(method), mReturnPtr(nullptr), mLabel(label) {}
 
     void* payload() { return mData; }
     void setReturnPtr(void** retptr) { mReturnPtr = retptr; }
 
     virtual void run() override {
-        void* retval = mMethod(mData);
-        if (mReturnPtr) {
-            *mReturnPtr = retval;
+        {
+            TIME_LOG_NAME(mLabel);
+            void* retval = mMethod(mData);
+            if (mReturnPtr) {
+                *mReturnPtr = retval;
+            }
         }
         // Commit suicide
         delete this;
@@ -91,6 +95,7 @@ private:
     RunnableMethod mMethod;
     char mData[METHOD_INVOKE_PAYLOAD_SIZE];
     void** mReturnPtr;
+    const char* mLabel;
 };
 
 } /* namespace renderthread */

@@ -182,6 +182,7 @@ ShadowTexture* TextDropShadowCache::get(const SkPaint* paint, const glyph_t* gly
         // Textures are Alpha8
         texture->upload(GL_ALPHA, shadow.width, shadow.height,
                 GL_ALPHA, GL_UNSIGNED_BYTE, shadow.image);
+        DUMP_ALPHA_TEXTURE(texture->width(), texture->height(), shadow.image, "ShadowTexture", true);
         texture->setFilter(GL_LINEAR);
         texture->setWrap(GL_CLAMP_TO_EDGE);
 

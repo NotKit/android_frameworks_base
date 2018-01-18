@@ -26,6 +26,7 @@ import com.android.internal.util.WakeupMessage;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.net.arp.ArpPeer;
 import android.net.DhcpResults;
 import android.net.InterfaceConfiguration;
 import android.net.LinkAddress;
@@ -33,6 +34,10 @@ import android.net.NetworkUtils;
 import android.net.metrics.IpConnectivityLog;
 import android.net.metrics.DhcpClientEvent;
 import android.net.metrics.DhcpErrorEvent;
+import android.net.wifi.WifiConfiguration;
+import android.net.wifi.WifiConfiguration.KeyMgmt;
+import android.os.IBinder;
+import android.os.INetworkManagementService;
 import android.os.Message;
 import android.os.RemoteException;
 import android.os.ServiceManager;
@@ -48,9 +53,11 @@ import android.util.TimeUtils;
 import java.io.FileDescriptor;
 import java.io.IOException;
 import java.lang.Thread;
+import java.net.InetAddress;
 import java.net.Inet4Address;
 import java.net.NetworkInterface;
 import java.net.SocketException;
+import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Random;
@@ -87,9 +94,9 @@ public class DhcpClient extends StateMachine {
 
     private static final String TAG = "DhcpClient";
     private static final boolean DBG = true;
-    private static final boolean STATE_DBG = false;
-    private static final boolean MSG_DBG = false;
-    private static final boolean PACKET_DBG = false;
+    private static final boolean STATE_DBG = true;
+    private static final boolean MSG_DBG = true;
+    private static final boolean PACKET_DBG = true;
 
     // Timers and timeouts.
     private static final int SECONDS = 1000;
@@ -148,10 +155,13 @@ public class DhcpClient extends StateMachine {
     // DHCP parameters that we request.
     /* package */ static final byte[] REQUESTED_PARAMS = new byte[] {
         DHCP_SUBNET_MASK,
+        //M: Add static route due to IOT issue
+        DHCP_STATIC_ROUTE,
         DHCP_ROUTER,
         DHCP_DNS_SERVER,
         DHCP_DOMAIN_NAME,
-        DHCP_MTU,
+        //M: disable MTU due to IOT issue
+        //DHCP_MTU,
         DHCP_BROADCAST_ADDRESS,  // TODO: currently ignored.
         DHCP_LEASE_TIME,
         DHCP_RENEWAL_TIME,
@@ -194,6 +204,11 @@ public class DhcpClient extends StateMachine {
     private DhcpResults mDhcpLease;
     private long mDhcpLeaseExpiry;
     private DhcpResults mOffer;
+    private boolean mIsAutoIpEnabled = false;
+    ///M: for IP recover @{
+    private DhcpResults mPastDhcpLease;
+    private boolean mIsIpRecoverEnabled = true;
+    /// @}
 
     // Milliseconds SystemClock timestamps used to record transition times to DhcpBoundState.
     private long mLastInitEnterTime;
@@ -273,9 +288,12 @@ public class DhcpClient extends StateMachine {
             mHwAddr = mIface.getHardwareAddress();
             mInterfaceBroadcastAddr = new PacketSocketAddress(mIface.getIndex(),
                     DhcpPacket.ETHER_BROADCAST);
+            //M: set proto to 0x0800 for readable in Wireshark
+            mInterfaceBroadcastAddr.sll_protocol = 0x0800;
             return true;
         } catch(SocketException | NullPointerException e) {
             Log.e(TAG, "Can't determine ifindex or MAC address for " + mIfaceName, e);
+            Log.e(TAG, "mIface = " + mIface);
             return false;
         }
     }
@@ -370,14 +388,15 @@ public class DhcpClient extends StateMachine {
                     if (PACKET_DBG) {
                         Log.d(TAG, HexDump.dumpHexString(mPacket, 0, length));
                     }
-                    if (e.errorCode == DhcpErrorEvent.DHCP_NO_COOKIE) {
-                        int snetTagId = 0x534e4554;
-                        String bugId = "31850211";
-                        int uid = -1;
-                        String data = DhcpPacket.ParseException.class.getName();
-                        EventLog.writeEvent(snetTagId, bugId, uid, data);
-                    }
                     logError(e.errorCode);
+                } catch (Exception e) {
+                    // SafetyNet logging for b/31850211
+                    int snetTagId = 0x534e4554;
+                    String bugId = "31850211";
+                    int uid = -1;
+                    String data = e.getClass().getName();
+                    EventLog.writeEvent(snetTagId, bugId, uid, data);
+                    Log.e(TAG, "Failed to parse DHCP packet", e);
                 }
             }
             if (DBG) Log.d(TAG, "Receive thread stopped");
@@ -475,6 +494,9 @@ public class DhcpClient extends StateMachine {
     }
 
     private void acceptDhcpResults(DhcpResults results, String msg) {
+        ///M: for IP recover @{
+        results.setSystemExpiredTime(mDhcpLeaseExpiry);
+        /// @}
         mDhcpLease = results;
         mOffer = null;
         Log.d(TAG, msg + " lease: " + mDhcpLease);
@@ -565,6 +587,22 @@ public class DhcpClient extends StateMachine {
             super.processMessage(message);
             switch (message.what) {
                 case CMD_PRE_DHCP_ACTION_COMPLETE:
+                    /// M: ALPS03051043: no ip conver if AP authentication is WEP OPEN  @{
+                    mIsIpRecoverEnabled = true;
+                    if (message.obj != null) {
+                        WifiConfiguration wifiConfig = (WifiConfiguration) message.obj;
+
+                        // is current wifi ap used WEP?
+                        if (wifiConfig.allowedKeyManagement.get(KeyMgmt.NONE) &&
+                                wifiConfig.wepTxKeyIndex >= 0 &&
+                                wifiConfig.wepTxKeyIndex < wifiConfig.wepKeys.length &&
+                                wifiConfig.wepKeys[wifiConfig.wepTxKeyIndex] != null) {
+                            mIsIpRecoverEnabled = false;
+                        }
+                    }
+                    Log.d(TAG, "IP recover: mIsIpRecoverEnabled@CMD_PRE_DHCP_ACTION_COMPLETE = "
+                        + mIsIpRecoverEnabled);
+                    ///@}
                     transitionTo(mOtherState);
                     return HANDLED;
                 default:
@@ -578,6 +616,11 @@ public class DhcpClient extends StateMachine {
         public boolean processMessage(Message message) {
             switch (message.what) {
                 case CMD_START_DHCP:
+                    ///M: for IP recover @{
+                    mPastDhcpLease = (DhcpResults)message.obj;
+                    mIsIpRecoverEnabled = true;
+                    Log.d(TAG, "mPastDhcpLease@StoppedState = " + mPastDhcpLease);
+                    /// @}
                     if (mRegisteredForPreDhcpNotification) {
                         transitionTo(mWaitBeforeStartState);
                     } else {
@@ -649,7 +692,7 @@ public class DhcpClient extends StateMachine {
         if (!Arrays.equals(packet.getClientMac(), mHwAddr)) {
             Log.d(TAG, "MAC addr mismatch: got " +
                     HexDump.toHexString(packet.getClientMac()) + ", expected " +
-                    HexDump.toHexString(packet.getClientMac()));
+                    HexDump.toHexString(mHwAddr));
             return false;
         }
         return true;
@@ -747,6 +790,9 @@ public class DhcpClient extends StateMachine {
     class DhcpInitState extends PacketRetransmittingState {
         public DhcpInitState() {
             super();
+            ///M: for IP recover, if no OFFER in 18 sec. @{
+            mTimeout = DHCP_TIMEOUT_MS / 2;
+            /// @}
         }
 
         @Override
@@ -769,6 +815,15 @@ public class DhcpClient extends StateMachine {
                 transitionTo(mDhcpRequestingState);
             }
         }
+
+        ///M: for IP recover @{
+        @Override
+        protected void timeout() {
+            if(doIpRecover()) {
+                transitionTo(mConfiguringInterfaceState);
+            }
+        }
+        /// @}
     }
 
     // Not implemented. We request the first offer we receive.
@@ -807,8 +862,14 @@ public class DhcpClient extends StateMachine {
 
         @Override
         protected void timeout() {
-            // After sending REQUESTs unsuccessfully for a while, go back to init.
-            transitionTo(mDhcpInitState);
+            if (mIsAutoIpEnabled && performAutoIP()) {
+                mOffer = null;
+                notifySuccess();
+                transitionTo(mConfiguringInterfaceState);
+            } else {
+                // After sending REQUESTs unsuccessfully for a while, go back to init.
+                transitionTo(mDhcpInitState);
+            }
         }
     }
 
@@ -1025,4 +1086,134 @@ public class DhcpClient extends StateMachine {
     private void logState(String name, int durationMs) {
         mMetricsLog.log(new DhcpClientEvent(mIfaceName, name, durationMs));
     }
+
+    /** Self-configured IP address.
+     ** The IP address range is 169.254.0.1 through 169.254.255.254 and
+     ** default class B subnet mask of 255.255.0.0
+     ** Only support AutoIp in the scenario:
+     ** - new connection with first time DHCP failed
+     ** Others are not supported in current stage:
+     ** - Had previously IP and Lease Expired and no DHCP Server
+     ** - AutoIp directly
+     **/
+    private boolean performAutoIP() {
+        Random random = new Random();
+        int INFINITE_LEASE = (int) 0xffffffff;
+        byte autoIp[] = new byte[] { (byte)0xa9, (byte)0xfe, 10, 10 };
+        byte arpResult[] = null;
+        /** The total time to run AutoIp = DHCP_TIMEOUT_MS + arpResponseTimeout
+         ** If enable AutoIp need to set WifiStateMachine.OBTAINING_IP_ADDRESS_GUARD_TIMER_MSEC
+         ** to larger value, to avoid WifiStateMachine triger dhcp timeout and disconnect event.
+         **/
+        int arpResponseTimeout = 5000;
+        int autoIpMaxRetryCount = 5;
+        ArpPeer ap = null;
+
+        for (int i = 0; i < autoIpMaxRetryCount; i++) {
+            autoIp[2] = new Integer(random.nextInt(256)).byteValue();
+            autoIp[3] = new Integer(random.nextInt(254) + 1).byteValue();
+
+            try {
+                InetAddress ipAddress = InetAddress.getByAddress(autoIp);
+                Log.d(TAG, "performAutoIP(" + i + ") = " + ipAddress.getHostAddress());
+                ap = new ArpPeer(mIfaceName, Inet4Address.ANY, ipAddress);
+                // doArp will blocking several seconds, to create thread if needed
+                arpResult = ap.doArp(arpResponseTimeout);
+                if (arpResult == null) {
+                    mDhcpLease = new DhcpResults();
+                    mDhcpLease.ipAddress = new LinkAddress(ipAddress, 16);
+                    /*mDhcpLease.gateway = mGateway;
+                    mDhcpLease.dnsServers.addAll(mDnsServers);
+                    mDhcpLease.domains = mDomainName;
+                    mDhcpLease.serverAddress = mServerIdentifier;
+                    mDhcpLease.vendorInfo = mVendorInfo;*/
+                    mDhcpLease.leaseDuration = INFINITE_LEASE;
+                    setIpAddress(mDhcpLease.ipAddress);
+                    Log.d(TAG, "performAutoIP done");
+                    return true;
+                } else {
+                    Log.d(TAG, "DAD detected!!");
+                }
+            } catch (UnknownHostException ue) {
+                // autoIp is numeric, so this should not be triggered
+                Log.d(TAG, "err :" + ue);
+            } catch (ErrnoException ee) {
+                Log.d(TAG, "err :" + ee);
+            } catch (IllegalArgumentException ie) {
+                Log.d(TAG, "err :" + ie);
+            } catch (SocketException se) {
+                Log.d(TAG, "err :" + se);
+            } finally {
+                if (ap != null)    ap.close();
+            }
+        }
+        return false;
+    }
+
+    private boolean setIpAddress(LinkAddress address) {
+        InterfaceConfiguration ifcg = new InterfaceConfiguration();
+        ifcg.setLinkAddress(address);
+        try {
+            IBinder b = ServiceManager.getService(Context.NETWORKMANAGEMENT_SERVICE);
+            INetworkManagementService service = INetworkManagementService.Stub.asInterface(b);
+            service.setInterfaceConfig(mIfaceName, ifcg);
+        } catch (RemoteException | IllegalStateException e) {
+            Log.e(TAG, "Error configuring IP address " + address + ": ", e);
+            return false;
+        }
+        return true;
+    }
+
+    ///M: for IP recover @{
+    private boolean doIpRecover() {
+        if (mIsIpRecoverEnabled == false) {
+            Log.d(TAG, "IP recover: it was disabled");
+            return false;
+        }
+        if (mPastDhcpLease == null) {
+            Log.d(TAG, "IP recover: mPastDhcpLease is empty");
+            return false;
+        }
+        Log.d(TAG, "IP recover: mPastDhcpLease = " + mPastDhcpLease);
+
+        long reCaculatedLeaseMillis =
+            mPastDhcpLease.systemExpiredTime - SystemClock.elapsedRealtime();
+        Log.d(TAG, "IP recover: reCaculatedLeaseMillis = " + reCaculatedLeaseMillis);
+
+        if (reCaculatedLeaseMillis < 0) {
+            return false;
+        } else {
+            mDhcpLeaseExpiry = SystemClock.elapsedRealtime() + reCaculatedLeaseMillis;
+            Log.d(TAG, "IP recover: mDhcpLeaseExpiry = " + mDhcpLeaseExpiry);
+        }
+
+        byte arpResult[] = null;
+        ArpPeer ap = null;
+        try {
+            InetAddress ipAddress = mPastDhcpLease.ipAddress.getAddress();
+            Log.d(TAG, "IP recover: arp address = " + ipAddress.getHostAddress());
+            ap = new ArpPeer(mIfaceName, Inet4Address.ANY, ipAddress);
+            // doArp will blocking several seconds, to create thread if needed
+            arpResult = ap.doArp(5000);
+            if (arpResult == null) {
+                int leaseDuration = (int)reCaculatedLeaseMillis/1000;
+                mPastDhcpLease.setLeaseDuration(leaseDuration);
+                acceptDhcpResults(mPastDhcpLease, "Confirmed");
+                Log.d(TAG, "doIpRecover no arp response, IP can be reused");
+                return true;
+            } else {
+                Log.d(TAG, "doIpRecover DAD detected!!");
+            }
+        } catch (ErrnoException ee) {
+            Log.d(TAG, "err :" + ee);
+        } catch (IllegalArgumentException ie) {
+            Log.d(TAG, "err :" + ie);
+        } catch (SocketException se) {
+            Log.d(TAG, "err :" + se);
+        } finally {
+            if (ap != null)    ap.close();
+        }
+        return false;
+    }
+    /// @}
 }

@@ -25,4 +25,7 @@ interface IBluetoothCallback
 {
     //void onRfcommChannelFound(int channel);
     void onBluetoothStateChange(int prevState, int newState);
+
+    /// M: Whole chip reset
+    void onWholeChipReset();
 }

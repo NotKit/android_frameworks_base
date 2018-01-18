@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,8 +41,10 @@ import android.os.ParcelFileDescriptor;
 import android.provider.Downloads;
 import android.provider.Settings;
 import android.provider.MediaStore.Images;
+import android.provider.MediaStore.Files;
 import android.provider.Settings.SettingNotFoundException;
 import android.text.TextUtils;
+import android.util.Log;
 import android.util.Pair;
 
 import java.io.File;
@@ -63,6 +70,8 @@ import java.util.List;
  * permission to use this class.
  */
 public class DownloadManager {
+
+    private static final String XLOGTAG = "DownloadManager/Framework";
 
     /**
      * An identifier for a particular download, unique across the system.  Clients use this ID to
@@ -166,6 +175,15 @@ public class DownloadManager {
     public static final String COLUMN_MEDIAPROVIDER_URI = Downloads.Impl.COLUMN_MEDIAPROVIDER_URI;
 
     /**
+     * The column that is used to remember whether the media scanner was invoked
+     * It must be same as Constants.MEDIA_SCANNED in DownloadProvider.
+     *
+     * @hide
+     * @internal
+     */
+    public static final String COLUMN_MEDIA_SCANNED = "scanned";
+
+    /**
      * @hide
      */
     public final static String COLUMN_ALLOW_WRITE = Downloads.Impl.COLUMN_ALLOW_WRITE;
@@ -194,6 +212,22 @@ public class DownloadManager {
      * Value of {@link #COLUMN_STATUS} when the download has failed (and will not be retried).
      */
     public final static int STATUS_FAILED = 1 << 4;
+    /**
+     * Value of {@link #COLUMN_STATUS} when the download has failed because of insufficient memory
+     * This is only used to OMA download
+     *
+     * @hide
+     */
+    public final static int STATUS_FAILED_INSUFFICIENT_MEMORY = 1 << 5;
+
+    /**
+     * Value of {@link #COLUMN_STATUS} when the download has failed because of invalid descriptor
+     * This is only used to OMA Download
+     *
+     * @hide
+     */
+    public final static int STATUS_FAILED_INVALID_DESCRIPTOR = 1 << 6;
+
 
     /**
      * Value of COLUMN_ERROR_CODE when the download has completed with an error that doesn't fit
@@ -258,6 +292,14 @@ public class DownloadManager {
     public final static int ERROR_BLOCKED = 1010;
 
     /**
+     * Value of {@link #COLUMN_STATUS} when the download has failed because of invalid descriptor
+     * This is only used to OMA Download
+     *
+     * @hide
+     */
+    public final static int ERROR_INVALID_DESCRIPTOR = 1011;
+
+    /**
      * Value of {@link #COLUMN_REASON} when the download is paused because some network error
      * occurred and the download manager is waiting before retrying the request.
      */
@@ -279,6 +321,14 @@ public class DownloadManager {
      * Value of {@link #COLUMN_REASON} when the download is paused for some other reason.
      */
     public final static int PAUSED_UNKNOWN = 4;
+    /**
+     * Value of {@link #COLUMN_REASON} when the download is paused for paused by app.
+     * This flag is used to Resume download
+     *
+     * @internal
+     * @hide
+     */
+    public final static int PAUSED_BY_APP = 5;
 
     /**
      * Broadcast intent action sent by the download manager when a download completes.
@@ -390,6 +440,7 @@ public class DownloadManager {
         private boolean mIsVisibleInDownloadsUi = true;
         private boolean mScannable = false;
         private boolean mUseSystemCache = false;
+        private String mUserAgent;
         /** if a file is designated as a MediaScanner scannable file, the following value is
          * stored in the database column {@link Downloads.Impl#COLUMN_MEDIA_SCANNED}.
          */
@@ -466,6 +517,8 @@ public class DownloadManager {
          */
         public Request setDestinationUri(Uri uri) {
             mDestinationUri = uri;
+            Log.v(XLOGTAG, "setDestinationUri: mDestinationUri " +
+                    mDestinationUri);
             return this;
         }
 
@@ -542,6 +595,11 @@ public class DownloadManager {
          */
         public Request setDestinationInExternalPublicDir(String dirType, String subPath) {
             File file = Environment.getExternalStoragePublicDirectory(dirType);
+
+            Log.v(XLOGTAG, "setExternalPublicDir: dirType " +
+                    dirType + " subPath " + subPath +
+                    "file" + file);
+
             if (file == null) {
                 throw new IllegalStateException("Failed to get external storage public directory");
             } else if (file.exists()) {
@@ -564,6 +622,9 @@ public class DownloadManager {
                 throw new NullPointerException("subPath cannot be null");
             }
             mDestinationUri = Uri.withAppendedPath(Uri.fromFile(base), subPath);
+
+            Log.v(XLOGTAG, "setDestinationFromBase: mDestinationUri " +
+                    mDestinationUri);
         }
 
         /**
@@ -758,6 +819,20 @@ public class DownloadManager {
         }
 
         /**
+         *  @param userAgent the userAgent string which will to be set
+         *  @return this object
+         *
+         *  @hide
+         *  @internal
+         */
+        public Request setUserAgent(String userAgent) {
+            mUserAgent = userAgent;
+            Log.v(XLOGTAG, "setUserAgent: userAgent is: " +
+                    userAgent);
+            return this;
+        }
+
+        /**
          * @return ContentValues to be passed to DownloadProvider.insert()
          */
         ContentValues toContentValues(String packageName) {
@@ -794,6 +869,10 @@ public class DownloadManager {
             values.put(Downloads.Impl.COLUMN_ALLOW_METERED, mMeteredAllowed);
             values.put(Downloads.Impl.COLUMN_FLAGS, mFlags);
             values.put(Downloads.Impl.COLUMN_IS_VISIBLE_IN_DOWNLOADS_UI, mIsVisibleInDownloadsUi);
+
+            if (null != mUserAgent) {
+                values.put(Downloads.Impl.COLUMN_USER_AGENT, mUserAgent);
+            }
 
             return values;
         }
@@ -1012,8 +1091,11 @@ public class DownloadManager {
     public long enqueue(Request request) {
         ContentValues values = request.toContentValues(mPackageName);
         Uri downloadUri = mResolver.insert(Downloads.Impl.CONTENT_URI, values);
+        if (downloadUri != null) {
         long id = Long.parseLong(downloadUri.getLastPathSegment());
         return id;
+    }
+        return -1;
     }
 
     /**
@@ -1155,6 +1237,7 @@ public class DownloadManager {
         values.putNull(Downloads.Impl._DATA);
         values.put(Downloads.Impl.COLUMN_STATUS, Downloads.Impl.STATUS_PENDING);
         values.put(Downloads.Impl.COLUMN_FAILED_CONNECTIONS, 0);
+        values.put(COLUMN_MEDIA_SCANNED, 0);
         mResolver.update(mBaseUri, values, getWhereClauseForIds(ids), getWhereArgsForIds(ids));
     }
 
@@ -1207,6 +1290,9 @@ public class DownloadManager {
         Cursor cursor = null;
         String oldDisplayName = null;
         String mimeType = null;
+        ///M: Fix 2788219: can not rename file. @{
+        String filePath = null;
+        /// @}
         try {
             cursor = query(query);
             if (cursor == null) {
@@ -1219,6 +1305,9 @@ public class DownloadManager {
                 }
                 oldDisplayName = cursor.getString(cursor.getColumnIndexOrThrow(COLUMN_TITLE));
                 mimeType = cursor.getString(cursor.getColumnIndexOrThrow(COLUMN_MEDIA_TYPE));
+                ///M: Fix 2788219: can not rename file. @{
+                filePath = cursor.getString(cursor.getColumnIndexOrThrow(COLUMN_LOCAL_FILENAME));
+                /// @}
             }
         } finally {
             if (cursor != null) {
@@ -1226,14 +1315,18 @@ public class DownloadManager {
             }
         }
 
-        if (oldDisplayName == null || mimeType == null) {
+        if (oldDisplayName == null || mimeType == null || filePath == null) {
             throw new IllegalStateException(
                     "Document with id " + id + " does not exist");
         }
 
-        final File parent = Environment.getExternalStoragePublicDirectory(
-                Environment.DIRECTORY_DOWNLOADS);
-
+        ///M: Fix 2788219: can not rename file. @{
+        int index = filePath.lastIndexOf(File.separator);
+        if (index > 0) {
+            filePath = filePath.substring(0, index);
+        }
+        final File parent = new File(filePath);
+        /// @}
         final File before = new File(parent, oldDisplayName);
         final File after = new File(parent, displayName);
 
@@ -1245,17 +1338,15 @@ public class DownloadManager {
         }
 
         // Update MediaProvider if necessary
-        if (mimeType.startsWith("image/")) {
-            context.getContentResolver().delete(Images.Media.EXTERNAL_CONTENT_URI,
-                    Images.Media.DATA + "=?",
-                    new String[] {
-                            before.getAbsolutePath()
-                    });
+        context.getContentResolver().delete(Files.getContentUri("external"),
+                "_data" + "=?",
+                new String[] {
+                        before.getAbsolutePath()
+                });
 
-            Intent intent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
-            intent.setData(Uri.fromFile(after));
-            context.sendBroadcast(intent);
-        }
+        Intent intent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
+        intent.setData(Uri.fromFile(after));
+        context.sendBroadcast(intent);
 
         ContentValues values = new ContentValues();
         values.put(Downloads.Impl.COLUMN_TITLE, displayName);
@@ -1519,7 +1610,8 @@ public class DownloadManager {
 
             // return content URI for cache download
             long downloadId = getLong(getColumnIndex(Downloads.Impl._ID));
-            return ContentUris.withAppendedId(Downloads.Impl.ALL_DOWNLOADS_CONTENT_URI, downloadId).toString();
+            return ContentUris.withAppendedId(Downloads.Impl.ALL_DOWNLOADS_CONTENT_URI,
+                         downloadId).toString();
         }
 
         private long getReason(int status) {
@@ -1545,6 +1637,10 @@ public class DownloadManager {
 
                 case Downloads.Impl.STATUS_QUEUED_FOR_WIFI:
                     return PAUSED_QUEUED_FOR_WIFI;
+
+                // Add to support resume download
+                case Downloads.Impl.STATUS_PAUSED_BY_APP:
+                    return PAUSED_BY_APP;
 
                 default:
                     return PAUSED_UNKNOWN;
@@ -1583,6 +1679,9 @@ public class DownloadManager {
 
                 case Downloads.Impl.STATUS_FILE_ALREADY_EXISTS_ERROR:
                     return ERROR_FILE_ALREADY_EXISTS;
+
+                case Downloads.Impl.STATUS_BLOCKED:
+                    return ERROR_BLOCKED;
 
                 default:
                     return ERROR_UNKNOWN;

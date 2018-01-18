@@ -32,6 +32,10 @@ interface IBluetoothHeadsetPhone {
   boolean listCurrentCalls();
   boolean queryPhoneState();
 
+  /// M: DSDA :Headset Service to nofity PhoneService to do call restriction
+  /// for first HFP connected
+  boolean restrictDualTalk();
+
   // Internal for phone app to call
   void updateBtHandsfreeAfterRadioTechnologyChange();
   void cdmaSwapSecondCallState();

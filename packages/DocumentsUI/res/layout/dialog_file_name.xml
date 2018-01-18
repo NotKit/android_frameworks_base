@@ -18,7 +18,8 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:fitsSystemWindows="true"
-    android:padding="?android:attr/listPreferredItemPaddingEnd">
+    android:paddingLeft="?android:attr/listPreferredItemPaddingEnd"
+    android:paddingRight="?android:attr/listPreferredItemPaddingEnd">
 
     <EditText
         android:id="@android:id/text1"

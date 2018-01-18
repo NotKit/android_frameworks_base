@@ -49,6 +49,9 @@ public class TypedArray {
             attrs.mLength = len;
             attrs.mRecycled = false;
 
+            /// M: ALPS02786173 The metrics may have changed due to configuration changes @{
+            attrs.mMetrics = res.getDisplayMetrics();
+            /// @}
             // Reset the assets, which may have changed due to configuration changes
             // or further resource loading.
             attrs.mAssets = res.getAssets();
@@ -69,9 +72,8 @@ public class TypedArray {
     }
 
     private final Resources mResources;
-    private final DisplayMetrics mMetrics;
+    private DisplayMetrics mMetrics;
     private AssetManager mAssets;
-
     private boolean mRecycled;
 
     /*package*/ XmlBlock.Parser mXml;
@@ -1090,8 +1092,10 @@ public class TypedArray {
         // These may have been set by the client.
         mXml = null;
         mTheme = null;
+        /// M: ALPS02786173 The metrics may have changed due to configuration changes @{
+        mMetrics = null;
+        /// @}
         mAssets = null;
-
         mResources.mTypedArrayPool.release(this);
     }
 

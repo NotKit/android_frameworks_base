@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2009 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -48,6 +53,20 @@ int register_android_server_Watchdog(JNIEnv* env);
 int register_android_server_HardwarePropertiesManagerService(JNIEnv* env);
 };
 
+/// M: Mediatek defined @{
+namespace android {
+int register_com_mediatek_perfservice_PerfServiceManager(JNIEnv* env);
+#if defined (MTK_HDMI_SUPPORT)
+int register_com_mediatek_hdmi_MtkHdmiManagerService(JNIEnv* env);
+#endif
+// Mediatek AAL support
+int register_android_server_display_DisplayPowerController(JNIEnv* env);
+#ifndef MTK_BSP_PACKAGE
+int register_com_android_internal_app_ShutdownManager(JNIEnv *env);
+#endif
+};
+/// @}
+
 using namespace android;
 
 extern "C" jint JNI_OnLoad(JavaVM* vm, void* /* reserved */)
@@ -87,6 +106,17 @@ extern "C" jint JNI_OnLoad(JavaVM* vm, void* /* reserved */)
     register_android_server_PersistentDataBlockService(env);
     register_android_server_Watchdog(env);
     register_android_server_HardwarePropertiesManagerService(env);
+
+    /// M: Mediatek defined
+    register_com_mediatek_perfservice_PerfServiceManager(env);
+#if defined (MTK_HDMI_SUPPORT)
+    register_com_mediatek_hdmi_MtkHdmiManagerService(env);
+#endif
+    // Mediatek AAL support
+    register_android_server_display_DisplayPowerController(env);
+#ifndef MTK_BSP_PACKAGE
+    register_com_android_internal_app_ShutdownManager(env);
+#endif
 
 
     return JNI_VERSION_1_4;

@@ -35,6 +35,8 @@ import android.view.View;
 
 import com.android.systemui.Interpolators;
 import com.android.systemui.R;
+/// M: Modify statusbar style for GMO
+import com.mediatek.systemui.statusbar.util.FeatureOptions;
 
 public class BarTransitions {
     private static final boolean DEBUG = false;
@@ -65,7 +67,8 @@ public class BarTransitions {
         mTag = "BarTransitions." + view.getClass().getSimpleName();
         mView = view;
         mBarBackground = new BarBackgroundDrawable(mView.getContext(), gradientResourceId);
-        if (HIGH_END) {
+        /// M: Modify statusbar style for GMO
+        if (HIGH_END || FeatureOptions.LOW_RAM_SUPPORT) {
             mView.setBackground(mBarBackground);
         }
     }
@@ -88,11 +91,14 @@ public class BarTransitions {
     }
 
     public void transitionTo(int mode, boolean animate) {
+        /// M: Modify statusbar style for GMO
+        // low-end devices do not support translucent modes, fallback to opaque
         if (isAlwaysOpaque() && (mode == MODE_SEMI_TRANSPARENT || mode == MODE_TRANSLUCENT
-                || mode == MODE_TRANSPARENT)) {
+                || mode == MODE_TRANSPARENT) && !FeatureOptions.LOW_RAM_SUPPORT) {
             mode = MODE_OPAQUE;
         }
-        if (isAlwaysOpaque() && (mode == MODE_LIGHTS_OUT_TRANSPARENT)) {
+        if (isAlwaysOpaque() && (mode == MODE_LIGHTS_OUT_TRANSPARENT)
+                && !FeatureOptions.LOW_RAM_SUPPORT) {
             mode = MODE_LIGHTS_OUT;
         }
         if (mMode == mode) return;
@@ -104,7 +110,8 @@ public class BarTransitions {
     }
 
     protected void onTransition(int oldMode, int newMode, boolean animate) {
-        if (HIGH_END) {
+        /// M: Modify statusbar style for GMO
+        if (HIGH_END || FeatureOptions.LOW_RAM_SUPPORT) {
             applyModeBackground(oldMode, newMode, animate);
         }
     }

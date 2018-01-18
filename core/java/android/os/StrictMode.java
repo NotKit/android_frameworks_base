@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -146,6 +151,14 @@ public final class StrictMode {
      * detection using {@link VmPolicy.Builder#detectCleartextNetwork()}.
      */
     private static final String CLEARTEXT_PROPERTY = "persist.sys.strictmode.clear";
+
+    /// M: ALPS00299617
+    // Only log a when the disk access duration exceeds the threshold .
+    private static final long DURATIONN_LOG_THRESHOLD_MS = 3000;
+    /// M: ALPS00299617
+
+    /// M: For dump parcel log of strict mode violation
+    private static final int PARCEL_VIOLATION_SIZE_LIMIT = 128 * 1024;
 
     // Only log a duplicate stack trace to the logs every second.
     private static final long MIN_LOG_INTERVAL_MS = 1000;
@@ -1076,9 +1089,11 @@ public final class StrictMode {
         // Eng builds have flashes on all the time.  The suppression property
         // overrides this, so we force the behavior only after the short-circuit
         // check above.
-        if (IS_ENG_BUILD) {
-            doFlashes = true;
-        }
+        /// M: Remove the force red frame
+        //if (IS_ENG_BUILD) {
+        //    doFlashes = true;
+        //}
+        /// M: Remove the force red frame
 
         // Thread policy controls BlockGuard.
         int threadPolicyMask = StrictMode.DETECT_DISK_WRITE |
@@ -1931,16 +1946,49 @@ public final class StrictMode {
         if (violations == null) {
             p.writeInt(0);
         } else {
-            p.writeInt(violations.size());
+            /// M: Calculate Parcel dump size
+            Parcel tempPar = Parcel.obtain();
+            int originDataPosition = tempPar.dataPosition();
             for (int i = 0; i < violations.size(); ++i) {
+                violations.get(i).writeToParcel(tempPar, 0 /* unused flags? */);
+            }
+            int violationParcelSize = tempPar.dataPosition() - originDataPosition;
+            tempPar.recycle();
+
+            /// M: For dump parcel log of strict mode violation
+            if (violationParcelSize > PARCEL_VIOLATION_SIZE_LIMIT)
+            {
+                Log.d(TAG, "PARCEL DUMP: WARNING!! violationParcelSize exceed " + PARCEL_VIOLATION_SIZE_LIMIT + " bytes!");
+                Log.d(TAG, "PARCEL DUMP: violationParcelSize=" + violationParcelSize);
+                Log.d(TAG, "PARCEL DUMP: num=" + violations.size());
+                Printer printer = new Printer() {
+                                                   public void println(String x)
+                                                   {
+                                                       Log.e(TAG, x);
+                                                   }
+                                               };
+                for (int i = 0; i < violations.size(); ++i)
+                {
+                      violations.get(i).dump(printer, "PARCEL DUMP: ");
+                }
+                /// M: Too Large. Drop this parcel.
+                p.writeInt(0);
+            }
+            else
+            {
                 int start = p.dataPosition();
-                violations.get(i).writeToParcel(p, 0 /* unused flags? */);
-                int size = p.dataPosition()-start;
-                if (size > 10*1024) {
-                    Slog.d(TAG, "Wrote violation #" + i + " of " + violations.size() + ": "
-                            + (p.dataPosition()-start) + " bytes");
+                p.writeInt(violations.size());
+                for (int i = 0; i < violations.size(); ++i) {
+                    violations.get(i).writeToParcel(p, 0 /* unused flags? */);
+                    int size = p.dataPosition() - start;
+                    if (size > 10 * 1024) {
+                        Slog.d(TAG, "Wrote violation #" + i + " of " + violations.size() + ": "
+                                + (p.dataPosition() - start) + " bytes");
+                    }
                 }
             }
+
+
             if (LOG_V) Log.d(TAG, "wrote violations to response parcel; num=" + violations.size());
             violations.clear(); // somewhat redundant, as we're about to null the threadlocal
         }
@@ -1968,7 +2016,7 @@ public final class StrictMode {
         for (int i = 0; i < numViolations; ++i) {
             if (LOG_V) Log.d(TAG, "strict mode violation stacks read from binder call.  i=" + i);
             ViolationInfo info = new ViolationInfo(p, !currentlyGathering);
-            if (info.crashInfo.stackTrace != null && info.crashInfo.stackTrace.length() > 30000) {
+            /*if (info.crashInfo.stackTrace != null && info.crashInfo.stackTrace.length() > 30000) {
                 String front = info.crashInfo.stackTrace.substring(0, 256);
                 // 30000 characters is way too large for this to be any sane kind of
                 // strict mode collection of stacks.  We've had a problem where we leave
@@ -1988,7 +2036,7 @@ public final class StrictMode {
                         + " policy=#" + Integer.toHexString(policyMask)
                         + " front=" + front);
                 return;
-            }
+            }*/
             info.crashInfo.stackTrace += "# via Binder call with stack:\n" + ourStack;
             BlockGuard.Policy policy = BlockGuard.getThreadPolicy();
             if (policy instanceof AndroidBlockGuardPolicy) {

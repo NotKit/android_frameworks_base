@@ -70,12 +70,14 @@ CanvasContext::CanvasContext(RenderThread& thread, bool translucent,
         , mJankTracker(thread.mainDisplayInfo())
         , mProfiler(mFrames)
         , mContentDrawBounds(0, 0, 0, 0) {
+    ALOGD("CanvasContext() %p", this);
     mRenderNodes.emplace_back(rootRenderNode);
     mRenderThread.renderState().registerCanvasContext(this);
     mProfiler.setDensity(mRenderThread.mainDisplayInfo().density);
 }
 
 CanvasContext::~CanvasContext() {
+    ALOGD("~CanvasContext() %p", this);
     destroy(nullptr);
     mRenderThread.renderState().unregisterCanvasContext(this);
 }
@@ -117,6 +119,8 @@ void CanvasContext::setSurface(Surface* surface) {
         mSwapHistory.clear();
     } else {
         mRenderThread.removeFrameCallback(this);
+        /// M: Set surface to null if createSurface failed
+        mNativeSurface = nullptr;
     }
 }
 
@@ -125,6 +129,7 @@ void CanvasContext::setSwapBehavior(SwapBehavior swapBehavior) {
 }
 
 void CanvasContext::initialize(Surface* surface) {
+    ALOGD("CanvasContext() %p initialize window=%p, title=%s", this, surface, name().c_str());
     setSurface(surface);
 #if !HWUI_NEW_OPS
     if (mCanvas) return;
@@ -403,18 +408,21 @@ void CanvasContext::draw() {
 
 #if HWUI_NEW_OPS
     auto& caches = Caches::getInstance();
-    FrameBuilder frameBuilder(dirty, frame.width(), frame.height(), mLightGeometry, caches);
+    FrameBuilder frameBuilder(dirty, frame.width(), frame.height(), mLightGeometry, caches, this);
 
     frameBuilder.deferLayers(mLayerUpdateQueue);
     mLayerUpdateQueue.clear();
 
-    frameBuilder.deferRenderNodeScene(mRenderNodes, mContentDrawBounds);
+    RECORD_FRAME(frameBuilder.deferRenderNodeScene(mRenderNodes, mContentDrawBounds));
 
     BakedOpRenderer renderer(caches, mRenderThread.renderState(),
             mOpaque, mLightInfo);
     frameBuilder.replayBakedOps<BakedOpDispatcher>(renderer);
     profiler().draw(&renderer);
     bool drew = renderer.didDraw();
+
+    DUMP_DISPLAY_LIST(frame.width(), frame.height(),
+        name().c_str(), getFrameCount(), &frameBuilder);
 
     // post frame cleanup
     caches.clearGarbage();
@@ -547,7 +555,17 @@ void CanvasContext::draw() {
 
     waitOnFences();
 
-    GL_CHECKPOINT(LOW);
+    /// M: Error handling for surface invalid case.
+    ///    Surface may be disconnected under normal flow related to timing of WMS handling.
+    ///    Do not assert when surface is invalid due to disconnected.
+    bool isSurfaceValid = true;
+    if (GLUtils::dumpGLErrors()) {
+        if ((isSurfaceValid = mEglManager.isSurfaceValid(mEglSurface))) {
+            LOG_ALWAYS_FATAL("GL errors! %s:%d", __FILE__, __LINE__);
+        } else {
+            ALOGW("Used an abandoned surface<%p> after draw", (void*)mEglSurface);
+        }
+    }
 
     // Even if we decided to cancel the frame, from the perspective of jank
     // metrics the frame was swapped at this point
@@ -555,7 +573,7 @@ void CanvasContext::draw() {
     mIsDirty = false;
 
     if (drew || mEglManager.damageRequiresSwap()) {
-        if (CC_UNLIKELY(!mEglManager.swapBuffers(frame, screenDirty))) {
+        if (CC_UNLIKELY(!mEglManager.swapBuffers(frame, screenDirty) || !isSurfaceValid)) {
             setSurface(nullptr);
         }
         SwapHistory& swap = mSwapHistory.next();

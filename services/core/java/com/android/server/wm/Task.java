@@ -41,6 +41,9 @@ import android.view.Surface;
 import android.view.animation.Animation;
 
 import com.android.server.EventLogTags;
+/// M: BMW
+import com.mediatek.multiwindow.MultiWindowManager;
+
 
 import java.io.PrintWriter;
 import java.util.ArrayList;
@@ -95,6 +98,9 @@ class Task implements DimLayer.DimLayerUser {
     private int mDragResizeMode;
 
     private boolean mHomeTask;
+
+    /// M: BMW
+    boolean mSticky = false;
 
     Task(int taskId, TaskStack stack, int userId, WindowManagerService service, Rect bounds,
             Configuration config) {
@@ -168,7 +174,10 @@ class Task implements DimLayer.DimLayerUser {
     }
 
     void positionTaskInStack(TaskStack stack, int position, Rect bounds, Configuration config) {
+        /// M: [ALPS02802917]
+        boolean isMoveFromDockedStack = false;
         if (mStack != null && stack != mStack) {
+            isMoveFromDockedStack = inDockedWorkspace();
             if (DEBUG_STACK) Slog.i(TAG, "positionTaskInStack: removing taskId=" + mTaskId
                     + " from stack=" + mStack);
             EventLog.writeEvent(EventLogTags.WM_TASK_REMOVED, mTaskId, "moveTask");
@@ -182,6 +191,12 @@ class Task implements DimLayer.DimLayerUser {
             for (int winNdx = windows.size() - 1; winNdx >= 0; --winNdx) {
                 final WindowState win = windows.get(winNdx);
                 win.notifyMovedInStack();
+                /// M: [ALPS02802917] Set mResizedWhileGone = true
+                /// when AMS put the task from dock to fullscreen in different stack {@
+                if (isMoveFromDockedStack) {
+                    win.mResizedWhileGone = true;
+                }
+                /// @}
             }
         }
     }
@@ -526,7 +541,9 @@ class Task implements DimLayer.DimLayerUser {
 
     void setDragResizing(boolean dragResizing, int dragResizeMode) {
         if (mDragResizing != dragResizing) {
-            if (!DragResizeMode.isModeAllowedForStack(mStack.mStackId, dragResizeMode)) {
+            /// M: ALPS02835545. freeform stack will docked bellow split stack
+            if (!DragResizeMode.isModeAllowedForStack(mStack.mStackId, dragResizeMode)
+                    && !MultiWindowManager.isSupported()) {
                 throw new IllegalArgumentException("Drag resize mode not allow for stack stackId="
                         + mStack.mStackId + " dragResizeMode=" + dragResizeMode);
             }
@@ -789,6 +806,11 @@ class Task implements DimLayer.DimLayerUser {
         final String doublePrefix = prefix + "  ";
 
         pw.println(prefix + "taskId=" + mTaskId);
+        /// M: BMW @{
+        if (MultiWindowManager.isSupported()) {
+            pw.println(doublePrefix + "mSticky=" + mSticky);
+        }
+        /// @}
         pw.println(doublePrefix + "mFullscreen=" + mFullscreen);
         pw.println(doublePrefix + "mBounds=" + mBounds.toShortString());
         pw.println(doublePrefix + "mdr=" + mDeferRemoval);

@@ -612,4 +612,11 @@ public class IWindowManagerImpl implements IWindowManager {
     public Bitmap screenshotWallpaper() throws RemoteException {
         return null;
     }
+
+    /// M: BMW restore button @{
+    @Override
+    public void registerFreeformStackListener(IFreeformStackListener listener)
+            throws RemoteException {
+    }
+    /// @}
 }

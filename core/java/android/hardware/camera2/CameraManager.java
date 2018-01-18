@@ -19,7 +19,10 @@ package android.hardware.camera2;
 import android.annotation.RequiresPermission;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.hardware.ICameraService;
 import android.hardware.ICameraServiceListener;
 import android.hardware.CameraInfo;
@@ -34,6 +37,7 @@ import android.os.Looper;
 import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.os.ServiceSpecificException;
+import android.os.SystemProperties;
 import android.util.Log;
 import android.util.ArrayMap;
 
@@ -677,7 +681,8 @@ public final class CameraManager {
      * <p>In case of errors connecting to the camera service, will return an empty list.</p>
      */
     private ArrayList<String> getOrCreateDeviceIdListLocked() throws CameraAccessException {
-        if (mDeviceIdList == null) {
+        if (mDeviceIdList == null
+              || SystemProperties.get("ro.mtk_crossmount_support").equals("1")) {
             int numCameras = 0;
             ICameraService cameraService = CameraManagerGlobal.get().getCameraService();
             ArrayList<String> deviceIdList = new ArrayList<>();
@@ -1257,5 +1262,4 @@ public final class CameraManager {
         }
 
     } // CameraManagerGlobal
-
 } // CameraManager

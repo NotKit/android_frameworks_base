@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -194,6 +199,17 @@ public class DrmStore {
          */
         public static final int DISPLAY = 0x07;
 
+        /// M: these 2 types are added for OMA DRM v1.0 implementation. @{
+        /**
+         * @hide
+         */
+        public static final int PRINT     = 0x08;
+        /**
+         * @hide
+         */
+        public static final int WALLPAPER = 0x09; // for FL only
+        /// @}
+
         /* package */ static boolean isValid(int action) {
             boolean isValid = false;
 
@@ -206,6 +222,8 @@ public class DrmStore {
                 case PREVIEW:
                 case EXECUTE:
                 case DISPLAY:
+                case PRINT:
+                case WALLPAPER:
                     isValid = true;
             }
             return isValid;
@@ -238,6 +256,12 @@ public class DrmStore {
          * The digital rights have not been acquired for the rights-protected content.
          */
         public static final int RIGHTS_NOT_ACQUIRED = 0x03;
+
+        /**
+            The digital rights can't be used because Secure timer in invalid state.
+            */
+        /** {@hide} */
+        public static final int SECURE_TIMER_INVALID = 0x04;
 
         /**
          * @deprecated This class should have been an interface instead.

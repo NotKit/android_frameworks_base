@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -47,6 +52,9 @@ import android.util.Slog;
 
 import com.android.internal.app.IVoiceInteractor;
 import com.android.internal.util.XmlUtils;
+/// M: BMW
+import com.mediatek.multiwindow.MultiWindowManager;
+
 
 import org.xmlpull.v1.XmlPullParser;
 import org.xmlpull.v1.XmlPullParserException;
@@ -66,6 +74,7 @@ import static android.app.ActivityManager.StackId.INVALID_STACK_ID;
 import static android.app.ActivityManager.StackId.PINNED_STACK_ID;
 import static android.content.Intent.FLAG_ACTIVITY_NEW_DOCUMENT;
 import static android.content.Intent.FLAG_ACTIVITY_RETAIN_IN_RECENTS;
+import static android.content.pm.ActivityInfo.FLAG_SHOW_FOR_ALL_USERS;
 import static android.content.pm.ActivityInfo.LOCK_TASK_LAUNCH_MODE_ALWAYS;
 import static android.content.pm.ActivityInfo.LOCK_TASK_LAUNCH_MODE_DEFAULT;
 import static android.content.pm.ActivityInfo.LOCK_TASK_LAUNCH_MODE_IF_WHITELISTED;
@@ -80,6 +89,7 @@ import static com.android.server.am.ActivityManagerDebugConfig.DEBUG_ADD_REMOVE;
 import static com.android.server.am.ActivityManagerDebugConfig.DEBUG_LOCKTASK;
 import static com.android.server.am.ActivityManagerDebugConfig.DEBUG_RECENTS;
 import static com.android.server.am.ActivityManagerDebugConfig.DEBUG_TASKS;
+import static com.android.server.am.ActivityManagerDebugConfig.DEBUG_TASK_RETURNTO;
 import static com.android.server.am.ActivityManagerDebugConfig.POSTFIX_ADD_REMOVE;
 import static com.android.server.am.ActivityManagerDebugConfig.POSTFIX_LOCKTASK;
 import static com.android.server.am.ActivityManagerDebugConfig.POSTFIX_RECENTS;
@@ -270,6 +280,11 @@ final class TaskRecord {
 
     Configuration mOverrideConfig = Configuration.EMPTY;
 
+    /// M: BMW
+    boolean mSticky = false;
+    /// M: BMW. Split and freeform cannot coexist
+    boolean mLastTaskInFreeformStack = false;
+
     TaskRecord(ActivityManagerService service, int _taskId, ActivityInfo info, Intent _intent,
             IVoiceInteractionSession _voiceSession, IVoiceInteractor _voiceInteractor) {
         mService = service;
@@ -396,6 +411,10 @@ final class TaskRecord {
 
     /** Sets the original intent, _without_ updating the calling uid or package. */
     private void setIntent(Intent _intent, ActivityInfo info) {
+        /// M: Use fullscreen when the activity shows over lockscreen only @{
+        setShowForAllUsers(info);
+        /// M: Use fullscreen when the activity shows over lockscreen only @}
+
         if (intent == null) {
             mNeverRelinquishIdentity =
                     (info.flags & ActivityInfo.FLAG_RELINQUISH_TASK_IDENTITY) == 0;
@@ -506,6 +525,13 @@ final class TaskRecord {
     void setTaskToReturnTo(int taskToReturnTo) {
         mTaskToReturnTo = (taskToReturnTo == RECENTS_ACTIVITY_TYPE)
                 ? HOME_ACTIVITY_TYPE : taskToReturnTo;
+
+        /// M: AMS log enhancement @{
+        // ALPS01902110 Debug task return to
+        if (DEBUG_TASK_RETURNTO) {
+            Slog.d(TAG, "setTaskToReturnTo " + taskToReturnTo + " to " + this, new Throwable());
+        }
+        /// @}
     }
 
     int getTaskToReturnTo() {
@@ -542,6 +568,18 @@ final class TaskRecord {
             mService.notifyTaskPersisterLocked(this, false);
         }
     }
+
+    /// M: ALPS02841085. Need to write PersistedTaskIds into file
+    /// before switching guest to owner @{
+    void removedFromRecentsImmediatly() {
+        disposeThumbnail();
+        closeRecentsChain();
+        if (inRecents) {
+            inRecents = false;
+            mService.notifyTaskPersisterLocked(this, true);
+        }
+    }
+    /// @}
 
     void setTaskToAffiliateWith(TaskRecord taskToAffiliateWith) {
         closeRecentsChain();
@@ -1400,7 +1438,8 @@ final class TaskRecord {
         // If the task has no requested minimal size, we'd like to enforce a minimal size
         // so that the user can not render the task too small to manipulate. We don't need
         // to do this for the pinned stack as the bounds are controlled by the system.
-        if (stack.mStackId != PINNED_STACK_ID) {
+        /// M: ALPS02817248. Avoid NullPointerException
+        if (stack != null && stack.mStackId != PINNED_STACK_ID) {
             if (minWidth == INVALID_MIN_SIZE) {
                 minWidth = mService.mStackSupervisor.mDefaultMinSizeOfResizeableTask;
             }
@@ -1657,10 +1696,14 @@ final class TaskRecord {
 
     /** Returns the bounds that should be used to launch this task. */
     Rect getLaunchBounds() {
+        /// M: Use fullscreen when the activity shows over lockscreen only @{
         // If we're over lockscreen, forget about stack bounds and use fullscreen.
-        if (mService.mLockScreenShown == LOCK_SCREEN_SHOWN) {
+        if (mService.mLockScreenShown == LOCK_SCREEN_SHOWN && mShowForAllUsers) {
+            Slog.d(TAG, "we're over lockscreen, forget about stack bounds and use fullscreen"
+                + " in " + stack);
             return null;
         }
+        /// M: Use fullscreen when the activity shows over lockscreen only @}
 
         if (stack == null) {
             return null;
@@ -1674,6 +1717,14 @@ final class TaskRecord {
         } else if (!StackId.persistTaskBounds(stackId)) {
             return stack.mBounds;
         }
+        /// M: BMW. [ALPS02828317] Fix mLastNonFullscreenBounds is fullscreen
+        ///    but the stack is not. @{
+        if (MultiWindowManager.isSupported() && stackId == FREEFORM_WORKSPACE_STACK_ID
+                && mLastNonFullscreenBounds != null && mLastNonFullscreenBounds.left == 0
+                && mLastNonFullscreenBounds.top == 0) {
+            return null;
+        }
+        /// @}
         return mLastNonFullscreenBounds;
     }
 
@@ -1779,6 +1830,11 @@ final class TaskRecord {
                 pw.print(" isResizeable=" + isResizeable());
                 pw.print(" firstActiveTime=" + lastActiveTime);
                 pw.print(" lastActiveTime=" + lastActiveTime);
+                /// M: BMW @{
+                if (MultiWindowManager.isSupported()) {
+                    pw.print(" mSticky=" + mSticky);
+                }
+                /// @}
                 pw.println(" (inactive for " + (getInactiveDuration() / 1000) + "s)");
     }
 
@@ -1815,4 +1871,21 @@ final class TaskRecord {
         stringName = sb.toString();
         return toString();
     }
+
+    /// M: Mediatek added functions start
+
+    /// M: Use fullscreen when the activity shows over lockscreen only @{
+    private boolean mShowForAllUsers = false;
+
+    private void setShowForAllUsers(ActivityInfo info) {
+        mShowForAllUsers = (info.flags & FLAG_SHOW_FOR_ALL_USERS) != 0;
+
+        if (DEBUG_TASKS || !ActivityManagerService.IS_USER_BUILD) {
+            Slog.d(TAG, "setShowForAllUsers: flags=" + Integer.toHexString(info.flags)
+                + " mShowForAllUsers = " + mShowForAllUsers + " callers=" + Debug.getCallers(4));
+        }
+    }
+    /// M: Use fullscreen when the activity shows over lockscreen only @}
+
+    /// M: Mediatek added functions end
 }

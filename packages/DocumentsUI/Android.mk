@@ -39,6 +39,11 @@ ifneq (,$(filter userdebug eng, $(TARGET_BUILD_VARIANT)))
 LOCAL_JACK_FLAGS += -D jack.assert.policy=always
 endif
 
+# DRM refactory
+LOCAL_STATIC_JAVA_LIBRARIES += com.mediatek.omadrm.common
+
+LOCAL_JAVA_LIBRARIES += mediatek-framework
+
 LOCAL_PACKAGE_NAME := DocumentsUI
 LOCAL_CERTIFICATE := platform
 

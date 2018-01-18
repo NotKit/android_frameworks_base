@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,10 +24,15 @@ package android.telephony.gsm;
 import android.os.Bundle;
 import android.telephony.CellLocation;
 
+import android.util.Log;
+import com.android.internal.telephony.PhoneConstants;
+
 /**
  * Represents the cell location on a GSM phone.
  */
 public class GsmCellLocation extends CellLocation {
+   static final String TAG = "GsmCellLocation";
+
     private int mLac;
     private int mCid;
     private int mPsc;
@@ -34,6 +44,7 @@ public class GsmCellLocation extends CellLocation {
         mLac = -1;
         mCid = -1;
         mPsc = -1;
+        mType = PhoneConstants.PHONE_TYPE_GSM;
     }
 
     /**
@@ -43,6 +54,7 @@ public class GsmCellLocation extends CellLocation {
         mLac = bundle.getInt("lac", -1);
         mCid = bundle.getInt("cid", -1);
         mPsc = bundle.getInt("psc", -1);
+        mType = PhoneConstants.PHONE_TYPE_GSM;
     }
 
     /**
@@ -143,6 +155,8 @@ public class GsmCellLocation extends CellLocation {
         m.putInt("lac", mLac);
         m.putInt("cid", mCid);
         m.putInt("psc", mPsc);
+        m.putInt("type", mType);
+        Log.d(TAG, "fillInNotifierBundle:" + m.toString());
     }
 
     /**

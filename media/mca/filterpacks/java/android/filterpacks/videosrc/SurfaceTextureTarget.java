@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +22,8 @@
 
 package android.filterpacks.videosrc;
 
+import java.nio.ByteBuffer;
+
 import android.filterfw.core.Filter;
 import android.filterfw.core.FilterContext;
 import android.filterfw.core.Frame;
@@ -32,9 +39,12 @@ import android.filterfw.format.ImageFormat;
 import android.filterfw.geometry.Quad;
 import android.filterfw.geometry.Point;
 
+import android.graphics.Bitmap;
 import android.graphics.SurfaceTexture;
 
 import android.util.Log;
+import android.opengl.GLES20;
+import android.os.SystemProperties;
 
 /**
  * @hide
@@ -239,6 +249,7 @@ public class SurfaceTextureTarget extends Filter {
 
         // Process
         mProgram.process(gpuFrame, mScreen);
+        saveOutput(mScreen);
 
         glEnv.setSurfaceTimestamp(input.getTimestamp());
 
@@ -328,4 +339,31 @@ public class SurfaceTextureTarget extends Filter {
             }
         }
     }
+
+    /// M: for debug @{
+    private void saveOutput(Frame frame) {
+        if (mLogVerbose) {
+            int debug = SystemProperties.getInt("debug.effect.display", 0);
+            if (debug != 0 && frame != null) {
+                final int width = mScreenWidth;
+                final int height = mScreenHeight;
+                final int size = width * height;
+                ByteBuffer buffer = ByteBuffer.allocate(width * height * 4);
+                GLES20.glReadPixels(0, 0, width, height, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, buffer);
+                checkGlError("glReadPixels");
+                Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+                bitmap.copyPixelsFromBuffer(buffer);
+                frame.saveImage("mScreen", bitmap);
+                bitmap.recycle();
+                buffer.clear();
+            }
+        }
+    }
+    private static void checkGlError(String op) {
+        int error;
+        while ((error = GLES20.glGetError()) != GLES20.GL_NO_ERROR) {
+            throw new IllegalArgumentException(op + ": glError " + error);
+        }
+    }
+    /// @}
 }

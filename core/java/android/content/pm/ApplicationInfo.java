@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -406,6 +411,15 @@ public class ApplicationInfo extends PackageItemInfo implements Parcelable {
     public static final int FLAG_MULTIARCH  = 1 << 31;
 
     /**
+     * M: [Operator] flag for operator APP
+     * Value for {@link #flagsEx}: Set to true if the application is an operator app under
+     * /vendor/operator/app or /cutomer/app
+     *
+     * {@hide}
+     */
+    public static final int FLAG_EX_OPERATOR = 1 << 0;
+
+    /**
      * Flags associated with the application.  Any combination of
      * {@link #FLAG_SYSTEM}, {@link #FLAG_DEBUGGABLE}, {@link #FLAG_HAS_CODE},
      * {@link #FLAG_PERSISTENT}, {@link #FLAG_FACTORY_TEST}, and
@@ -540,6 +554,15 @@ public class ApplicationInfo extends PackageItemInfo implements Parcelable {
      * {@hide}
      */
     public int privateFlags;
+
+    /**
+     * M: [FlagExt] flag for MTK Internal use
+     * Flags associated with the application.  Any combination of
+     * {@link #FLAG_OPERATOR}
+     *
+     * {@hide}
+     */
+    public int flagsEx = 0;
 
     /**
      * The required smallest screen width the application can run on.  If 0,
@@ -789,7 +812,10 @@ public class ApplicationInfo extends PackageItemInfo implements Parcelable {
         }
         pw.println(prefix + "uid=" + uid + " flags=0x" + Integer.toHexString(flags)
                 + " privateFlags=0x" + Integer.toHexString(privateFlags)
-                + " theme=0x" + Integer.toHexString(theme));
+                + " theme=0x" + Integer.toHexString(theme)
+                /** M: [FlagExt] Dump flagsEx value @{ */
+                + " flagsEx=0x" + Integer.toHexString(flagsEx));
+                /** @} */
         if ((flags&DUMP_FLAG_DETAILS) != 0) {
             pw.println(prefix + "requiresSmallestWidthDp=" + requiresSmallestWidthDp
                     + " compatibleWidthLimitDp=" + compatibleWidthLimitDp
@@ -897,6 +923,11 @@ public class ApplicationInfo extends PackageItemInfo implements Parcelable {
         theme = orig.theme;
         flags = orig.flags;
         privateFlags = orig.privateFlags;
+
+        /** M: [FlagExt] flagsEx will copied in copy constructor @{ */
+        flagsEx = orig.flagsEx;
+        /** @} */
+
         requiresSmallestWidthDp = orig.requiresSmallestWidthDp;
         compatibleWidthLimitDp = orig.compatibleWidthLimitDp;
         largestWidthLimitDp = orig.largestWidthLimitDp;
@@ -953,6 +984,11 @@ public class ApplicationInfo extends PackageItemInfo implements Parcelable {
         dest.writeInt(theme);
         dest.writeInt(flags);
         dest.writeInt(privateFlags);
+
+        /** M: [FlagExt] flagsEx will copied in copy constructor @{ */
+        dest.writeInt(flagsEx);
+        /** @} */
+
         dest.writeInt(requiresSmallestWidthDp);
         dest.writeInt(compatibleWidthLimitDp);
         dest.writeInt(largestWidthLimitDp);
@@ -1009,6 +1045,11 @@ public class ApplicationInfo extends PackageItemInfo implements Parcelable {
         theme = source.readInt();
         flags = source.readInt();
         privateFlags = source.readInt();
+
+        /** M: [FlagExt] flagsEx will copied in copy constructor @{ */
+        flagsEx = source.readInt();
+        /** @} */
+
         requiresSmallestWidthDp = source.readInt();
         compatibleWidthLimitDp = source.readInt();
         largestWidthLimitDp = source.readInt();
@@ -1144,6 +1185,14 @@ public class ApplicationInfo extends PackageItemInfo implements Parcelable {
     @TestApi
     public boolean isPrivilegedApp() {
         return (privateFlags & ApplicationInfo.PRIVATE_FLAG_PRIVILEGED) != 0;
+    }
+
+    /**
+     * M: for checking /vendor/operator/app or /cutomer/app
+     * @hide
+     */
+    public boolean isVendorApp() {
+        return (flagsEx & ApplicationInfo.FLAG_EX_OPERATOR) != 0;
     }
 
     /**

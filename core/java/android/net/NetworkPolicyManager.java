@@ -27,6 +27,7 @@ import android.content.pm.Signature;
 import android.os.RemoteException;
 import android.os.UserHandle;
 import android.util.DebugUtils;
+import android.util.Log;
 
 import com.google.android.collect.Sets;
 
@@ -40,7 +41,7 @@ import java.util.TimeZone;
  * {@hide}
  */
 public class NetworkPolicyManager {
-
+    private static final String TAG = "NetworkPolicyManager";
     /* POLICY_* are masks and can be ORed */
     /** No specific network policy, use system default. */
     public static final int POLICY_NONE = 0x0;
@@ -101,6 +102,12 @@ public class NetworkPolicyManager {
     public static final String FIREWALL_CHAIN_NAME_POWERSAVE = "powersave";
 
     private static final boolean ALLOW_PLATFORM_APP_POLICY = true;
+
+    ///M:  MTK add  @{
+    public static final String ACTION_POLICY_CREATED =
+            "com.mediatek.server.action.ACTION_POLICY_CREATED";
+    public static final String ACTION_NETWORK_OVERLIMIT_CHANGED =
+            "com.mediatek.server.action.ACTION_NETWORK_OVERLIMIT_CHANGED";
 
     /**
      * {@link Intent} extra that indicates which {@link NetworkTemplate} rule it
@@ -212,6 +219,7 @@ public class NetworkPolicyManager {
     }
 
     public void setRestrictBackground(boolean restrictBackground) {
+        Log.d(TAG, "setRestrictBackground " + restrictBackground);
         try {
             mService.setRestrictBackground(restrictBackground);
         } catch (RemoteException e) {
@@ -356,5 +364,38 @@ public class NetworkPolicyManager {
         }
         string.append(")");
         return string.toString();
+    }
+
+    // M:DataUsage for ViLTE
+    /**
+     * Get if data usage over warning.
+     *
+     * @param subscriberId the unique subscriber ID, for example, the IMSI for a GSM phone.
+     * @return if data usage over warning.
+     *
+     * @hide
+     */
+    public boolean getNetworkTemplateOverWarning(String subscriberId) {
+        try {
+            return mService.getNetworkTemplateOverWarning(subscriberId);
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
+    }
+
+    /**
+     * Get if data usage over limit.
+     *
+     * @param subscriberId the unique subscriber ID, for example, the IMSI for a GSM phone.
+     * @return if data usage over limit.
+     *
+     * @hide
+     */
+    public boolean getNetworkTemplateOverLimit(String subscriberId) {
+        try {
+            return mService.getNetworkTemplateOverLimit(subscriberId);
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
     }
 }

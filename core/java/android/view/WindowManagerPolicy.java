@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,6 +28,7 @@ import android.content.Context;
 import android.content.pm.ActivityInfo;
 import android.content.res.CompatibilityInfo;
 import android.content.res.Configuration;
+import android.graphics.Bitmap;
 import android.graphics.Point;
 import android.graphics.Rect;
 import android.graphics.RectF;
@@ -545,6 +551,8 @@ public interface WindowManagerPolicy {
     public final int OFF_BECAUSE_OF_USER = 2;
     /** Screen turned off because of timeout */
     public final int OFF_BECAUSE_OF_TIMEOUT = 3;
+    /// M: Screen turned off because of proximity sensor
+    public final int OFF_BECAUSE_OF_PROX_SENSOR = 4;
 
     /** @hide */
     @IntDef({USER_ROTATION_FREE, USER_ROTATION_LOCKED})
@@ -1436,4 +1444,27 @@ public interface WindowManagerPolicy {
     public void onConfigurationChanged();
 
     public boolean shouldRotateSeamlessly(int oldRotation, int newRotation);
+
+    /// M: [App Launch Reponse Time Enhancement][FSW] Policy prototype.
+    /**
+     * Called when the system would like to use fast starting window.
+     *
+     * @param appToken Token of the application being started.
+     * @param packageName The name of the application package being started.
+     * @param theme Resource defining the application's overall visual theme.
+     * @param nonLocalizedLabel The default title label of the application if
+     *        no data is found in the resource.
+     * @param labelRes The resource ID the application would like to use as its name.
+     * @param icon The resource ID the application would like to use as its icon.
+     * @param windowFlags Window layout flags.
+     * @param bitmap app cached screen bitmap
+     *
+     * @return Optionally you can return the View that was used to create the
+     *         window, for easy removal in removeStartingWindow.
+     *
+     * @see #removeStartingWindow
+     */
+    public View addFastStartingWindow(IBinder appToken, String packageName,
+            int theme, CompatibilityInfo compatInfo, CharSequence nonLocalizedLabel,
+            int labelRes, int icon, int logo, int windowFlags, Bitmap bitmap);
 }

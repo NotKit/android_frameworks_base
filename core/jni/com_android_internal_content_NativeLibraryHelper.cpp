@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -121,6 +126,7 @@ isFileDifferent(const char* filePath, uint32_t fileSize, time_t modifiedTime,
         return true;
     }
 
+    ALOGD("mod time st->st_mtime : %ld vs modifiedTime. %ld\n", st->st_mtime, modifiedTime);
     // For some reason, bionic doesn't define st_mtime as time_t
     if (time_t(st->st_mtime) != modifiedTime) {
         ALOGV("mod time doesn't match: %ld vs. %ld\n", st->st_mtime, modifiedTime);

@@ -47,12 +47,16 @@ import android.hardware.fingerprint.FingerprintManager;
 import android.hardware.fingerprint.FingerprintManager.AuthenticationCallback;
 import android.hardware.fingerprint.FingerprintManager.AuthenticationResult;
 import android.media.AudioManager;
+import android.net.wifi.WifiManager;
 import android.os.BatteryManager;
+import android.os.Bundle;
 import android.os.CancellationSignal;
 import android.os.Handler;
 import android.os.IRemoteCallback;
 import android.os.Message;
 import android.os.RemoteException;
+import android.os.ServiceManager;
+import android.os.SystemProperties;
 import android.os.SystemClock;
 import android.os.Trace;
 import android.os.UserHandle;
@@ -69,7 +73,9 @@ import android.util.SparseBooleanArray;
 import android.util.SparseIntArray;
 
 import com.google.android.collect.Lists;
+import com.mediatek.internal.telephony.ITelephonyEx;
 
+import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.IccCardConstants;
 import com.android.internal.telephony.IccCardConstants.State;
 import com.android.internal.telephony.PhoneConstants;
@@ -83,6 +89,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map.Entry;
+//M: ALPS02843533 fix index out of bounds exception
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Watches for updates that may be interesting to the keyguard, and provides
@@ -99,7 +107,12 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
     private static final String TAG = "KeyguardUpdateMonitor";
     private static final boolean DEBUG = KeyguardConstants.DEBUG;
     private static final boolean DEBUG_SIM_STATES = KeyguardConstants.DEBUG_SIM_STATES;
-    private static final int LOW_BATTERY_THRESHOLD = 20;
+    /// M: Change the threshold to 16 for mediatek device
+    private static final int LOW_BATTERY_THRESHOLD = 16;
+
+    private static final boolean DEBUG_FP_WAKELOCK = KeyguardConstants.DEBUG_FP_WAKELOCK;
+    private static final long FINGERPRINT_WAKELOCK_TIMEOUT_MS = 15 * 1000;
+    // private static final int LOW_BATTERY_THRESHOLD = 20;
 
     private static final String ACTION_FACE_UNLOCK_STARTED
             = "com.android.facelock.FACE_UNLOCK_STARTED";
@@ -115,6 +128,8 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
     // Callback messages
     private static final int MSG_TIME_UPDATE = 301;
     private static final int MSG_BATTERY_UPDATE = 302;
+    // M: add for carrier
+    private static final int MSG_CARRIER_INFO_UPDATE = 303;
     private static final int MSG_SIM_STATE_CHANGE = 304;
     private static final int MSG_RINGER_MODE_CHANGED = 305;
     private static final int MSG_PHONE_STATE_CHANGED = 306;
@@ -168,7 +183,14 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
     HashMap<Integer, SimData> mSimDatas = new HashMap<Integer, SimData>();
     HashMap<Integer, ServiceState> mServiceStates = new HashMap<Integer, ServiceState>();
 
+    // M: Telephony state
+    private HashMap<Integer, IccCardConstants.State> mSimStateOfPhoneId =
+            new HashMap<Integer, IccCardConstants.State>();
+    private HashMap<Integer, CharSequence> mTelephonyPlmn = new HashMap<Integer, CharSequence>();
+    private HashMap<Integer, CharSequence> mTelephonySpn = new HashMap<Integer, CharSequence>();
     private int mRingMode;
+
+    // Phone state is set as OFFHOOK if one subscription is in OFFHOOK state.
     private int mPhoneState;
     private boolean mKeyguardIsVisible;
 
@@ -196,8 +218,9 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
     private ArraySet<Integer> mStrongAuthNotTimedOut = new ArraySet<>();
     private final StrongAuthTracker mStrongAuthTracker;
 
-    private final ArrayList<WeakReference<KeyguardUpdateMonitorCallback>>
-            mCallbacks = Lists.newArrayList();
+    //M: ALPS02843533 fix index out of bounds exception
+    private final CopyOnWriteArrayList<WeakReference<KeyguardUpdateMonitorCallback>>
+            mCallbacks = new CopyOnWriteArrayList<WeakReference<KeyguardUpdateMonitorCallback>>();
     private ContentObserver mDeviceProvisionedObserver;
 
     private boolean mSwitchingUser;
@@ -211,7 +234,9 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
     private UserManager mUserManager;
     private int mFingerprintRunningState = FINGERPRINT_STATE_STOPPED;
 
-    private final Handler mHandler = new Handler() {
+    // M: modify for mock
+    @VisibleForTesting
+    final Handler mHandler = new Handler() {
         @Override
         public void handleMessage(Message msg) {
             switch (msg.what) {
@@ -221,14 +246,20 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
                 case MSG_BATTERY_UPDATE:
                     handleBatteryUpdate((BatteryStatus) msg.obj);
                     break;
+                // M: add for carrier
+                case MSG_CARRIER_INFO_UPDATE:
+                    handleCarrierInfoUpdate((Integer) msg.obj);
+                    break;
                 case MSG_SIM_STATE_CHANGE:
-                    handleSimStateChange(msg.arg1, msg.arg2, (State) msg.obj);
+                    // handleSimStateChange(msg.arg1, msg.arg2, (State) msg.obj);
+                    handleSimStateChange((SimData) msg.obj);
                     break;
                 case MSG_RINGER_MODE_CHANGED:
                     handleRingerModeChange(msg.arg1);
                     break;
                 case MSG_PHONE_STATE_CHANGED:
-                    handlePhoneStateChanged((String) msg.obj);
+                    // handlePhoneStateChanged((String) msg.obj);
+                    handlePhoneStateChanged();
                     break;
                 case MSG_DEVICE_PROVISIONED:
                     handleDeviceProvisioned();
@@ -282,6 +313,10 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
                 case MSG_SERVICE_STATE_CHANGE:
                     handleServiceStateChange(msg.arg1, (ServiceState) msg.obj);
                     break;
+                ///M: support airplan mode
+                case MSG_AIRPLANE_MODE_UPDATE:
+                    handleAirPlaneModeUpdate((Boolean) msg.obj);
+                    break;
                 case MSG_SCREEN_TURNED_ON:
                     handleScreenTurnedOn();
                     break;
@@ -304,6 +339,9 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
             new OnSubscriptionsChangedListener() {
         @Override
         public void onSubscriptionsChanged() {
+            ///M: fix ALPS01966184, we add a debounce mechanism here to handle overflowed
+            ///   MSG_SIM_SUBSCRIPTION_INFO_CHANGED messages.
+            mHandler.removeMessages(MSG_SIM_SUBSCRIPTION_INFO_CHANGED);
             mHandler.sendEmptyMessage(MSG_SIM_SUBSCRIPTION_INFO_CHANGED);
         }
     };
@@ -355,6 +393,7 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
         // first update in handleSimStateChange, we need to force refresh all all SIM states
         // so the subscription id for them is consistent.
         ArrayList<SubscriptionInfo> changedSubscriptions = new ArrayList<>();
+
         for (int i = 0; i < subscriptionInfos.size(); i++) {
             SubscriptionInfo info = subscriptionInfos.get(i);
             boolean changed = refreshSimState(info.getSubscriptionId(), info.getSimSlotIndex());
@@ -362,15 +401,23 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
                 changedSubscriptions.add(info);
             }
         }
+
         for (int i = 0; i < changedSubscriptions.size(); i++) {
-            SimData data = mSimDatas.get(changedSubscriptions.get(i).getSubscriptionId());
+            // SimData data = mSimDatas.get(changedSubscriptions.get(i).getSubscriptionId());
+            int subId = changedSubscriptions.get(i).getSubscriptionId();
+            int phoneId = changedSubscriptions.get(i).getSimSlotIndex();
+            Log.d(TAG, "handleSimSubscriptionInfoChanged() - call callbacks for subId = " + subId +
+                " & phoneId = " + phoneId) ;
+
             for (int j = 0; j < mCallbacks.size(); j++) {
                 KeyguardUpdateMonitorCallback cb = mCallbacks.get(j).get();
                 if (cb != null) {
-                    cb.onSimStateChanged(data.subId, data.slotId, data.simState);
+                    // cb.onSimStateChanged(data.subId, data.slotId, data.simState);
+                    cb.onSimStateChangedUsingPhoneId(phoneId, mSimStateOfPhoneId.get(phoneId));
                 }
             }
         }
+
         for (int j = 0; j < mCallbacks.size(); j++) {
             KeyguardUpdateMonitorCallback cb = mCallbacks.get(j).get();
             if (cb != null) {
@@ -391,15 +438,24 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
     /** @return List of SubscriptionInfo records, maybe empty but never null */
     public List<SubscriptionInfo> getSubscriptionInfo(boolean forceReload) {
         List<SubscriptionInfo> sil = mSubscriptionInfo;
-        if (sil == null || forceReload) {
+        ///M: fix ALPS01963966, we should force reload sub list for hot-plug sim device.
+        ///   since we may insert the sim card later and the sub list is not null and cannot
+        ///   fetch the latest/updated active sub list.
+        if (sil == null || forceReload ||
+            ((sil != null) && (sil.size() == 0))
+        ) {
             sil = mSubscriptionManager.getActiveSubscriptionInfoList();
         }
+
         if (sil == null) {
             // getActiveSubscriptionInfoList was null callers expect an empty list.
             mSubscriptionInfo = new ArrayList<SubscriptionInfo>();
         } else {
             mSubscriptionInfo = sil;
         }
+
+        Log.d(TAG, "getSubscriptionInfo() - mSubscriptionInfo.size = "
+                + mSubscriptionInfo.size());
         return mSubscriptionInfo;
     }
 
@@ -530,6 +586,7 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
         }
     }
     private void handleFaceUnlockStateChanged(boolean running, int userId) {
+        Log.d(TAG, "handleFaceUnlockStateChanged(running = " + running + " , userId = " + userId) ;
         mUserFaceUnlockRunning.put(userId, running);
         for (int i = 0; i < mCallbacks.size(); i++) {
             KeyguardUpdateMonitorCallback cb = mCallbacks.get(i).get();
@@ -649,6 +706,28 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
                     || Intent.ACTION_TIME_CHANGED.equals(action)
                     || Intent.ACTION_TIMEZONE_CHANGED.equals(action)) {
                 mHandler.sendEmptyMessage(MSG_TIME_UPDATE);
+            } else if (TelephonyIntents.SPN_STRINGS_UPDATED_ACTION.equals(action)) {
+                int subId = intent.getIntExtra(PhoneConstants.SUBSCRIPTION_KEY,
+                        SubscriptionManager.INVALID_SUBSCRIPTION_ID);
+                Log.d(TAG, "SPN_STRINGS_UPDATED_ACTION, sub Id = " + subId) ;
+                int phoneId = KeyguardUtils.getPhoneIdUsingSubId(subId) ;
+
+                if (KeyguardUtils.isValidPhoneId(phoneId)) {
+                    mTelephonyPlmn.put(phoneId, getTelephonyPlmnFrom(intent));
+                    mTelephonySpn.put(phoneId, getTelephonySpnFrom(intent));
+                    mTelephonyCsgId.put(phoneId, getTelephonyCsgIdFrom(intent)) ;
+                    mTelephonyHnbName.put(phoneId, getTelephonyHnbNameFrom(intent));
+                    if (DEBUG) {
+                        Log.d(TAG, "SPN_STRINGS_UPDATED_ACTION, update phoneId=" + phoneId
+                            + ", plmn=" + mTelephonyPlmn.get(phoneId)
+                            + ", spn=" + mTelephonySpn.get(phoneId)
+                            + ", csgId=" + mTelephonyCsgId.get(phoneId)
+                            + ", hnbName=" + mTelephonyHnbName.get(phoneId));
+                    }
+                    mHandler.sendMessage(mHandler.obtainMessage(MSG_CARRIER_INFO_UPDATE, phoneId));
+                } else {
+                    Log.d(TAG, "SPN_STRINGS_UPDATED_ACTION, invalid phoneId = " + phoneId) ;
+                }
             } else if (Intent.ACTION_BATTERY_CHANGED.equals(action)) {
                 final int status = intent.getIntExtra(EXTRA_STATUS, BATTERY_STATUS_UNKNOWN);
                 final int plugged = intent.getIntExtra(EXTRA_PLUGGED, 0);
@@ -674,7 +753,7 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
                         MSG_BATTERY_UPDATE, new BatteryStatus(status, level, plugged, health,
                                 maxChargingMicroWatt));
                 mHandler.sendMessage(msg);
-            } else if (TelephonyIntents.ACTION_SIM_STATE_CHANGED.equals(action)) {
+            } /* else if (TelephonyIntents.ACTION_SIM_STATE_CHANGED.equals(action)) {
                 SimData args = SimData.fromIntent(intent);
                 if (DEBUG_SIM_STATES) {
                     Log.v(TAG, "action " + action
@@ -682,17 +761,44 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
                         + " slotId: " + args.slotId + " subid: " + args.subId);
                 }
                 mHandler.obtainMessage(MSG_SIM_STATE_CHANGE, args.subId, args.slotId, args.simState)
-                        .sendToTarget();
+                        .sendToTarget(); **/
+
+            else if (TelephonyIntents.ACTION_SIM_STATE_CHANGED.equals(action)
+                    || TelephonyIntents.ACTION_UNLOCK_SIM_LOCK.equals(action)) {
+                String stateExtra = intent.getStringExtra(IccCardConstants.INTENT_KEY_ICC_STATE);
+                SimData simArgs = SimData.fromIntent(intent);
+                if (DEBUG_SIM_STATES) {
+                    Log.v(TAG, "action=" + action + ", state=" + stateExtra
+                        + ", slotId=" + simArgs.phoneId + ", subId=" + simArgs.subId
+                        + ", simArgs.simState = " + simArgs.simState);
+                }
+
+                if (TelephonyIntents.ACTION_UNLOCK_SIM_LOCK.equals(action)) {
+                    /// M: set sim state as UNKNOWN state to trigger SIM lock view again.
+                    Log.d(TAG, "ACTION_UNLOCK_SIM_LOCK, set sim state as UNKNOWN") ;
+                    mSimStateOfPhoneId.put(simArgs.phoneId, IccCardConstants.State.UNKNOWN);
+                }
+
+                proceedToHandleSimStateChanged(simArgs) ;
             } else if (AudioManager.RINGER_MODE_CHANGED_ACTION.equals(action)) {
                 mHandler.sendMessage(mHandler.obtainMessage(MSG_RINGER_MODE_CHANGED,
                         intent.getIntExtra(AudioManager.EXTRA_RINGER_MODE, -1), 0));
             } else if (TelephonyManager.ACTION_PHONE_STATE_CHANGED.equals(action)) {
                 String state = intent.getStringExtra(TelephonyManager.EXTRA_STATE);
                 mHandler.sendMessage(mHandler.obtainMessage(MSG_PHONE_STATE_CHANGED, state));
-            } else if (Intent.ACTION_AIRPLANE_MODE_CHANGED.equals(action)) {
+            } /*else if (Intent.ACTION_AIRPLANE_MODE_CHANGED.equals(action)) {
                 mHandler.sendEmptyMessage(MSG_AIRPLANE_MODE_CHANGED);
-            } else if (Intent.ACTION_BOOT_COMPLETED.equals(action)) {
+            } */else if (Intent.ACTION_BOOT_COMPLETED.equals(action)) {
                 dispatchBootCompleted();
+            } else if (Intent.ACTION_AIRPLANE_MODE_CHANGED.equals(action)) {
+                ///M: fix ALPS01821063, we should assume that extra value may not exist.
+                ///   Although the extra value of AIRPLANE_MODE_CHANGED intent should exist in fact.
+                boolean state = intent.getBooleanExtra("state", false);
+                Log.d(TAG, "Receive ACTION_AIRPLANE_MODE_CHANGED, state = " + state);
+                Message msg = new Message() ;
+                msg.what = MSG_AIRPLANE_MODE_UPDATE ;
+                msg.obj = new Boolean(state) ;
+                mHandler.sendMessage(msg);
             } else if (TelephonyIntents.ACTION_SERVICE_STATE_CHANGED.equals(action)) {
                 ServiceState serviceState = ServiceState.newFromBundle(intent.getExtras());
                 int subId = intent.getIntExtra(PhoneConstants.SUBSCRIPTION_KEY,
@@ -706,6 +812,18 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
             }
         }
     };
+
+    private void proceedToHandleSimStateChanged(SimData simArgs) {
+        if ((IccCardConstants.State.NETWORK_LOCKED == simArgs.simState) &&
+            KeyguardUtils.isMediatekSimMeLockSupport()) {
+            //if (KeyguardUtils.isMediatekSimMeLockSupport()) {
+            /// M: to create new thread to query SIM ME lock status
+            /// after finish query, send MSG_SIM_STATE_CHANGE message
+            new simMeStatusQueryThread(simArgs).start();
+        } else {
+            mHandler.sendMessage(mHandler.obtainMessage(MSG_SIM_STATE_CHANGE, simArgs));
+        }
+    }
 
     private final BroadcastReceiver mBroadcastAllReceiver = new BroadcastReceiver() {
 
@@ -793,24 +911,49 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
      * we need a single object to pass to the handler.  This class helps decode
      * the intent and provide a {@link SimCard.State} result.
      */
-    private static class SimData {
-        public State simState;
-        public int slotId;
+    // modify for mock
+    @VisibleForTesting
+    static class SimData {
+        // public State simState;
+        public final IccCardConstants.State simState;
+        // public int slotId;
+        public int phoneId = 0;
         public int subId;
+        public int simMECategory = 0;
 
-        SimData(State state, int slot, int id) {
+        /***SimData(State state, int slot, int id) {
             simState = state;
             slotId = slot;
             subId = id;
+        } ** Google defaut */
+
+        SimData(IccCardConstants.State state, int phoneId, int subId) {
+            this.simState = state;
+            this.phoneId = phoneId;
+            this.subId = subId;
+        }
+        // modify for mock
+        @VisibleForTesting
+        SimData(IccCardConstants.State state, int phoneId, int subId, int meCategory) {
+            this.simState = state;
+            this.phoneId = phoneId;
+            this.subId = subId ;
+            this.simMECategory = meCategory;
         }
 
         static SimData fromIntent(Intent intent) {
-            State state;
-            if (!TelephonyIntents.ACTION_SIM_STATE_CHANGED.equals(intent.getAction())) {
+            // State state;
+            /// M:Add for ALPS02296548
+            IccCardConstants.State state;
+            if (!TelephonyIntents.ACTION_SIM_STATE_CHANGED.equals(intent.getAction())
+                   && !TelephonyIntents.ACTION_UNLOCK_SIM_LOCK.equals(intent.getAction())) {
                 throw new IllegalArgumentException("only handles intent ACTION_SIM_STATE_CHANGED");
             }
+            /// M:
+            int meCategory = 0;
             String stateExtra = intent.getStringExtra(IccCardConstants.INTENT_KEY_ICC_STATE);
-            int slotId = intent.getIntExtra(PhoneConstants.SLOT_KEY, 0);
+            // int slotId = intent.getIntExtra(PhoneConstants.SLOT_KEY, 0);
+            int phoneId = intent.getIntExtra(PhoneConstants.SLOT_KEY, 0);
             int subId = intent.getIntExtra(PhoneConstants.SUBSCRIPTION_KEY,
                     SubscriptionManager.INVALID_SUBSCRIPTION_ID);
             if (IccCardConstants.INTENT_VALUE_ICC_ABSENT.equals(stateExtra)) {
@@ -828,10 +971,29 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
             } else if (IccCardConstants.INTENT_VALUE_ICC_LOCKED.equals(stateExtra)) {
                 final String lockedReason = intent
                         .getStringExtra(IccCardConstants.INTENT_KEY_LOCKED_REASON);
+                Log.d(TAG, "INTENT_VALUE_ICC_LOCKED, lockedReason=" + lockedReason);
+
                 if (IccCardConstants.INTENT_VALUE_LOCKED_ON_PIN.equals(lockedReason)) {
                     state = IccCardConstants.State.PIN_REQUIRED;
                 } else if (IccCardConstants.INTENT_VALUE_LOCKED_ON_PUK.equals(lockedReason)) {
                     state = IccCardConstants.State.PUK_REQUIRED;
+                } else if (IccCardConstants.INTENT_VALUE_LOCKED_NETWORK.equals(lockedReason)) {
+                    meCategory = 0;
+                    state = IccCardConstants.State.NETWORK_LOCKED;
+                } else if (IccCardConstants.INTENT_VALUE_LOCKED_NETWORK_SUBSET
+                        .equals(lockedReason)) {
+                    meCategory = 1;
+                    state = IccCardConstants.State.NETWORK_LOCKED;
+                } else if (IccCardConstants.INTENT_VALUE_LOCKED_SERVICE_PROVIDER
+                        .equals(lockedReason)) {
+                    meCategory = 2;
+                    state = IccCardConstants.State.NETWORK_LOCKED;
+                } else if (IccCardConstants.INTENT_VALUE_LOCKED_CORPORATE.equals(lockedReason)) {
+                    meCategory = 3;
+                    state = IccCardConstants.State.NETWORK_LOCKED;
+                } else if (IccCardConstants.INTENT_VALUE_LOCKED_SIM.equals(lockedReason)) {
+                    meCategory = 4;
+                    state = IccCardConstants.State.NETWORK_LOCKED;
                 } else {
                     state = IccCardConstants.State.UNKNOWN;
                 }
@@ -842,15 +1004,19 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
                 // This is required because telephony doesn't return to "READY" after
                 // these state transitions. See bug 7197471.
                 state = IccCardConstants.State.READY;
+            } else if (IccCardConstants.INTENT_VALUE_ICC_NOT_READY.equals(stateExtra)) {///M:
+                state = IccCardConstants.State.NOT_READY;
             } else {
                 state = IccCardConstants.State.UNKNOWN;
             }
-            return new SimData(state, slotId, subId);
+            // return new SimData(state, slotId, subId);
+            return new SimData(state, phoneId, subId, meCategory);
         }
 
         @Override
         public String toString() {
-            return "SimData{state=" + simState + ",slotId=" + slotId + ",subId=" + subId + "}";
+            // return "SimData{state=" + simState + ",slotId=" + slotId + ",subId=" + subId + "}";
+            return simState.toString();
         }
     }
 
@@ -932,6 +1098,19 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
         }
     }
 
+    /* package */ static class SubInfoContent {
+        public final int subInfoId;
+        public final String column;
+        public final String sValue;
+        public final int iValue;
+        public SubInfoContent(int subInfoId, String column, String sValue, int iValue) {
+            this.subInfoId = subInfoId;
+            this.column = column;
+            this.sValue = sValue;
+            this.iValue = iValue;
+        }
+    }
+
     public static KeyguardUpdateMonitor getInstance(Context context) {
         if (sInstance == null) {
             sInstance = new KeyguardUpdateMonitor(context);
@@ -940,6 +1119,7 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
     }
 
     protected void handleStartedWakingUp() {
+        Log.d(TAG, "handleStartedWakingUp");
         Trace.beginSection("KeyguardUpdateMonitor#handleStartedWakingUp");
         updateFingerprintListeningState();
         final int count = mCallbacks.size();
@@ -1049,6 +1229,8 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
         mDeviceProvisioned = isDeviceProvisionedInSettingsDb();
         mStrongAuthTracker = new StrongAuthTracker(context);
 
+        if (DEBUG) Log.d(TAG, "mDeviceProvisioned is:" + mDeviceProvisioned);
+
         // Since device can't be un-provisioned, we only need to register a content observer
         // to update mDeviceProvisioned when we are...
         if (!mDeviceProvisioned) {
@@ -1057,6 +1239,10 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
 
         // Take a guess at initial SIM state, battery status and PLMN until we get an update
         mBatteryStatus = new BatteryStatus(BATTERY_STATUS_UNKNOWN, 100, 0, 0, 0);
+
+        mWifiManager = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
+
+        initMembers();
 
         // Watch for interesting updates
         final IntentFilter filter = new IntentFilter();
@@ -1068,7 +1254,15 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
         filter.addAction(TelephonyIntents.ACTION_SIM_STATE_CHANGED);
         filter.addAction(TelephonyIntents.ACTION_SERVICE_STATE_CHANGED);
         filter.addAction(TelephonyManager.ACTION_PHONE_STATE_CHANGED);
+        //filter.addAction(TelephonyIntents.SPN_STRINGS_UPDATED_ACTION);
         filter.addAction(AudioManager.RINGER_MODE_CHANGED_ACTION);
+
+        /// M: SIM lock unlock request after dismiss
+        filter.addAction(TelephonyIntents.ACTION_UNLOCK_SIM_LOCK);
+
+        /// M: ALPS02139605 It always prompt "incorrect SIM PIN code, you have 3 remaining attempt"
+        filter.addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED);
+
         context.registerReceiver(mBroadcastReceiver, filter);
 
         final IntentFilter bootCompleteFilter = new IntentFilter();
@@ -1332,7 +1526,7 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
     /**
      * Handle {@link #MSG_PHONE_STATE_CHANGED}
      */
-    protected void handlePhoneStateChanged(String newState) {
+        /**protected void handlePhoneStateChanged(String newState) {
         if (DEBUG) Log.d(TAG, "handlePhoneStateChanged(" + newState + ")");
         if (TelephonyManager.EXTRA_STATE_IDLE.equals(newState)) {
             mPhoneState = TelephonyManager.CALL_STATE_IDLE;
@@ -1341,6 +1535,39 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
         } else if (TelephonyManager.EXTRA_STATE_RINGING.equals(newState)) {
             mPhoneState = TelephonyManager.CALL_STATE_RINGING;
         }
+        for (int i = 0; i < mCallbacks.size(); i++) {
+            KeyguardUpdateMonitorCallback cb = mCallbacks.get(i).get();
+            if (cb != null) {
+                cb.onPhoneStateChanged(mPhoneState);
+            }
+        }
+    } ***/
+
+
+    /**
+     * Handle {@link #MSG_PHONE_STATE_CHANGED}
+     *  Set mPhoneState as OFFHOOK if one subscription is in OFFHOOK state.
+     *  Otherwise, set as RINGING state if one subscription is in RINGING state.
+     *  Set as IDLE if all subscriptions are in IDLE state.
+     */
+    protected void handlePhoneStateChanged() {
+        if (DEBUG) {
+            Log.d(TAG, "handlePhoneStateChanged");
+        }
+        mPhoneState = TelephonyManager.CALL_STATE_IDLE;
+        for (int i = 0; i < KeyguardUtils.getNumOfPhone(); i++) {
+            int subId = KeyguardUtils.getSubIdUsingPhoneId(i);
+            int callState = TelephonyManager.getDefault().getCallState(subId);
+            if (callState == TelephonyManager.CALL_STATE_OFFHOOK) {
+                mPhoneState = callState;
+            } else if (callState == TelephonyManager.CALL_STATE_RINGING
+                    && mPhoneState == TelephonyManager.CALL_STATE_IDLE) {
+                mPhoneState = callState;
+            }
+        }
+
+        Log.d(TAG, "handlePhoneStateChanged() - mPhoneState = " + mPhoneState);
+
         for (int i = 0; i < mCallbacks.size(); i++) {
             KeyguardUpdateMonitorCallback cb = mCallbacks.get(i).get();
             if (cb != null) {
@@ -1394,9 +1621,36 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
     }
 
     /**
+     * Handle {@link #MSG_CARRIER_INFO_UPDATE}
+     */
+    private void handleCarrierInfoUpdate(int phoneId) {
+        /*if (DEBUG) {
+            Log.d(TAG, "handleCarrierInfoUpdate: plmn = " + mTelephonyPlmn.get(phoneId)
+                       + ", spn = " + mTelephonySpn.get(phoneId) + ", phoneId = " + phoneId);
+        }
+
+        for (int i = 0; i < mCallbacks.size(); i++) {
+            KeyguardUpdateMonitorCallback cb = mCallbacks.get(i).get();
+            if (cb != null) {
+                cb.onRefreshCarrierInfo();
+            }
+        }*/
+    }
+
+
+    /**
      * Handle {@link #MSG_SIM_STATE_CHANGE}
      */
-    private void handleSimStateChange(int subId, int slotId, State state) {
+    private void printState() {
+        for (int i = 0 ; i < KeyguardUtils.getNumOfPhone() ; i++) {
+            Log.d(TAG, "Phone# " + i + ", state = " + mSimStateOfPhoneId.get(i)) ;
+        }
+    }
+
+    /**
+     * Handle {@link #MSG_SIM_STATE_CHANGE}
+     */
+/**    private void handleSimStateChange(int subId, int slotId, State state) {
 
         if (DEBUG_SIM_STATES) {
             Log.d(TAG, "handleSimStateChange(subId=" + subId + ", slotId="
@@ -1428,6 +1682,35 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
                 }
             }
         }
+    } ***/
+
+    /**
+     * Handle {@link #MSG_SIM_STATE_CHANGE}
+     */
+    private void handleSimStateChange(SimData simArgs) {
+        final IccCardConstants.State state = simArgs.simState;
+
+        if (DEBUG) {
+            Log.d(TAG, "handleSimStateChange: intentValue = " + simArgs + " "
+                    + "state resolved to " + state.toString() + " phoneId=" + simArgs.phoneId);
+        }
+        if (state != IccCardConstants.State.UNKNOWN &&
+            (state == IccCardConstants.State.NETWORK_LOCKED ||
+             state != mSimStateOfPhoneId.get(simArgs.phoneId))) {
+
+            mSimStateOfPhoneId.put(simArgs.phoneId, state);
+
+            int phoneId = simArgs.phoneId;
+
+            printState() ;
+
+            for (int i = 0; i < mCallbacks.size(); i++) {
+                KeyguardUpdateMonitorCallback cb = mCallbacks.get(i).get();
+                if (cb != null) {
+                    cb.onSimStateChangedUsingPhoneId(phoneId, state);
+                }
+            }
+        }
     }
 
     /**
@@ -1439,10 +1722,11 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
                     "handleServiceStateChange(subId=" + subId + ", serviceState=" + serviceState);
         }
 
-        if (!SubscriptionManager.isValidSubscriptionId(subId)) {
+        // M: ALPS02790398 No SIM card + airplane on, ecc still display.
+        /*if (!SubscriptionManager.isValidSubscriptionId(subId)) {
             Log.w(TAG, "invalid subId in handleServiceStateChange()");
             return;
-        }
+        }*/
 
         mServiceStates.put(subId, serviceState);
 
@@ -1536,7 +1820,13 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
         }
 
         // change in battery level while plugged in
-        if (nowPluggedIn && old.level != current.level) {
+        // if (nowPluggedIn && old.level != current.level) {
+        /// M: We remove "nowPluggedIn" condition here.
+        /// To fix the issue that if HW give up a low battery level(below threshold)
+        /// and then a high battery level(above threshold) while device is not pluggin,
+        /// then Keyguard may never be able be show
+        /// charging text on screen when pluggin
+        if (old.level != current.level) {
             return true;
         }
 
@@ -1551,6 +1841,39 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
         }
 
         return false;
+    }
+
+    /**
+     * @param intent The intent with action {@link TelephonyIntents#SPN_STRINGS_UPDATED_ACTION}
+     * @return The string to use for the plmn, or null if it should not be shown.
+     */
+    private CharSequence getTelephonyPlmnFrom(Intent intent) {
+        if (intent.getBooleanExtra(TelephonyIntents.EXTRA_SHOW_PLMN, false)) {
+            final String plmn = intent.getStringExtra(TelephonyIntents.EXTRA_PLMN);
+            return (plmn != null) ? plmn : getDefaultPlmn();
+        }
+        return null;
+    }
+
+    /**
+     * @return The default plmn (no service)
+     */
+    public CharSequence getDefaultPlmn() {
+        return mContext.getResources().getText(R.string.keyguard_carrier_default);
+    }
+
+    /**
+     * @param intent The intent with action {@link Telephony.Intents#SPN_STRINGS_UPDATED_ACTION}
+     * @return The string to use for the plmn, or null if it should not be shown.
+     */
+    private CharSequence getTelephonySpnFrom(Intent intent) {
+        if (intent.getBooleanExtra(TelephonyIntents.EXTRA_SHOW_SPN, false)) {
+            final String spn = intent.getStringExtra(TelephonyIntents.EXTRA_SPN);
+            if (spn != null) {
+                return spn;
+            }
+        }
+        return null;
     }
 
     /**
@@ -1585,6 +1908,10 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
         mCallbacks.add(new WeakReference<KeyguardUpdateMonitorCallback>(callback));
         removeCallback(null); // remove unused references
         sendUpdates(callback);
+
+        ///M: in order to improve performance, add a flag
+        // to fliter redundant visibility change callbacks
+        mNewClientRegUpdateMonitor = true;
     }
 
     private void sendUpdates(KeyguardUpdateMonitorCallback callback) {
@@ -1595,9 +1922,14 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
         callback.onPhoneStateChanged(mPhoneState);
         callback.onRefreshCarrierInfo();
         callback.onClockVisibilityChanged();
-        for (Entry<Integer, SimData> data : mSimDatas.entrySet()) {
+        /**for (Entry<Integer, SimData> data : mSimDatas.entrySet()) {
             final SimData state = data.getValue();
             callback.onSimStateChanged(state.subId, state.slotId, state.simState);
+        } **/
+        for (int phoneId = 0 ; phoneId < KeyguardUtils.getNumOfPhone() ; phoneId++) {
+            //callback.onRefreshCarrierInfo(phoneId, mTelephonyPlmn.get(phoneId),
+            //                              mTelephonySpn.get(phoneId));
+            callback.onSimStateChangedUsingPhoneId(phoneId, mSimStateOfPhoneId.get(phoneId));
         }
     }
 
@@ -1615,6 +1947,15 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
         message.sendToTarget();
     }
 
+    /** M:
+     * get SIM state of phoneId.
+     * @param phoneId phoneId.
+     * @return sim state.
+     */
+    public IccCardConstants.State getSimStateOfPhoneId(int phoneId) {
+        return mSimStateOfPhoneId.get(phoneId);
+    }
+
     /**
      * Report that the user successfully entered the SIM PIN or PUK/SIM PIN so we
      * have the information earlier than waiting for the intent
@@ -1622,11 +1963,15 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
      *
      * NOTE: Because handleSimStateChange() invokes callbacks immediately without going
      * through mHandler, this *must* be called from the UI thread.
+     * @param phoneId phoneId.
      */
-    public void reportSimUnlocked(int subId) {
-        if (DEBUG_SIM_STATES) Log.v(TAG, "reportSimUnlocked(subId=" + subId + ")");
-        int slotId = SubscriptionManager.getSlotId(subId);
-        handleSimStateChange(subId, slotId, State.READY);
+    /// M: modify for sim lock
+    public void reportSimUnlocked(int phoneId) {
+        // if (DEBUG_SIM_STATES) Log.v(TAG, "reportSimUnlocked(subId=" + subId + ")");
+        // int slotId = SubscriptionManager.getSlotId(subId);
+        // handleSimStateChange(subId, slotId, State.READY);
+        int subId = KeyguardUtils.getSubIdUsingPhoneId(phoneId) ;
+        handleSimStateChange(new SimData(IccCardConstants.State.READY, phoneId, subId));
     }
 
     /**
@@ -1646,15 +1991,41 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
     }
 
     /**
+     * Get PLMN of phone id.
+     * @param phoneId phoneId.
+     * @return PLMN.
+     */
+    public CharSequence getTelephonyPlmn(int phoneId) {
+        return mTelephonyPlmn.get(phoneId);
+    }
+
+    /**
+     * Get SPN of phone id.
+     * @param phoneId phoneId.
+     * @return SPN.
+     */
+    public CharSequence getTelephonySpn(int phoneId) {
+        return mTelephonySpn.get(phoneId);
+    }
+
+    /**
      * @return Whether the device is provisioned (whether they have gone through
      *   the setup wizard)
      */
     public boolean isDeviceProvisioned() {
-        return mDeviceProvisioned;
+        if (mDeviceProvisioned == false) {
+            Log.d(TAG, "isDeviceProvisioned get DEVICE_PROVISIONED from db again !!");
+            return (0 != Settings.Global.getInt(
+                    mContext.getContentResolver(), Settings.Global.DEVICE_PROVISIONED, 0));
+        } else {
+            Log.d(TAG, "mDeviceProvisioned == true");
+            return mDeviceProvisioned;
+        }
     }
 
     public void clearFailedUnlockAttempts() {
         mFailedAttempts.delete(sCurrentUser);
+        mFailedBiometricUnlockAttempts = 0;
     }
 
     public int getFailedUnlockAttempts(int userId) {
@@ -1674,13 +2045,34 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
         return isSimPinSecure();
     }
 
-    public boolean isSimPinSecure() {
+    // public boolean isSimPinSecure() {
         // True if any SIM is pin secure
-        for (SubscriptionInfo info : getSubscriptionInfo(false /* forceReload */)) {
-            if (isSimPinSecure(getSimState(info.getSubscriptionId()))) return true;
+        // for (SubscriptionInfo info : getSubscriptionInfo(false /* forceReload */)) {
+        //    if (isSimPinSecure(getSimState(info.getSubscriptionId()))) return true;
+     //   }
+     //   return false;
+    // }
+
+    public boolean isSimLocked() {
+        boolean bSimLocked = false;
+
+        for (int phoneId = 0; phoneId < KeyguardUtils.getNumOfPhone() ; phoneId++) {
+            if (isSimLocked(mSimStateOfPhoneId.get(phoneId))) {
+                bSimLocked = true;
+                break;
+            }
         }
-        return false;
+        return bSimLocked;
     }
+
+    public static boolean isSimLocked(IccCardConstants.State state) {
+        return state == IccCardConstants.State.PIN_REQUIRED
+        || state == IccCardConstants.State.PUK_REQUIRED
+        || (state == IccCardConstants.State.NETWORK_LOCKED &&
+            KeyguardUtils.isMediatekSimMeLockSupport())
+        || state == IccCardConstants.State.PERM_DISABLED;
+    }
+
 
     public State getSimState(int subId) {
         if (mSimDatas.containsKey(subId)) {
@@ -1694,7 +2086,6 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
      * @return true if and only if the state has changed for the specified {@code slotId}
      */
     private boolean refreshSimState(int subId, int slotId) {
-
         // This is awful. It exists because there are two APIs for getting the SIM status
         // that don't return the complete set of values and have different types. In Keyguard we
         // need IccCardConstants, but TelephonyManager would only give us
@@ -1708,7 +2099,7 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
             Log.w(TAG, "Unknown sim state: " + simState);
             state = State.UNKNOWN;
         }
-        SimData data = mSimDatas.get(subId);
+        /**SimData data = mSimDatas.get(subId);
         final boolean changed;
         if (data == null) {
             data = new SimData(state, slotId, subId);
@@ -1718,14 +2109,57 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
             changed = data.simState != state;
             data.simState = state;
         }
+        return changed; **/
+
+        State oriState = mSimStateOfPhoneId.get(slotId) ;
+        boolean changed;
+        changed = oriState != state;
+        // M: add for ALPS02779674
+        if (oriState == State.READY && state == State.PIN_REQUIRED) {
+            changed = false;
+        }
+
+        if (changed) {
+            mSimStateOfPhoneId.put(slotId, state);
+        }
+
+        Log.d(TAG, "refreshSimState() - sub = " + subId + " phoneId = " + slotId
+            + ", ori-state = " + oriState + ", new-state = " + state + ", changed = "
+            + changed) ;
         return changed;
     }
 
-    public static boolean isSimPinSecure(IccCardConstants.State state) {
+    /**public static boolean isSimPinSecure(IccCardConstants.State state) {
         final IccCardConstants.State simState = state;
         return (simState == IccCardConstants.State.PIN_REQUIRED
                 || simState == IccCardConstants.State.PUK_REQUIRED
                 || simState == IccCardConstants.State.PERM_DISABLED);
+    } ***/
+
+    public boolean isSimPinSecure() {
+        boolean isSecure = false;
+        for (int phoneId = 0 ; phoneId < KeyguardUtils.getNumOfPhone() ; phoneId++) {
+            if (isSimPinSecure(phoneId)) {
+                isSecure = true;
+                break;
+            }
+        }
+        return isSecure;
+    }
+
+    /** M:
+       * Check if the subscription is in SIM pin lock state and wait user to unlock.
+       * @param phoneId phoneId.
+       * @return Returns true if the subscription is in SIM pin lock state and not yet dismissed.
+       **/
+    public boolean isSimPinSecure(int phoneId) {
+        IccCardConstants.State state = mSimStateOfPhoneId.get(phoneId);
+        final IccCardConstants.State simState = state;
+        return ((simState == IccCardConstants.State.PIN_REQUIRED
+                || simState == IccCardConstants.State.PUK_REQUIRED
+                || (simState == IccCardConstants.State.NETWORK_LOCKED) &&
+                    KeyguardUtils.isMediatekSimMeLockSupport())
+                && !getPinPukMeDismissFlagOfPhoneId(phoneId));
     }
 
     public DisplayClientState getCachedDisplayClientState() {
@@ -1787,9 +2221,12 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
      * @param state
      * @return subid or {@link SubscriptionManager#INVALID_SUBSCRIPTION_ID} if none found
      */
+///TODO: temp disabled
+/*  M:
     public int getNextSubIdForState(State state) {
-        List<SubscriptionInfo> list = getSubscriptionInfo(false /* forceReload */);
-        int resultId = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
+*/
+//        List<SubscriptionInfo> list = getSubscriptionInfo(false /* forceReload */);
+/*        int resultId = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
         int bestSlotId = Integer.MAX_VALUE; // Favor lowest slot first
         for (int i = 0; i < list.size(); i++) {
             final SubscriptionInfo info = list.get(i);
@@ -1802,14 +2239,65 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
         }
         return resultId;
     }
-
+    */
     public SubscriptionInfo getSubscriptionInfoForSubId(int subId) {
-        List<SubscriptionInfo> list = getSubscriptionInfo(false /* forceReload */);
+        return getSubscriptionInfoForSubId(subId, false) ;
+    }
+
+    /**
+     * get subscription info for related sub id.
+     * @param subId subId
+     * @param forceReload force to reload or not.
+     * @return SubscriptionInfo
+     */
+    public SubscriptionInfo getSubscriptionInfoForSubId(int subId, boolean forceReload) {
+        List<SubscriptionInfo> list = getSubscriptionInfo(forceReload /* forceReload */);
         for (int i = 0; i < list.size(); i++) {
             SubscriptionInfo info = list.get(i);
             if (subId == info.getSubscriptionId()) return info;
         }
         return null; // not found
+    }
+
+    /**
+     * get sim lock phone id.
+     * @return phone id.
+     **/
+    public int getSimPinLockPhoneId() {
+        int currentSimPinPhoneId = KeyguardUtils.INVALID_PHONE_ID;
+        for (int phoneId = 0 ; phoneId < KeyguardUtils.getNumOfPhone() ; phoneId++) {
+            if (DEBUG) {
+                Log.d(TAG, "getSimPinLockSubId, phoneId=" + phoneId
+                    + " mSimStateOfPhoneId.get(phoneId)=" + mSimStateOfPhoneId.get(phoneId));
+            }
+            if (mSimStateOfPhoneId.get(phoneId) == IccCardConstants.State.PIN_REQUIRED
+                && !getPinPukMeDismissFlagOfPhoneId(phoneId)) {
+                currentSimPinPhoneId = phoneId;
+                break;
+            }
+        }
+        return currentSimPinPhoneId;
+    }
+
+    /**
+     * get sim puk lock phone id.
+     * @return phone id.
+     **/
+    public int getSimPukLockPhoneId() {
+        int currentSimPukPhoneId = KeyguardUtils.INVALID_PHONE_ID;
+        for (int phoneId = 0 ; phoneId < KeyguardUtils.getNumOfPhone() ; phoneId++) {
+            if (DEBUG) {
+                Log.d(TAG, "getSimPukLockSubId, phoneId=" + phoneId
+                    + " mSimStateOfSub.get(phoneId)=" + mSimStateOfPhoneId.get(phoneId));
+            }
+            if (mSimStateOfPhoneId.get(phoneId) == IccCardConstants.State.PUK_REQUIRED
+                && !getPinPukMeDismissFlagOfPhoneId(phoneId)
+                && getRetryPukCountOfPhoneId(phoneId) != 0) {
+                currentSimPukPhoneId = phoneId;
+                break;
+            }
+        }
+        return currentSimPukPhoneId;
     }
 
     public void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
@@ -1842,5 +2330,382 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
             pw.println("    timedout=" + hasFingerprintUnlockTimedOut(userId));
             pw.println("    trustManaged=" + getUserTrustIsManaged(userId));
         }
+    }
+
+    /********************************************************
+     ** Mediatek add begin
+     ********************************************************/
+
+    /// M: init members
+    private void initMembers() {
+
+        if (DEBUG) {
+            Log.d(TAG, "initMembers() - NumOfPhone=" + KeyguardUtils.getNumOfPhone());
+        }
+
+        // Take a guess at initial SIM state, battery status and PLMN until we get an update
+        for (int i = 0; i < KeyguardUtils.getNumOfPhone(); i++) {
+            mSimStateOfPhoneId.put(i, IccCardConstants.State.UNKNOWN);
+            mTelephonyPlmn.put(i, getDefaultPlmn());
+            mTelephonyCsgId.put(i, "") ;
+            mTelephonyHnbName.put(i, "");
+
+            //ME lock Related
+            mSimMeCategory.put(i, DEFAULT_ME_CATEGORY) ;
+            mSimMeLeftRetryCount.put(i, DEFAULT_ME_RETRY_COUNT) ;
+        }
+
+        // Log.d(TAG, "initMembers() , mIsDisplayDevice=" + mIsDisplayDevice);
+    }
+
+    /// ---- Telephony Info begins ----
+    /**
+     ** M: Used to verify the lock type
+     */
+    public enum SimLockType {
+        SIM_LOCK_PIN,
+        SIM_LOCK_PUK,
+        SIM_LOCK_ME
+    }
+
+    ///M: in order to improve performance, add a flag to
+    // fliter redundant visibility change callbacks
+    private boolean mNewClientRegUpdateMonitor = false;
+    private boolean mShowing = true;
+
+    /// M: SIM ME lock related info
+    //current unlocking category of each SIM card.
+    private static final int DEFAULT_ME_CATEGORY = 0 ;
+    private HashMap<Integer, Integer> mSimMeCategory = new HashMap<Integer, Integer>();
+    //current left retry count of current ME lock category.
+    private static final int DEFAULT_ME_RETRY_COUNT = 5 ;
+    private HashMap<Integer, Integer> mSimMeLeftRetryCount = new HashMap<Integer, Integer>();
+    private static final String QUERY_SIMME_LOCK_RESULT =
+            "com.mediatek.phone.QUERY_SIMME_LOCK_RESULT";
+    private static final String SIMME_LOCK_LEFT_COUNT = "com.mediatek.phone.SIMME_LOCK_LEFT_COUNT";
+
+    ///M: Dismiss flags
+    private static final int PIN_PUK_ME_RESET = 0x0000;
+    private static final int PIN_PUK_ME_DISMISSED = 0x0001;
+
+
+    /// M: Flag used to indicate weather sim1 or sim2 card's pin/puk is dismissed by user.
+    private int mPinPukMeDismissFlag = PIN_PUK_ME_RESET;
+
+    private HashMap<Integer, CharSequence> mTelephonyHnbName = new HashMap<Integer, CharSequence>();
+    private HashMap<Integer, CharSequence> mTelephonyCsgId = new HashMap<Integer, CharSequence>();
+
+    // M: ALPS02736403 Fix SIM PIN not show when flight on
+    private WifiManager mWifiManager;
+
+    private boolean isAirplaneModeOn() {
+        return Settings.Global.getInt(mContext.getContentResolver(),
+                    Settings.Global.AIRPLANE_MODE_ON, 0) == 1;
+    }
+
+    /**
+     ** M: If wifi calling project, we must opened the PinPukMe flag to show unlock views.
+     *
+     * @param simState the SIM state.
+     */
+    public void setDismissFlagWhenWfcOn(IccCardConstants.State simState) {
+        if (simState == IccCardConstants.State.PIN_REQUIRED
+                || simState == IccCardConstants.State.PUK_REQUIRED
+                || simState == IccCardConstants.State.NETWORK_LOCKED) {
+            if (isAirplaneModeOn() && isWifiEnabled()
+                    && KeyguardUtils.isFlightModePowerOffMd()) {
+                for (int i = 0; i < KeyguardUtils.getNumOfPhone(); i++) {
+                    setPinPukMeDismissFlagOfPhoneId(i, false) ;
+                    Log.d(TAG, "Wifi calling opened MD, "
+                        +"setPinPukMeDismissFlagOfPhoneId false: " + i);
+                }
+            }
+        }
+    }
+
+    private boolean isWifiEnabled() {
+        int wifiState = mWifiManager.getWifiState();
+        Log.d(TAG, "wifi state:" + wifiState);
+        return (wifiState != WifiManager.WIFI_STATE_DISABLED);
+    }// end ALPS02736403 Fix SIM PIN not show when flight on
+
+    /**
+     ** M: Used to set specified sim card's pin or puk dismiss flag
+     *
+     * @param phoneId the id of the phone to set dismiss flag
+     * @param dismiss true to dismiss this flag, false to clear
+     */
+    public void setPinPukMeDismissFlagOfPhoneId(int phoneId, boolean dismiss) {
+        Log.d(TAG, "setPinPukMeDismissFlagOfPhoneId() - phoneId = " + phoneId) ;
+
+        if (!KeyguardUtils.isValidPhoneId(phoneId)) {
+            return;
+        }
+
+        int flag2Dismiss = PIN_PUK_ME_RESET;
+
+        flag2Dismiss = PIN_PUK_ME_DISMISSED << phoneId;
+
+        if (dismiss) {
+            mPinPukMeDismissFlag |= flag2Dismiss;
+        } else {
+            mPinPukMeDismissFlag &= ~flag2Dismiss;
+        }
+    }
+
+    /**
+     ** M: Used to get specified sim card's pin or puk dismiss flag.
+     * @param phoneId the id of the phone to get dismiss flag
+     * @return Returns false if dismiss flag is set.
+     */
+    public boolean getPinPukMeDismissFlagOfPhoneId(int phoneId) {
+        int flag2Check = PIN_PUK_ME_RESET;
+        boolean result = false;
+
+        flag2Check = PIN_PUK_ME_DISMISSED << phoneId;
+        result = (mPinPukMeDismissFlag & flag2Check) == flag2Check ? true : false;
+
+        return result;
+    }
+
+    /**
+     *  M:Get the remaining puk count of the sim card with the simId.
+     * @param phoneId the phone ID
+     * @return Return  the PUK retry count
+     */
+    public int getRetryPukCountOfPhoneId(final int phoneId) {
+        int GET_SIM_RETRY_EMPTY = -1; ///M: The default value of the remaining puk count
+
+        if (phoneId == 3) {
+            return SystemProperties.getInt("gsm.sim.retry.puk1.4", GET_SIM_RETRY_EMPTY);
+        } else if (phoneId == 2) {
+            return SystemProperties.getInt("gsm.sim.retry.puk1.3", GET_SIM_RETRY_EMPTY);
+        } else if (phoneId == 1) {
+            return SystemProperties.getInt("gsm.sim.retry.puk1.2", GET_SIM_RETRY_EMPTY);
+        } else {
+            return SystemProperties.getInt("gsm.sim.retry.puk1", GET_SIM_RETRY_EMPTY);
+        }
+    }
+
+    /**
+     * M: Start a thread to query SIM ME status.
+     */
+    private class simMeStatusQueryThread extends Thread {
+        SimData simArgs;
+
+        simMeStatusQueryThread(SimData simArgs) {
+            this.simArgs = simArgs;
+        }
+
+        @Override
+        public void run() {
+            try {
+                mSimMeCategory.put(simArgs.phoneId, simArgs.simMECategory);
+                Log.d(TAG, "queryNetworkLock, phoneId =" + simArgs.phoneId + ", simMECategory ="
+                        + simArgs.simMECategory);
+
+                if (simArgs.simMECategory < 0 || simArgs.simMECategory > 5) {
+                    return;
+                }
+
+                int subId = KeyguardUtils.getSubIdUsingPhoneId(simArgs.phoneId) ;
+                Bundle bundle = ITelephonyEx.Stub.asInterface(ServiceManager.getService("phoneEx"))
+                        .queryNetworkLock(subId, simArgs.simMECategory);
+                boolean query_result = bundle.getBoolean(QUERY_SIMME_LOCK_RESULT, false);
+
+                Log.d(TAG, "queryNetworkLock, " + "query_result =" + query_result);
+
+                if (query_result) {
+                    mSimMeLeftRetryCount.put(simArgs.phoneId,
+                                             bundle.getInt(SIMME_LOCK_LEFT_COUNT, 5));
+                } else {
+                    Log.e(TAG, "queryIccNetworkLock result fail");
+                }
+                mHandler.sendMessage(mHandler.obtainMessage(MSG_SIM_STATE_CHANGE, simArgs));
+            } catch (Exception e) {
+                Log.e(TAG, "queryIccNetworkLock got exception: " + e.getMessage());
+            }
+        }
+    }
+
+    /** get ME Category.
+     * @param phoneId phoneId
+     * @return MeCategory.
+     */
+    public int getSimMeCategoryOfPhoneId(int phoneId) {
+        return mSimMeCategory.get(phoneId);
+    }
+
+    /** get ME Retrycount.
+     * @param phoneId phoneId
+     * @return me retry count.
+     */
+    public int getSimMeLeftRetryCountOfPhoneId(int phoneId) {
+        return mSimMeLeftRetryCount.get(phoneId);
+    }
+
+    /** Minus retry count of ME.
+     * @param phoneId phoneId
+     */
+    public void minusSimMeLeftRetryCountOfPhoneId(int phoneId) {
+        int simMeRetryCount = mSimMeLeftRetryCount.get(phoneId) ;
+        if (simMeRetryCount > 0) {
+            mSimMeLeftRetryCount.put(phoneId, simMeRetryCount - 1);
+        }
+    }
+
+    /** M: LTE CSG feature
+     * @param intent The intent with action {@link Telephony.Intents#SPN_STRINGS_UPDATED_ACTION}
+     * @return The string to use for the HNB name, or null if it should not be shown.
+     */
+    private CharSequence getTelephonyHnbNameFrom(Intent intent) {
+        final String hnbName = intent.getStringExtra(TelephonyIntents.EXTRA_HNB_NAME);
+        return hnbName;
+    }
+
+    /** M: LTE CSG feature
+     * @param intent The intent with action {@link Telephony.Intents#SPN_STRINGS_UPDATED_ACTION}
+     * @return The string to use for the CSG id, or null if it should not be shown.
+     */
+    private CharSequence getTelephonyCsgIdFrom(Intent intent) {
+        final String csgId = intent.getStringExtra(TelephonyIntents.EXTRA_CSG_ID);
+        return csgId;
+    }
+
+    /** Get HNB.
+     * @param phoneId phoneId.
+     * @return HNB name.
+     */
+    public CharSequence getTelephonyHnbNameOfPhoneId(int phoneId) {
+        return mTelephonyHnbName.get(phoneId);
+    }
+
+    /** Get CSG ID.
+     * @param phoneId phoneId.
+     * @return CSG ID.
+     */
+    public CharSequence getTelephonyCsgIdOfPhoneId(int phoneId) {
+        return mTelephonyCsgId.get(phoneId);
+    }
+
+    /**
+     * Handle {@link #MSG_AIRPLANE_MODE_UPDATE}
+     */
+    private static final int MSG_AIRPLANE_MODE_UPDATE = 1015;
+    private void handleAirPlaneModeUpdate(boolean airPlaneModeEnabled) {
+        ///M: [ALPS01761127]
+        ///   After AirPlane on, the sim state will keep as "PIN_REQUIRED".
+        ///   After AirPlane off, if PowerOffModem is true,
+        ///   Modem will send "NOT_READY" and "PIN_REQUIRED" after .
+        ///   So we do not need to send PIN_REQUIRED here.
+        if (airPlaneModeEnabled == false) {
+            for (int i = 0; i < KeyguardUtils.getNumOfPhone(); i++) {
+                setPinPukMeDismissFlagOfPhoneId(i, false) ;
+                Log.d(TAG, "setPinPukMeDismissFlagOfPhoneId false: " + i);
+            }
+
+            for (int phoneId = 0; phoneId < KeyguardUtils.getNumOfPhone(); phoneId++) {
+                if (DEBUG) {
+                    Log.d(TAG, "phoneId = " + phoneId +
+                               " state=" + mSimStateOfPhoneId.get(phoneId));
+                }
+                if (mSimStateOfPhoneId.get(phoneId) == null ||
+                        mSimStateOfPhoneId.get(phoneId).equals("")) {
+                    continue;
+                }
+                switch (mSimStateOfPhoneId.get(phoneId)) {
+                    case PIN_REQUIRED:
+                    case PUK_REQUIRED:
+                    case NETWORK_LOCKED:
+                        /// 1. keep the original state
+                        IccCardConstants.State oriState = mSimStateOfPhoneId.get(phoneId);
+                        /// 2. reset state of subid
+                        mSimStateOfPhoneId.put(phoneId, IccCardConstants.State.UNKNOWN);
+                        /// 3. create the simData
+                        int meCategory = 0 ;
+                        if (mSimMeCategory.get(phoneId) != null) {
+                            meCategory = mSimMeCategory.get(phoneId) ;
+                        }
+                        SimData simData = new SimData(oriState,
+                                                phoneId,
+                                                KeyguardUtils.getSubIdUsingPhoneId(phoneId),
+                                                meCategory);
+                        if (DEBUG) {
+                            Log.v(TAG, "SimData state=" + simData.simState
+                                + ", phoneId=" + simData.phoneId + ", subId=" + simData.subId
+                                + ", SimData.simMECategory = " + simData.simMECategory);
+                        }
+                        proceedToHandleSimStateChanged(simData) ;
+
+                        break ;
+                    default:
+                        break;
+                } //end switch
+            } //end for
+        } else if (airPlaneModeEnabled == true && KeyguardUtils.isFlightModePowerOffMd()) {
+            ///M: fix ALPS01831621
+            ///   we supress all PIN/PUK/ME locks when receiving Flight-Mode turned on.
+            Log.d(TAG, "Air mode is on, supress all SIM PIN/PUK/ME Lock views.") ;
+            for (int i = 0; i < KeyguardUtils.getNumOfPhone(); i++) {
+                setPinPukMeDismissFlagOfPhoneId(i, true) ;
+                Log.d(TAG, "setPinPukMeDismissFlagOfPhoneId true: " + i);
+            }
+        }
+
+        for (int i = 0; i < mCallbacks.size(); i++) {
+            KeyguardUpdateMonitorCallback cb = mCallbacks.get(i).get();
+            if (cb != null) {
+                cb.onAirPlaneModeChanged(airPlaneModeEnabled);
+                // M: add for ALPS02432499 update carrier when air plane mode change.
+                cb.onRefreshCarrierInfo();
+            }
+        }
+    }
+
+    /// ---- Telephony Info ends ----
+
+    /// --- Added for Voice unlock ---
+    private static final int FAILED_BIOMETRIC_UNLOCK_ATTEMPTS_BEFORE_BACKUP = 3;
+    private int mFailedBiometricUnlockAttempts = 0;
+    private boolean mAlternateUnlockEnabled;
+
+    public boolean isAlternateUnlockEnabled() {
+        return mAlternateUnlockEnabled;
+    }
+
+    public boolean isSwitchingUser() {
+        return mSwitchingUser;
+    }
+
+    /**
+     * @return if the keyguard is currently in bouncer mode.
+     */
+    public boolean isKeyguardBouncer() {
+        return mBouncer;
+    }
+
+    public boolean isKeyguardVisible() {
+        return mKeyguardIsVisible;
+    }
+
+    public int getPhoneState() {
+        return mPhoneState;
+    }
+
+    public void reportFailedBiometricUnlockAttempt() {
+        mFailedBiometricUnlockAttempts++;
+    }
+
+    public boolean getMaxBiometricUnlockAttemptsReached() {
+        return mFailedBiometricUnlockAttempts >= FAILED_BIOMETRIC_UNLOCK_ATTEMPTS_BEFORE_BACKUP;
+    }
+
+    public void setAlternateUnlockEnabled(boolean enabled) {
+        Log.d(TAG, "setAlternateUnlockEnabled(enabled = " + enabled + ")") ;
+        mAlternateUnlockEnabled = enabled;
+    }
+
+    public boolean isScreenOn() {
+        return mScreenOn;
     }
 }

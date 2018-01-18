@@ -27,7 +27,6 @@ import com.android.systemui.statusbar.policy.NetworkController.SignalCallback;
 import java.util.ArrayList;
 import java.util.List;
 
-
 /**
  * Implements network listeners and forwards the calls along onto other listeners but on
  * the current or specified Looper.
@@ -120,19 +119,23 @@ public class CallbackHandler extends Handler implements EmergencyListener, Signa
             }
         });
     }
-
+    /// M: Modify to support [Network Type and volte on Statusbar], change the implement methods,
+    /// add more parameter for network type and volte.
     @Override
     public void setMobileDataIndicators(final IconState statusIcon, final IconState qsIcon,
-            final int statusType, final int qsType,final boolean activityIn,
+            final int statusType, final int networkIcon, final int volteType,
+            final int qsType,final boolean activityIn,
             final boolean activityOut, final String typeContentDescription,
             final String description, final boolean isWide, final int subId) {
         post(new Runnable() {
             @Override
             public void run() {
                 for (SignalCallback signalCluster : mSignalCallbacks) {
-                    signalCluster.setMobileDataIndicators(statusIcon, qsIcon, statusType, qsType,
-                            activityIn, activityOut, typeContentDescription, description, isWide,
-                            subId);
+                    ///M: Support[Network Type and volte on StatusBar].
+                    /// add more parameter networkIcon and volte.
+                    signalCluster.setMobileDataIndicators(statusIcon, qsIcon, statusType,
+                            networkIcon, volteType, qsType, activityIn, activityOut,
+                            typeContentDescription, description, isWide, subId);
                 }
             }
         });
@@ -160,12 +163,12 @@ public class CallbackHandler extends Handler implements EmergencyListener, Signa
 
     @Override
     public void setEthernetIndicators(IconState icon) {
-        obtainMessage(MSG_ETHERNET_CHANGED, icon).sendToTarget();;
+        obtainMessage(MSG_ETHERNET_CHANGED, icon).sendToTarget();
     }
 
     @Override
     public void setIsAirplaneMode(IconState icon) {
-        obtainMessage(MSG_AIRPLANE_MODE_CHANGED, icon).sendToTarget();;
+        obtainMessage(MSG_AIRPLANE_MODE_CHANGED, icon).sendToTarget();
     }
 
     public void setListening(EmergencyListener listener, boolean listening) {
@@ -175,5 +178,4 @@ public class CallbackHandler extends Handler implements EmergencyListener, Signa
     public void setListening(SignalCallback listener, boolean listening) {
         obtainMessage(MSG_ADD_REMOVE_SIGNAL, listening ? 1 : 0, 0, listener).sendToTarget();
     }
-
 }

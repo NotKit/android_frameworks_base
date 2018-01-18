@@ -172,7 +172,9 @@ class DimLayerController {
         if (DEBUG_DIM_LAYER) Slog.v(TAG, "stopDimmingIfNeeded,"
                 + " dimLayerUser=" + dimLayerUser.toShortString()
                 + " state.continueDimming=" + state.continueDimming
-                + " state.dimLayer.isDimming=" + state.dimLayer.isDimming());
+                + " state.dimLayer.isDimming=" + state.dimLayer.isDimming()
+                + " mWillReplaceWindow="
+                + ((state.animator != null) ? state.animator.mWin.mWillReplaceWindow : "null"));
         if (state.animator != null && state.animator.mWin.mWillReplaceWindow) {
             return;
         }

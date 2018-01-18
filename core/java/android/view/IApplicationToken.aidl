@@ -25,5 +25,7 @@ interface IApplicationToken
     void windowsGone();
     boolean keyDispatchingTimedOut(String reason);
     long getKeyDispatchingTimeout();
+    /// M: KeyDispatchingTimeout predump mechanism
+    int getFocusAppPid();
 }
 

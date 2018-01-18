@@ -19,6 +19,7 @@ package com.android.server.policy.keyguard;
 import android.app.ActivityManager;
 import android.content.Context;
 import android.os.RemoteException;
+import android.util.Log;
 import android.util.Slog;
 
 import com.android.internal.policy.IKeyguardService;
@@ -46,6 +47,9 @@ public class KeyguardStateMonitor extends IKeyguardStateCallback.Stub {
     private volatile boolean mTrusted = false;
     private volatile boolean mHasLockscreenWallpaper = false;
 
+    ///M: added for ALPS01933830
+    private volatile boolean mIsAnthTheftEnabled;
+
     private int mCurrentUserId;
 
     private final LockPatternUtils mLockPatternUtils;
@@ -68,7 +72,7 @@ public class KeyguardStateMonitor extends IKeyguardStateCallback.Stub {
     }
 
     public boolean isSecure(int userId) {
-        return mLockPatternUtils.isSecure(userId) || mSimSecure;
+        return mLockPatternUtils.isSecure(userId) || mSimSecure || mIsAnthTheftEnabled;
     }
 
     public boolean isInputRestricted() {
@@ -115,6 +119,14 @@ public class KeyguardStateMonitor extends IKeyguardStateCallback.Stub {
     @Override // Binder interface
     public void onHasLockscreenWallpaperChanged(boolean hasLockscreenWallpaper) {
         mHasLockscreenWallpaper = hasLockscreenWallpaper;
+    }
+
+    ///M: added for ALPS01933830.
+    @Override
+    public void onAntiTheftStateChanged(boolean antiTheftEnabled) {
+        mIsAnthTheftEnabled = antiTheftEnabled ;
+        Log.d(TAG, "Wenxiang:"+"onAntiTheftStateChanged() - mIsAnthTheftEnabled = "
+                + mIsAnthTheftEnabled);
     }
 
     public void dump(String prefix, PrintWriter pw) {

@@ -63,7 +63,7 @@ class CursorFilter extends Filter {
     protected void publishResults(CharSequence constraint, FilterResults results) {
         Cursor oldCursor = mClient.getCursor();
         
-        if (results.values != null && results.values != oldCursor) {
+        if (results.values != oldCursor) {
             mClient.changeCursor((Cursor) results.values);
         }
     }

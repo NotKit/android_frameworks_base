@@ -50,4 +50,8 @@ oneway interface IInCallService {
     void silenceRinger();
 
     void onConnectionEvent(String callId, String event, in Bundle extras);
+
+    void updateRecordState(int state, int customValue);
+
+    void onStorageFull();
 }

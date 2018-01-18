@@ -123,6 +123,13 @@ public class KeyguardUpdateMonitorCallback {
     public void onSimStateChanged(int subId, int slotId, IccCardConstants.State simState) { }
 
     /**
+     * Called when the SIM state of a subscription changes.
+     * @param phoneId The phone id which SIM state changed.
+     * @param simState simState
+     */
+    public void onSimStateChangedUsingPhoneId(int phoneId, IccCardConstants.State simState) { }
+
+    /**
      * Called when the user's info changed.
      */
     public void onUserInfoChanged(int userId) { }
@@ -239,6 +246,12 @@ public class KeyguardUpdateMonitorCallback {
      * Called when the fingerprint running state changed.
      */
     public void onFingerprintRunningStateChanged(boolean running) { }
+
+    /**
+     * Called when AirPlane mode changed.
+     * @param airPlaneModeEnabled flight mode is on or not.
+     */
+    public void onAirPlaneModeChanged(boolean airPlaneModeEnabled) { }
 
     /**
      * Called when the state that the user hasn't used strong authentication since quite some time

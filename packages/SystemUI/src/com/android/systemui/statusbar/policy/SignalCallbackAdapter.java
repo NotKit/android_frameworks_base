@@ -33,11 +33,13 @@ public class SignalCallbackAdapter implements SignalCallback {
     public void setWifiIndicators(boolean enabled, IconState statusIcon, IconState qsIcon,
             boolean activityIn, boolean activityOut, String description) {
     }
-
+    /** M: Support[Network Type and volte on StatusBar].
+     * Add more parameter networkIcon and volte to signal view and show the network type beside
+     * the signal. */
     @Override
     public void setMobileDataIndicators(IconState statusIcon, IconState qsIcon, int statusType,
-            int qsType, boolean activityIn, boolean activityOut, String typeContentDescription,
-            String description, boolean isWide, int subId) {
+            int networkIcon, int volteType, int qsType, boolean activityIn, boolean activityOut,
+            String typeContentDescription, String description, boolean isWide, int subId) {
     }
 
     @Override
@@ -59,5 +61,6 @@ public class SignalCallbackAdapter implements SignalCallback {
     @Override
     public void setMobileDataEnabled(boolean enabled) {
     }
+
 
 }

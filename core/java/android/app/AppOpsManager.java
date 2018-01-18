@@ -34,6 +34,8 @@ import android.util.ArrayMap;
 import com.android.internal.app.IAppOpsCallback;
 import com.android.internal.app.IAppOpsService;
 
+import com.mediatek.cta.CtaUtils;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -239,8 +241,20 @@ public class AppOpsManager {
     public static final int OP_GET_ACCOUNTS = 62;
     /** @hide Control whether an application is allowed to run in the background. */
     public static final int OP_RUN_IN_BACKGROUND = 63;
+    /// M: CTA requirement - permission control  @{
+    /** @hide Control whether an application is allowed to make conference call.*/
+    public static final int OP_CTA_CONFERENCE_CALL = 64;
+    /** @hide Control whether an application is allowed to send MMS.*/
+    public static final int OP_CTA_SEND_MMS = 65;
+    /** @hide Control whether an application is allowed to send emails.*/
+    public static final int OP_CTA_SEND_EMAIL = 66;
+    /** @hide Control whether an application is allowed to enable wifi.*/
+    public static final int OP_CTA_ENABLE_WIFI = 67;
+    /** @hide Control whether an application is allowed to enable bluetooth.*/
+    public static final int OP_CTA_ENABLE_BT = 68;
     /** @hide */
-    public static final int _NUM_OP = 64;
+    public static final int _NUM_OP = 69;
+    ///@}
 
     /** Access to coarse location information. */
     public static final String OPSTR_COARSE_LOCATION = "android:coarse_location";
@@ -338,6 +352,28 @@ public class AppOpsManager {
     /** @hide Get device accounts. */
     public static final String OPSTR_GET_ACCOUNTS
             = "android:get_accounts";
+    /// M: CTA requirement - permission control  @{
+    /** @hide */
+    public static final String OPSTR_CTA_CONFERENCE_CALL
+            = "android:cta_conference_call";
+    /** @hide */
+    public static final String OPSTR_CTA_SEND_MMS
+            = "android:cta_send_mms";
+    /** @hide */
+    public static final String OPSTR_CTA_SEND_EMAIL
+            = "android:cta_send_email";
+    /** @hide */
+    public static final String OPSTR_CTA_ENABLE_WIFI
+            = "android:cta_enable_wifi";
+    /** @hide */
+    public static final String OPSTR_CTA_ENABLE_BT
+            = "android:cta_enable_bt";
+    ///@}
+    /// M: Add missing op name
+    /** @hide */
+    public static final String OPSTR_PROCESS_OUTGOING_CALLS
+            = "android:process_outgoing_calls";
+    ///@}
 
     private static final int[] RUNTIME_PERMISSIONS_OPS = {
             // Contacts
@@ -373,7 +409,14 @@ public class AppOpsManager {
             // Camera
             OP_CAMERA,
             // Body sensors
-            OP_BODY_SENSORS
+            OP_BODY_SENSORS,
+            /// M: CTA requirement - permission control  @{
+            OP_CTA_CONFERENCE_CALL,
+            OP_CTA_SEND_MMS,
+            OP_CTA_SEND_EMAIL,
+            OP_CTA_ENABLE_WIFI,
+            OP_CTA_ENABLE_BT,
+            ///@}
     };
 
     /**
@@ -449,7 +492,89 @@ public class AppOpsManager {
             OP_TURN_SCREEN_ON,
             OP_GET_ACCOUNTS,
             OP_RUN_IN_BACKGROUND,
+            /// M: CTA requirement - permission control  @{
+            OP_CTA_CONFERENCE_CALL,
+            OP_CTA_SEND_MMS,
+            OP_CTA_SEND_EMAIL,
+            OP_CTA_ENABLE_WIFI,
+            OP_CTA_ENABLE_BT,
+            ///@}
     };
+
+    private static int[] sOpToSwitchCta = new int[] {
+            OP_COARSE_LOCATION,
+            OP_FINE_LOCATION, //OP_FINE_LOCATION
+            OP_FINE_LOCATION, //OP_GPS
+            OP_VIBRATE,
+            OP_READ_CONTACTS,
+            OP_WRITE_CONTACTS,
+            OP_READ_CALL_LOG,
+            OP_WRITE_CALL_LOG,
+            OP_READ_CALENDAR,
+            OP_WRITE_CALENDAR,
+            OP_COARSE_LOCATION,
+            OP_POST_NOTIFICATION,
+            OP_COARSE_LOCATION,
+            OP_CALL_PHONE,
+            OP_READ_SMS,
+            OP_WRITE_SMS,
+            OP_RECEIVE_SMS,
+            OP_RECEIVE_SMS,
+            OP_RECEIVE_SMS,
+            OP_RECEIVE_SMS,
+            OP_SEND_SMS,
+            OP_READ_SMS,
+            OP_WRITE_SMS,
+            OP_WRITE_SETTINGS,
+            OP_SYSTEM_ALERT_WINDOW,
+            OP_ACCESS_NOTIFICATIONS,
+            OP_CAMERA,
+            OP_RECORD_AUDIO,
+            OP_PLAY_AUDIO,
+            OP_READ_CLIPBOARD,
+            OP_WRITE_CLIPBOARD,
+            OP_TAKE_MEDIA_BUTTONS,
+            OP_TAKE_AUDIO_FOCUS,
+            OP_AUDIO_MASTER_VOLUME,
+            OP_AUDIO_VOICE_VOLUME,
+            OP_AUDIO_RING_VOLUME,
+            OP_AUDIO_MEDIA_VOLUME,
+            OP_AUDIO_ALARM_VOLUME,
+            OP_AUDIO_NOTIFICATION_VOLUME,
+            OP_AUDIO_BLUETOOTH_VOLUME,
+            OP_WAKE_LOCK,
+            OP_COARSE_LOCATION,
+            OP_FINE_LOCATION, //OP_MONITOR_HIGH_POWER_LOCATION
+            OP_GET_USAGE_STATS,
+            OP_MUTE_MICROPHONE,
+            OP_TOAST_WINDOW,
+            OP_PROJECT_MEDIA,
+            OP_ACTIVATE_VPN,
+            OP_WRITE_WALLPAPER,
+            OP_ASSIST_STRUCTURE,
+            OP_ASSIST_SCREENSHOT,
+            OP_READ_PHONE_STATE,
+            OP_ADD_VOICEMAIL,
+            OP_USE_SIP,
+            OP_PROCESS_OUTGOING_CALLS,
+            OP_USE_FINGERPRINT,
+            OP_BODY_SENSORS,
+            OP_READ_CELL_BROADCASTS,
+            OP_MOCK_LOCATION,
+            OP_READ_EXTERNAL_STORAGE,
+            OP_WRITE_EXTERNAL_STORAGE,
+            OP_TURN_SCREEN_ON,
+            OP_GET_ACCOUNTS,
+            OP_RUN_IN_BACKGROUND,
+            /// M: CTA requirement - permission control  @{
+            OP_CTA_CONFERENCE_CALL,
+            OP_CTA_SEND_MMS,
+            OP_CTA_SEND_EMAIL,
+            OP_CTA_ENABLE_WIFI,
+            OP_CTA_ENABLE_BT,
+            ///@}
+    };
+
 
     /**
      * This maps each operation to the public string constant for it.
@@ -510,7 +635,7 @@ public class AppOpsManager {
             OPSTR_READ_PHONE_STATE,
             OPSTR_ADD_VOICEMAIL,
             OPSTR_USE_SIP,
-            null,
+            OPSTR_PROCESS_OUTGOING_CALLS, /// M: Add missing op name
             OPSTR_USE_FINGERPRINT,
             OPSTR_BODY_SENSORS,
             OPSTR_READ_CELL_BROADCASTS,
@@ -520,6 +645,13 @@ public class AppOpsManager {
             null,
             OPSTR_GET_ACCOUNTS,
             null,
+            /// M: CTA requirement - permission control  @{
+            OPSTR_CTA_CONFERENCE_CALL,
+            OPSTR_CTA_SEND_MMS,
+            OPSTR_CTA_SEND_EMAIL,
+            OPSTR_CTA_ENABLE_WIFI,
+            OPSTR_CTA_ENABLE_BT,
+            ///@}
     };
 
     /**
@@ -591,6 +723,13 @@ public class AppOpsManager {
             "TURN_ON_SCREEN",
             "GET_ACCOUNTS",
             "RUN_IN_BACKGROUND",
+            /// M: CTA requirement - permission control  @{
+            "CTA_CONFERENCE_CALL",
+            "CTA_SEND_MMS",
+            "CTA_SEND_EMAIL",
+            "CTA_ENABLE_WIFI",
+            "CTA_ENABLE_BT",
+            ///@}
     };
 
     /**
@@ -662,6 +801,13 @@ public class AppOpsManager {
             null, // no permission for turning the screen on
             Manifest.permission.GET_ACCOUNTS,
             null, // no permission for running in background
+            /// M: CTA requirement - permission control  @{
+            com.mediatek.Manifest.permission.CTA_CONFERENCE_CALL,
+            com.mediatek.Manifest.permission.CTA_SEND_MMS,
+            com.mediatek.Manifest.permission.CTA_SEND_EMAIL,
+            com.mediatek.Manifest.permission.CTA_ENABLE_WIFI,
+            com.mediatek.Manifest.permission.CTA_ENABLE_BT,
+            ///@}
     };
 
     /**
@@ -734,6 +880,13 @@ public class AppOpsManager {
             null, // TURN_ON_SCREEN
             null, // GET_ACCOUNTS
             null, // RUN_IN_BACKGROUND
+            /// M: CTA requirement - permission control  @{
+            null, // CTA_CONFERENCE_CALL
+            null, // CTA_SEND_MMS
+            null, // CTA_SEND_EMAIL
+            null, // CTA_ENABLE_WIFI
+            null, // CTA_ENABLE_BT
+            ///@}
     };
 
     /**
@@ -805,6 +958,13 @@ public class AppOpsManager {
             false, // TURN_ON_SCREEN
             false, // GET_ACCOUNTS
             false, // RUN_IN_BACKGROUND
+            /// M: CTA requirement - permission control  @{
+            false, // CTA_CONFERENCE_CALL
+            false, // CTA_SEND_MMS
+            false, // CTA_SEND_EMAIL
+            false, // CTA_ENABLE_WIFI
+            false, // CTA_ENABLE_BT
+            ///@}
     };
 
     /**
@@ -875,6 +1035,13 @@ public class AppOpsManager {
             AppOpsManager.MODE_ALLOWED,  // OP_TURN_ON_SCREEN
             AppOpsManager.MODE_ALLOWED,
             AppOpsManager.MODE_ALLOWED,  // OP_RUN_IN_BACKGROUND
+            /// M: CTA requirement - permission control  @{
+            AppOpsManager.MODE_ALLOWED,  // OP_CTA_CONFERENCE_CALL
+            AppOpsManager.MODE_ALLOWED,  // OP_CTA_SEND_MMS
+            AppOpsManager.MODE_ALLOWED,  // OP_CTA_SEND_EMAIL
+            AppOpsManager.MODE_ALLOWED,  // OP_CTA_ENABLE_WIFI
+            AppOpsManager.MODE_ALLOWED,  // CTA_ENABLE_BT
+            ///@}
     };
 
     /**
@@ -949,6 +1116,13 @@ public class AppOpsManager {
             false,
             false,
             false,
+            /// M: CTA requirement - permission control  @{
+            false, // CTA_CONFERENCE_CALL
+            false, // CTA_SEND_MMS
+            false, // CTA_SEND_EMAIL
+            false, // CTA_ENABLE_WIFI
+            false, // CTA_ENABLE_BT
+            ///@}
     };
 
     /**
@@ -1011,7 +1185,11 @@ public class AppOpsManager {
      * @hide
      */
     public static int opToSwitch(int op) {
-        return sOpToSwitch[op];
+        if (CtaUtils.isCtaSupported()) {
+            return sOpToSwitchCta[op];
+        } else {
+            return sOpToSwitch[op];
+        }
     }
 
     /**

@@ -20,6 +20,7 @@ import android.app.Fragment;
 import android.app.FragmentManager;
 import android.app.FragmentTransaction;
 import android.content.Context;
+import android.content.Intent;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextUtils;
@@ -183,5 +184,16 @@ public class SaveFragment extends Fragment {
     public void setPending(boolean pending) {
         mSave.setVisibility(pending ? View.INVISIBLE : View.VISIBLE);
         mProgress.setVisibility(pending ? View.VISIBLE : View.GONE);
+    }
+
+    /// M: Save latest display save name in activity intent extras, so that it can restore
+    /// to latest one when activity recreate.
+    @Override
+    public void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        Intent intent = getActivity().getIntent();
+        if (intent != null) {
+            intent.putExtra(Intent.EXTRA_TITLE, mDisplayName.getText().toString());
+        }
     }
 }

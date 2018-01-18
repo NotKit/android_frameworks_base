@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -64,6 +69,12 @@ import java.security.Security;
 import java.security.Provider;
 import java.util.ArrayList;
 
+/// M: Added for BOOTPROF @{
+import java.io.ObjectOutputStream;
+import java.io.FileOutputStream;
+
+import com.mediatek.common.PluginLoader;
+/// @}
 /**
  * Startup class for the zygote process.
  *
@@ -88,13 +99,30 @@ public class ZygoteInit {
     private static final int LOG_BOOT_PROGRESS_PRELOAD_END = 3030;
 
     /** when preloading, GC after allocating this many bytes */
-    private static final int PRELOAD_GC_THRESHOLD = 50000;
+    //private static final int PRELOAD_GC_THRESHOLD = 50000;
+    private static final String heapgrowthlimit =
+                    SystemProperties.get("dalvik.vm.heapgrowthlimit", "64m");
+    private static final int PRELOAD_GC_THRESHOLD = Integer.parseInt(
+                    heapgrowthlimit.substring(0, heapgrowthlimit.length() - 1)) * 1024 * 1024 / 32;
 
     private static final String ABI_LIST_ARG = "--abi-list=";
 
     private static final String SOCKET_NAME_ARG = "--socket-name=";
 
     private static LocalServerSocket sServerSocket;
+
+    /// M: GMO Zygote64 on demand @{
+    private static final String PROP_ZYGOTE_ON_DEMAND_ENABLE = "ro.mtk_gmo_zygote_on_demand";
+    private static final String PROP_ZYGOTE_ON_DEMAND_DEBUG = "persist.sys.mtk_zygote_debug";
+    private static final String PROP_ZYGOTE_ON_DEMAND_PRELOAD = "persist.sys.mtk_zygote_preload";
+
+    static final boolean sZygoteOnDemandEnabled =
+        SystemProperties.get(PROP_ZYGOTE_ON_DEMAND_ENABLE).equals("1");
+    static boolean DEBUG_ZYGOTE_ON_DEMAND = false ||
+        SystemProperties.get(PROP_ZYGOTE_ON_DEMAND_DEBUG).equals("1");
+
+    static boolean sZygoteReady = false;
+    /// M: GMO Zygote64 on demand @}
 
     /**
      * Used to pre-load resources.  We hold a global reference on it so it
@@ -106,9 +134,37 @@ public class ZygoteInit {
      * The path of a file that contains classes to preload.
      */
     private static final String PRELOADED_CLASSES = "/system/etc/preloaded-classes";
+    private static final String TAG1 = "Plug-PluginLoad";
 
     /** Controls whether we should preload resources during zygote init. */
     public static final boolean PRELOAD_RESOURCES = true;
+
+    /// M: Added for BOOTPROF @{
+    private static boolean MTPROF_DISABLE = false;
+    private static void addBootEvent(String bootevent) {
+        if (MTPROF_DISABLE) {
+            return;
+        }
+        FileOutputStream fos = null;
+        try {
+            fos = new FileOutputStream("/proc/bootprof");
+            fos.write(bootevent.getBytes());
+            fos.flush();
+        } catch (FileNotFoundException e) {
+            Log.e("BOOTPROF", "Failure open /proc/bootprof, not found!", e);
+        } catch (java.io.IOException e) {
+            Log.e("BOOTPROF", "Failure open /proc/bootprof entry", e);
+        } finally {
+            if (fos != null) {
+                try {
+                    fos.close();
+                } catch (IOException e) {
+                    Log.e("BOOTPROF", "Failure close /proc/bootprof entry", e);
+                }
+            }
+        }
+    }
+    /// @}
 
     /**
      * Registers a server socket for zygote command connections
@@ -188,6 +244,37 @@ public class ZygoteInit {
     private static final int ROOT_UID = 0;
     private static final int ROOT_GID = 0;
 
+    /// M: GMO Zygote64 on demand @{
+    /// M: Added for Zygote preload control @{
+    static void preloadByName(String name) {
+        if (sZygoteOnDemandEnabled) {
+            if ("zygote".equals(name)) {
+                preload();
+            } else {
+                preloadSecondary();
+            }
+        } else {
+            preload();
+        }
+    }
+
+    static void preloadSecondary() {
+        Log.d(TAG, "begin preload 2");
+        preloadClasses();
+
+        if ("1".equals(SystemProperties.get(PROP_ZYGOTE_ON_DEMAND_PRELOAD, "0"))) {
+            preloadResources();
+            preloadOpenGL();
+            preloadSharedLibraries();
+            preloadTextResources();
+            WebViewFactory.prepareWebViewInZygote();
+        }
+
+        Log.d(TAG, "end preload 2");
+    }
+    /// @}
+    /// M: GMO Zygote64 on demand @}
+
     static void preload() {
         Log.d(TAG, "begin preload");
         Trace.traceBegin(Trace.TRACE_TAG_DALVIK, "BeginIcuCachePinning");
@@ -226,6 +313,9 @@ public class ZygoteInit {
         for (ULocale uLocale : localesToPin) {
             new DecimalFormatSymbols(uLocale);
         }
+        /// N: Added for Boot time profiling @{
+        Log.i(TAG, "Preloading ICU data --- End");
+        /// @}
     }
 
     private static void endIcuCachePinning() {
@@ -240,17 +330,32 @@ public class ZygoteInit {
         System.loadLibrary("android");
         System.loadLibrary("compiler_rt");
         System.loadLibrary("jnigraphics");
+        /// N: Added for Boot time profiling @{
+        Log.i(TAG, "Preloading shared libraries --- End");
+        /// @}
     }
 
     private static void preloadOpenGL() {
+        /// N: Added for Boot time profiling @{
+        Log.i(TAG, "Preloading OpenGL...");
+        /// @}
         if (!SystemProperties.getBoolean(PROPERTY_DISABLE_OPENGL_PRELOADING, false)) {
             EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY);
         }
+        /// N: Added for Boot time profiling @{
+        Log.i(TAG, "Preloading OpenGL --- End");
+        /// @}
     }
 
     private static void preloadTextResources() {
+        /// N: Added for Boot time profiling @{
+        Log.i(TAG, "Preloading TextResources...");
+        /// @}
         Hyphenator.init();
         TextView.preloadFontCache();
+        /// N: Added for Boot time profiling @{
+        Log.i(TAG, "Preloading TextResources --- End");
+        /// @}
     }
 
     /**
@@ -327,11 +432,12 @@ public class ZygoteInit {
         float defaultUtilization = runtime.getTargetHeapUtilization();
         runtime.setTargetHeapUtilization(0.8f);
 
+        /// M: Added for BOOTPROF
+        int count = 0;
         try {
             BufferedReader br
                 = new BufferedReader(new InputStreamReader(is), 256);
 
-            int count = 0;
             String line;
             while ((line = br.readLine()) != null) {
                 // Skip comments and blank lines.
@@ -392,6 +498,10 @@ public class ZygoteInit {
                     throw new RuntimeException("Failed to restore root", ex);
                 }
             }
+            /// M: Added for BOOTPROF @{
+            addBootEvent("Zygote:Preload " + count + " classes in " +
+            (SystemClock.uptimeMillis() - startTime) + "ms");
+            /// @}
         }
     }
 
@@ -418,6 +528,8 @@ public class ZygoteInit {
                 ar.recycle();
                 Log.i(TAG, "...preloaded " + N + " resources in "
                         + (SystemClock.uptimeMillis()-startTime) + "ms.");
+                addBootEvent("Zygote:Preload " + N + " obtain resources in " +
+                                (SystemClock.uptimeMillis() - startTime) + "ms");
 
                 startTime = SystemClock.uptimeMillis();
                 ar = mResources.obtainTypedArray(
@@ -437,6 +549,11 @@ public class ZygoteInit {
                     Log.i(TAG, "...preloaded " + N + " resource in "
                             + (SystemClock.uptimeMillis() - startTime) + "ms.");
                 }
+
+                /// M: Added for BOOTPROF @{
+                addBootEvent("Zygote:Preload " + N + " resources in " +
+                (SystemClock.uptimeMillis() - startTime) + "ms");
+                /// @}
             }
             mResources.finishPreloading();
         } catch (RuntimeException e) {
@@ -641,7 +758,7 @@ public class ZygoteInit {
             OsConstants.CAP_NET_RAW,
             OsConstants.CAP_SYS_MODULE,
             OsConstants.CAP_SYS_NICE,
-            OsConstants.CAP_SYS_PTRACE,
+            OsConstants.CAP_SYS_RESOURCE,
             OsConstants.CAP_SYS_TIME,
             OsConstants.CAP_SYS_TTY_CONFIG
         );
@@ -653,7 +770,10 @@ public class ZygoteInit {
         String args[] = {
             "--setuid=1000",
             "--setgid=1000",
-            "--setgroups=1001,1002,1003,1004,1005,1006,1007,1008,1009,1010,1018,1021,1032,3001,3002,3003,3006,3007,3009,3010",
+            /// M: ANR mechanism for system_server add shell(2000) group to access
+            ///    /sys/kernel/debug/tracing/tracing_on
+            "--setgroups=1001,1002,1003,1004,1005,1006,1007,1008,1009,1010,1018,1021,1032,2000," +
+                "3001,3002,3003,3006,3007,3009,3010",
             "--capabilities=" + capabilities + "," + capabilities,
             "--nice-name=system_server",
             "--runtime-args",
@@ -707,6 +827,15 @@ public class ZygoteInit {
     }
 
     public static void main(String argv[]) {
+        /// M: GMO Zygote64 on demand @{
+        DEBUG_ZYGOTE_ON_DEMAND =
+            SystemProperties.get(PROP_ZYGOTE_ON_DEMAND_DEBUG).equals("1");
+        if (DEBUG_ZYGOTE_ON_DEMAND) {
+            Log.d(TAG, "ZygoteOnDemand: Zygote ready = " + sZygoteReady);
+        }
+        String socketName = "zygote";
+        /// M: GMO Zygote64 on demand @}
+
         // Mark zygote start. This ensures that thread creation will throw
         // an error.
         ZygoteHooks.startZygoteNoThreadCreation();
@@ -714,11 +843,12 @@ public class ZygoteInit {
         try {
             Trace.traceBegin(Trace.TRACE_TAG_DALVIK, "ZygoteInit");
             RuntimeInit.enableDdms();
+            /// M: Added for BOOTPROF
+            //MTPROF_DISABLE = "1".equals(SystemProperties.get("ro.mtprof.disable"));
             // Start profiling the zygote initialization.
             SamplingProfilerIntegration.start();
 
             boolean startSystemServer = false;
-            String socketName = "zygote";
             String abiList = null;
             for (int i = 1; i < argv.length; i++) {
                 if ("start-system-server".equals(argv[i])) {
@@ -740,7 +870,15 @@ public class ZygoteInit {
             Trace.traceBegin(Trace.TRACE_TAG_DALVIK, "ZygotePreload");
             EventLog.writeEvent(LOG_BOOT_PROGRESS_PRELOAD_START,
                 SystemClock.uptimeMillis());
-            preload();
+            /// M: Added for BOOTPROF
+            addBootEvent("Zygote:Preload Start");
+
+            /// M: GMO Zygote64 on demand @{
+            /// M: Added for Zygote preload control @{
+            preloadByName(socketName);
+            /// @}
+            /// M: GMO Zygote64 on demand @}
+
             EventLog.writeEvent(LOG_BOOT_PROGRESS_PRELOAD_END,
                 SystemClock.uptimeMillis());
             Trace.traceEnd(Trace.TRACE_TAG_DALVIK);
@@ -762,14 +900,45 @@ public class ZygoteInit {
             // Zygote process unmounts root storage spaces.
             Zygote.nativeUnmountStorageOnInit();
 
+            /// M: Added for BOOTPROF
+            addBootEvent("Zygote:Preload End");
+
             ZygoteHooks.stopZygoteNoThreadCreation();
+
+            /// N: Move MPlugin init after preloading due to "Zygote: No Thread Creation Issues". @{
+            boolean preloadMPlugin = false;
+            if (!sZygoteOnDemandEnabled) {
+                preloadMPlugin = true;
+            } else {
+                if ("zygote".equals(socketName)) {
+                    preloadMPlugin = true;
+                }
+            }
+            if (preloadMPlugin) {
+                Log.i(TAG1, "preloadMappingTable() -- start ");
+                PluginLoader.preloadPluginInfo();
+                Log.i(TAG1, "preloadMappingTable() -- end ");
+            }
+            /// @}
 
             if (startSystemServer) {
                 startSystemServer(abiList, socketName);
             }
 
+            /// M: GMO Zygote64 on demand @{
+            sZygoteReady = true;
+            if (DEBUG_ZYGOTE_ON_DEMAND) {
+                Log.d(TAG, "ZygoteOnDemand: Zygote ready = " + sZygoteReady +
+                    ", socket name: " + socketName);
+            }
+            /// M: GMO Zygote64 on demand @}
+
             Log.i(TAG, "Accepting command socket connections");
             runSelectLoop(abiList);
+
+            /// M: GMO Zygote64 on demand @{
+            zygoteStopping("ZygoteOnDemand: End of runSelectLoop", socketName);
+            /// M: GMO Zygote64 on demand @}
 
             closeServerSocket();
         } catch (MethodAndArgsCaller caller) {
@@ -779,7 +948,26 @@ public class ZygoteInit {
             closeServerSocket();
             throw ex;
         }
+
+        /// M: GMO Zygote64 on demand @{
+        zygoteStopping("ZygoteOnDemand: End of main function", socketName);
+        /// M: GMO Zygote64 on demand @}
     }
+
+    /// M: GMO Zygote64 on demand @{
+    private static void zygoteStopping(String reason, String socketName) {
+        sZygoteReady = false;
+        if (DEBUG_ZYGOTE_ON_DEMAND) {
+            Log.d(TAG, "ZygoteOnDemand: zygoteStopping for " + socketName + ", reason: " + reason);
+        }
+        if (sZygoteOnDemandEnabled && socketName.equals("zygote_secondary")
+            && Process.isSecondaryZygoteRunning()) {
+            Log.d(TAG, "ZygoteOnDemand: stop secondary Zygote for " + socketName +
+                ", reason: " + reason);
+            Process.stopSecondaryZygote();
+        }
+    }
+    /// M: GMO Zygote64 on demand @}
 
     /**
      * Return {@code true} if this device configuration has another zygote.
@@ -795,6 +983,16 @@ public class ZygoteInit {
     private static void waitForSecondaryZygote(String socketName) {
         String otherZygoteName = Process.ZYGOTE_SOCKET.equals(socketName) ?
                 Process.SECONDARY_ZYGOTE_SOCKET : Process.ZYGOTE_SOCKET;
+        /// M: GMO Zygote64 on demand @{
+        if (sZygoteOnDemandEnabled) {
+            if (DEBUG_ZYGOTE_ON_DEMAND) {
+                Log.d(TAG, "ZygoteOnDemand: skip waitForSecondaryZygote: " +
+                    socketName + " wait " + otherZygoteName);
+            }
+            return;
+        }
+        /// M: GMO Zygote64 on demand @}
+
         while (true) {
             try {
                 final Process.ZygoteState zs = Process.ZygoteState.connect(otherZygoteName);

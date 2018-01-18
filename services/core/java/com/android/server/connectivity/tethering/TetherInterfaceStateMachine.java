@@ -47,8 +47,8 @@ public class TetherInterfaceStateMachine extends StateMachine {
     private static final int WIFI_HOST_IFACE_PREFIX_LENGTH = 24;
 
     private final static String TAG = "TetherInterfaceSM";
-    private final static boolean DBG = false;
-    private final static boolean VDBG = false;
+    private final static boolean DBG = true;
+    private final static boolean VDBG = true;
     private static final Class[] messageClasses = {
             TetherInterfaceStateMachine.class
     };
@@ -118,6 +118,14 @@ public class TetherInterfaceStateMachine extends StateMachine {
         return mInterfaceType;
     }
 
+    /** M: @{ */
+    public String upstreamIfaceName() {
+        return mMyUpstreamIfaceName;
+    }
+
+    /** @} */
+
+
     // configured when we start tethering and unconfig'd on error or conclusion
     private boolean configureIfaceIp(boolean enabled) {
         if (VDBG) Log.d(TAG, "configureIfaceIp(" + enabled + ")");
@@ -147,6 +155,7 @@ public class TetherInterfaceStateMachine extends StateMachine {
                     ifcg.setInterfaceDown();
                 }
                 ifcg.clearFlag("running");
+                Log.d(TAG, " setInterfaceConfig(" + mIfaceName + "");
                 mNMService.setInterfaceConfig(mIfaceName, ifcg);
             }
         } catch (Exception e) {
@@ -167,6 +176,8 @@ public class TetherInterfaceStateMachine extends StateMachine {
     class InitialState extends State {
         @Override
         public void enter() {
+            Log.d(TAG, "[ISM_Initial] enter, notifyInterfaceStateChange (" + mIfaceName
+                            + ",STATE_AVAILABLE," + mLastError + ")");
             mTetherController.notifyInterfaceStateChange(
                     mIfaceName, TetherInterfaceStateMachine.this,
                     IControlsTethering.STATE_AVAILABLE, mLastError);
@@ -175,6 +186,8 @@ public class TetherInterfaceStateMachine extends StateMachine {
         @Override
         public boolean processMessage(Message message) {
             maybeLogMessage(this, message.what);
+            if (DBG) Log.i(TAG, "[ISM_Initial] " + mIfaceName +
+                " processMessage what=" + message.what);
             boolean retValue = true;
             switch (message.what) {
                 case CMD_TETHER_REQUESTED:
@@ -199,6 +212,7 @@ public class TetherInterfaceStateMachine extends StateMachine {
     class TetheredState extends State {
         @Override
         public void enter() {
+            Log.d(TAG, "[ISM_Tethered] enter");
             if (!configureIfaceIp(true)) {
                 mLastError = ConnectivityManager.TETHER_ERROR_IFACE_CFG_ERROR;
                 transitionTo(mInitialState);
@@ -219,6 +233,8 @@ public class TetherInterfaceStateMachine extends StateMachine {
             }
 
             if (DBG) Log.d(TAG, "Tethered " + mIfaceName);
+            Log.d(TAG, "[ISM_Tethered] notifyInterfaceStateChange (" + mIfaceName
+                        + ",STATE_TETHERED," + mLastError + ")");
             mTetherController.notifyInterfaceStateChange(
                     mIfaceName, TetherInterfaceStateMachine.this,
                     IControlsTethering.STATE_TETHERED, mLastError);
@@ -226,6 +242,8 @@ public class TetherInterfaceStateMachine extends StateMachine {
 
         @Override
         public void exit() {
+            Log.i(TAG, "[ISM_Tethered] exit");
+
             // Note that at this point, we're leaving the tethered state.  We can fail any
             // of these operations, but it doesn't really change that we have to try them
             // all in sequence.
@@ -243,6 +261,8 @@ public class TetherInterfaceStateMachine extends StateMachine {
         }
 
         private void cleanupUpstream() {
+            Log.d(TAG, "cleanupUpstream() mMyUpstreamIfaceName:" + mMyUpstreamIfaceName);
+
             if (mMyUpstreamIfaceName != null) {
                 // note that we don't care about errors here.
                 // sometimes interfaces are gone before we get
@@ -262,6 +282,15 @@ public class TetherInterfaceStateMachine extends StateMachine {
                 }
                 try {
                     mNMService.disableNat(mIfaceName, mMyUpstreamIfaceName);
+                    Log.d(TAG, "[ISM_Tethered] cleanupUpstream disableNat("
+                        + mIfaceName + ", " + mMyUpstreamIfaceName + ")");
+
+                    /// M: For automatic NS-IOT test
+                    if (mInterfaceType == ConnectivityManager.TETHERING_USB) {
+                        Log.d(TAG, "[ISM_Tethered] enableUdpForwarding(false,"
+                            + mIfaceName + ", " + mMyUpstreamIfaceName + ")");
+                        mNMService.enableUdpForwarding(false, mIfaceName, mMyUpstreamIfaceName, "");
+                    }
                 } catch (Exception e) {
                     if (VDBG) Log.e(TAG, "Exception in disableNat: " + e.toString());
                 }
@@ -273,6 +302,8 @@ public class TetherInterfaceStateMachine extends StateMachine {
         @Override
         public boolean processMessage(Message message) {
             maybeLogMessage(this, message.what);
+            if (DBG) Log.i(TAG, "[ISM_Tethered] " + mIfaceName
+                + " processMessage what=" + message.what);
             boolean retValue = true;
             switch (message.what) {
                 case CMD_TETHER_UNREQUESTED:
@@ -285,6 +316,10 @@ public class TetherInterfaceStateMachine extends StateMachine {
                     break;
                 case CMD_TETHER_CONNECTION_CHANGED:
                     String newUpstreamIfaceName = (String)(message.obj);
+                        Log.i(TAG, "[ISM_Tethered]"
+                            + " CMD_TETHER_CONNECTION_CHANGED mMyUpstreamIfaceName:"
+                            + mMyUpstreamIfaceName +
+                            ", newUpstreamIfaceName:" + newUpstreamIfaceName);
                     if ((mMyUpstreamIfaceName == null && newUpstreamIfaceName == null) ||
                             (mMyUpstreamIfaceName != null &&
                             mMyUpstreamIfaceName.equals(newUpstreamIfaceName))) {
@@ -295,6 +330,8 @@ public class TetherInterfaceStateMachine extends StateMachine {
                     if (newUpstreamIfaceName != null) {
                         try {
                             mNMService.enableNat(mIfaceName, newUpstreamIfaceName);
+                            Log.d(TAG, "[ISM_Tethered] CMD_TETHER_CONNECTION_CHANGED enableNat(" +
+                                mIfaceName + ", " + newUpstreamIfaceName + ")");
                             mNMService.startInterfaceForwarding(mIfaceName,
                                     newUpstreamIfaceName);
                         } catch (Exception e) {
@@ -304,6 +341,8 @@ public class TetherInterfaceStateMachine extends StateMachine {
                             return true;
                         }
                     }
+                    Log.d(TAG, "[ISM_Tethered] CMD_TETHER_CONNECTION_CHANGED finished!"
+                            + " mMyUpstreamIfaceName to " + newUpstreamIfaceName);
                     mMyUpstreamIfaceName = newUpstreamIfaceName;
                     break;
                 case CMD_IPV6_TETHER_UPDATE:
@@ -336,6 +375,8 @@ public class TetherInterfaceStateMachine extends StateMachine {
     class UnavailableState extends State {
         @Override
         public void enter() {
+            Log.d(TAG, "[UnavailableState] enter, notifyInterfaceStateChange (" + mIfaceName
+                        + ",STATE_UNAVAILABLE," + mLastError + ")");
             mLastError = ConnectivityManager.TETHER_ERROR_NO_ERROR;
             mTetherController.notifyInterfaceStateChange(
                     mIfaceName, TetherInterfaceStateMachine.this,

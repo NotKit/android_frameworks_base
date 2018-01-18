@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,6 +29,11 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+
+///M: DRM design change, use AOSP drm
+import android.drm.DrmManagerClient;
+
+
 import android.graphics.Point;
 import android.net.Uri;
 import android.os.RemoteException;
@@ -33,12 +43,20 @@ public class DocumentsApplication extends Application {
     private static final long PROVIDER_ANR_TIMEOUT = 20 * DateUtils.SECOND_IN_MILLIS;
 
     private RootsCache mRoots;
+    private DrmManagerClient mOmaDrmClient;
     private Point mThumbnailsSize;
     private ThumbnailCache mThumbnails;
+    /// M: Store whether device is low ram device
+    private static boolean sIsLowRamDevice = false;
 
     public static RootsCache getRootsCache(Context context) {
         return ((DocumentsApplication) context.getApplicationContext()).mRoots;
     }
+    /// M: support drm @{
+    public static DrmManagerClient getDrmClient(Context context) {
+        return ((DocumentsApplication) context.getApplicationContext()).mOmaDrmClient;
+    }
+    /// @}
 
     public static ThumbnailCache getThumbnailsCache(Context context, Point size) {
         final DocumentsApplication app = (DocumentsApplication) context.getApplicationContext();
@@ -57,7 +75,15 @@ public class DocumentsApplication extends Application {
         if (client == null) {
             throw new RemoteException("Failed to acquire provider for " + authority);
         }
-        client.setDetectNotResponding(PROVIDER_ANR_TIMEOUT);
+        /// M: Ignore follow case:
+        /// 1. Low ram device, in these device system and IO performance is not good, need not acquire provider
+        /// respond in 20s.
+        /// 2. External storage provider, because it query from file system, if there are too many(>10000)
+        /// files in one folder, it will spend long time(may 1 min) to finish create cursor. {@
+        if (!sIsLowRamDevice && !"com.android.externalstorage.documents".equals(authority)) {
+            client.setDetectNotResponding(PROVIDER_ANR_TIMEOUT);
+        }
+        /// @}
         return client;
     }
 
@@ -67,10 +93,15 @@ public class DocumentsApplication extends Application {
 
         final ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
         final int memoryClassBytes = am.getMemoryClass() * 1024 * 1024;
-
+        /// M: init right value from ActivityManager at onCreate
+        sIsLowRamDevice = am.isLowRamDevice();
         mRoots = new RootsCache(this);
         mRoots.updateAsync(false);
-
+        /// M: support drm @{
+        if (DocumentsFeatureOption.IS_SUPPORT_DRM) {
+            mOmaDrmClient = new DrmManagerClient(this);
+        }
+        /// @}
         mThumbnails = new ThumbnailCache(memoryClassBytes / 4);
 
         final IntentFilter packageFilter = new IntentFilter();

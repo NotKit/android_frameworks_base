@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -157,6 +162,7 @@ static bool validatePointerCoordsObjArray(JNIEnv* env, jobjectArray pointerCoord
 
 static bool validatePointerIndex(JNIEnv* env, jint pointerIndex, size_t pointerCount) {
     if (pointerIndex < 0 || size_t(pointerIndex) >= pointerCount) {
+        ALOGE("validatePointerIndex pointerIndex:%d, pointerCount:%d", pointerIndex, pointerCount);
         jniThrowException(env, "java/lang/IllegalArgumentException",
                 "pointerIndex out of range");
         return false;

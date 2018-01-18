@@ -26,7 +26,6 @@ import android.net.RouteInfo;
 import android.net.UidRange;
 import android.net.wifi.WifiConfiguration;
 import android.os.INetworkActivityListener;
-
 /**
  * @hide
  */
@@ -445,4 +444,165 @@ interface INetworkManagementService
     int removeRoutesFromLocalNetwork(in List<RouteInfo> routes);
 
     void setAllowOnlyVpnForUids(boolean enable, in UidRange[] uidRanges);
+
+    //M:
+    /**
+     * Stop currently running tethering services
+     */
+    void disablePPPOE();
+
+    /**
+     * ipv6 tethering
+     * @hide
+     */
+     void enableNatIpv6(String internalInterface, String externalInterface);
+
+    /**
+     * ipv6 tethering
+     * @hide
+     */
+     void disableNatIpv6(String internalInterface, String externalInterface);
+
+    /**
+     * ipv6 tethering
+     * @hide
+     */
+     void setIpv6ForwardingEnabled(boolean enable);
+
+    /**
+     * ipv6 tethering
+     * @hide
+     */
+     boolean getIpv6ForwardingEnabled();
+
+    /**
+     * ipv6 tethering
+     * @hide
+     */
+     void setRouteIpv6(String internalInterface, String externalInterface);
+
+    /**
+     * ipv6 tethering
+     * @hide
+     */
+     void clearRouteIpv6(String internalInterface, String externalInterface);
+
+    /**
+     * ipv6 tethering + dedicated apn
+     * @hide
+     */
+     void setSourceRouteIpv6(String internalInterface, String externalInterface);
+
+    /**
+     * ipv6 tethering + dedicated apn
+     * @hide
+     */
+     void clearSourceRouteIpv6(String internalInterface, String externalInterface);
+
+    /**
+     * Always on VPN - Support PPTP
+     * @hide
+     */
+    void setFirewallEgressProtoRule(String proto, boolean allow);
+
+    /**
+     * Dhcpv6 - stateless
+     * @hide
+     */
+    void setDhcpv6Enabled(boolean enable, String ifc);
+
+
+    /**
+     * [NS-IOT Support]Support UDP packets forwarding from device to tethering terminal
+     * @hide
+     */
+    void enableUdpForwarding(boolean enabled, String internalInterface, String externalInterface, String ipAddr);
+
+    /**
+     * [NS-IOT Support]Retrieve client ip address from arp result
+     * @hide
+     */
+    void getUsbClient(String iface);
+
+    /**
+     * Cnfigure firewall rule by uid and chain
+     * @hide
+     */
+    void setFirewallUidChainRule(int uid, int networkType, boolean allow);
+
+    /** @} */
+
+    /**
+     * Delete all rules in  chain or all chains
+     * @hide
+     */
+    void clearFirewallChain(String chain);
+
+    /** @} */
+
+    /** @} */
+    /**
+     * WiFi Hotspot manager - BandwidthControl
+     * Configures bandwidth throttling on an interface.
+     * @hide
+     */
+    void setInterfaceThrottle(String iface, int rxKbps, int txKbps);
+
+    /**
+     * WiFi Hotspot manager - BandwidthControl
+     * Returns the currently configured RX throttle values
+     * for the specified interface
+     * @hide
+     */
+    int getInterfaceRxThrottle(String iface);
+
+    /**
+     * WiFi Hotspot manager - BandwidthControl
+     * Returns the currently configured TX throttle values
+     * for the specified interface
+     * @hide
+     */
+    int getInterfaceTxThrottle(String iface);
+
+
+    /**
+     *  sip info
+     * @param interfaceName input
+     * @param service input
+     * @param protocol input
+     * @param result_array output, String[0] = hostname, String[1] = port
+     * @hide
+     */
+    String[] getSipInfo(String interfaceName, String service, String protocol);
+
+    /**
+     *  sip info
+     * @hide
+     * @param interfaceName input
+     */
+    void clearSipInfo(String interfaceName);
+
+    /**
+     * Delete all NS-IOT firewall rules
+     * @hide
+     */
+    void clearIotFirewall();
+
+    /**
+     * Set all NS-IOT firewall rules
+     * @hide
+     */
+    void setIotFirewall();
+
+    /**
+     * M: Delete all NS-IOT firewall rules for VoLTE test
+     * @hide
+     */
+    void clearVolteIotFirewall(String ifc);
+
+    /**
+     * M: Set all NS-IOT firewall rules for VoLTE test
+     * @hide
+     */
+    void setVolteIotFirewall(String ifc);
 }

@@ -145,6 +145,15 @@ public class FileOperationService extends Service implements Job.Listener {
         return START_NOT_STICKY;
     }
 
+    @Override
+    public void onTaskRemoved(Intent intent) {
+        Log.d(TAG, "onTaskRemoved");
+        super.onTaskRemoved(intent);
+        mNotificationManager.cancelAll();
+        this.stopSelf();
+    }
+
+
     private void handleOperation(Intent intent, int serviceId, String jobId, int operationType) {
         if (DEBUG) Log.d(TAG, "onStartCommand: " + jobId + " with serviceId " + serviceId);
 
@@ -155,6 +164,7 @@ public class FileOperationService extends Service implements Job.Listener {
         synchronized (mRunning) {
             if (mWakeLock == null) {
                 mWakeLock = mPowerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, TAG);
+                mWakeLock.setReferenceCounted(false);
             }
 
             List<DocumentInfo> srcs = intent.getParcelableArrayListExtra(EXTRA_SRC_LIST);
@@ -167,6 +177,7 @@ public class FileOperationService extends Service implements Job.Listener {
                 return;
             }
 
+            Log.d(TAG, "handleOperation before acquire ");
             mWakeLock.acquire();
         }
 
@@ -206,11 +217,12 @@ public class FileOperationService extends Service implements Job.Listener {
                 // allow it stop working in an orderly fashion.
                 if (record.future.getDelay(TimeUnit.MILLISECONDS) > 0) {
                     record.future.cancel(false);
+                    Log.d(TAG, "handleCancel: before onFinished");
                     onFinished(record.job);
                 }
             }
         }
-
+        Log.d(TAG, "handleCancel: 2");
         // Dismiss the progress notification here rather than in the copy loop. This preserves
         // interactivity for the user in case the copy loop is stalled.
         // Try to cancel it even if we don't have a job id...in case there is some sad
@@ -240,6 +252,7 @@ public class FileOperationService extends Service implements Job.Listener {
             return null;
         }
 
+        Log.d(TAG, "createJob operationType = " + operationType);
         switch (operationType) {
             case OPERATION_COPY:
                 return jobFactory.createCopy(
@@ -266,8 +279,10 @@ public class FileOperationService extends Service implements Job.Listener {
         record.job.cleanup();
 
         if (mRunning.isEmpty()) {
+            Log.d(TAG, "deleteJob shutdown called");
             shutdown();
         }
+        Log.d(TAG, "deleteJob shutdown skipped");
     }
 
     /**
@@ -320,6 +335,7 @@ public class FileOperationService extends Service implements Job.Listener {
         }
 
         synchronized (mRunning) {
+            Log.d(TAG, "onFinished before deleteJob");
             deleteJob(job);
         }
     }

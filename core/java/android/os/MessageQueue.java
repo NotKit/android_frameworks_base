@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -538,6 +543,13 @@ public final class MessageQueue {
             throw new IllegalStateException(msg + " This message is already in use.");
         }
 
+        /// M: Add message protect mechanism @{
+        if (msg.hasRecycle) {
+            Log.wtf("MessageQueue", "Warning: message has been recycled. msg=" + msg);
+            return false;
+        }
+        /// Add message protect mechanism @}
+
         synchronized (this) {
             if (mQuitting) {
                 IllegalStateException e = new IllegalStateException(
@@ -869,4 +881,39 @@ public final class MessageQueue {
             mListener = listener;
         }
     }
+    /// M: ANR mechanism for Message History/Queue @{
+    private static final int MESSAGE_DUMP_SIZE_MAX = 20; // Currently, we dump the first 20 messages
+
+    /**
+     * @hide
+     */
+    public final synchronized String dumpMessageQueue() {
+        /// M: Add message history/queue to _exp_main.txt
+        String messageQueue = "";
+        if (mMessages != null) {
+            Log.d("MessageQueue", "Dump first " + MESSAGE_DUMP_SIZE_MAX + " messages in Queue: ");
+            messageQueue = messageQueue + "Dump first " + MESSAGE_DUMP_SIZE_MAX
+                           + " messages in Queue: \n";
+            Message tempMsg = mMessages;
+            int count = 0;
+            while (null != tempMsg) {
+                count++;
+                // only dump first MESSAGE_DUMP_SIZE_MAX messages
+                if (count <= MESSAGE_DUMP_SIZE_MAX) {
+                        Log.d("MessageQueue", "Dump Message in Queue (" + count + "): " + tempMsg);
+                        messageQueue = messageQueue + "Dump Message in Queue (" + count + "): "
+                                       + tempMsg + "\n";
+                }
+                tempMsg = tempMsg.next;
+            }
+
+            Log.d("MessageQueue", "Total Message Count: " + count);
+            messageQueue = messageQueue + "Total Message Count: " + count + "\n";
+        } else {
+            messageQueue = messageQueue + "mMessages is null" + "\n";
+            Log.d("MessageQueue", "mMessages is null");
+        }
+        return messageQueue;
+    }
+    /// M: ANR mechanism for Message History/Queue @}
 }

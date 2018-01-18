@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2008 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -178,6 +183,17 @@ public class NetworkInfo implements Parcelable {
     public void setType(int type) {
         synchronized (this) {
             mNetworkType = type;
+        }
+    }
+
+    /**
+     * M: add for IMS feature
+     * @hide
+     * @param typeName typeName set for network info
+     */
+    public void setTypeName(String typeName) {
+        synchronized (this) {
+            mTypeName = typeName;
         }
     }
 

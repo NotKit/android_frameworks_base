@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2012 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,6 +37,8 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.Message;
+//added by MTK
+import android.os.SystemProperties; //added by MTK
 import android.os.UserHandle;
 import android.util.Slog;
 import android.view.Display;
@@ -62,7 +69,7 @@ import libcore.util.Objects;
 final class WifiDisplayAdapter extends DisplayAdapter {
     private static final String TAG = "WifiDisplayAdapter";
 
-    private static final boolean DEBUG = false;
+    private static final boolean DEBUG = true;
 
     private static final int MSG_SEND_STATUS_CHANGE_BROADCAST = 1;
 
@@ -79,7 +86,10 @@ final class WifiDisplayAdapter extends DisplayAdapter {
     private WifiDisplayDevice mDisplayDevice;
 
     private WifiDisplayStatus mCurrentStatus;
-    private int mFeatureState;
+
+    ///M:@{ If intial value is UNAVAILABLE, cast screen menu will disappear
+    private int mFeatureState = WifiDisplayStatus.FEATURE_STATE_OFF;
+
     private int mScanState;
     private int mActiveDisplayState;
     private WifiDisplay mActiveDisplay;
@@ -89,6 +99,20 @@ final class WifiDisplayAdapter extends DisplayAdapter {
     private WifiDisplaySessionInfo mSessionInfo;
 
     private boolean mPendingStatusChangeBroadcast;
+    private boolean mInDisconnectingThread;  //added by MTK
+
+    ///M:@{ WFD Sink Support
+    private boolean mSinkEnabled = false;
+    private boolean mSinkConnectRequest = false;
+
+    enum SinkEvent {
+        SINK_EVENT_CONNECTING,
+        SINK_EVENT_CONNECTION_FAILED,
+        SINK_EVENT_CONNECTED,
+        SINK_EVENT_DISCONNECTED
+    };
+    ///@}
+
 
     // Called with SyncRoot lock held.
     public WifiDisplayAdapter(DisplayManagerService.SyncRoot syncRoot,
@@ -225,14 +249,29 @@ final class WifiDisplayAdapter extends DisplayAdapter {
             Slog.d(TAG, "requestDisconnectedLocked");
         }
 
-        getHandler().post(new Runnable() {
-            @Override
-            public void run() {
-                if (mDisplayController != null) {
-                    mDisplayController.requestDisconnect();
-                }
+        ///M:@{ WFD Sink Support.
+        // Surface will be destroyed so make disconnect as synchronous call
+        if (SystemProperties.get("ro.mtk_wfd_sink_support").equals("1") && mSinkEnabled) {
+            mSinkConnectRequest = false;
+            if (mDisplayController != null) {
+                mDisplayController.requestDisconnect();
             }
-        });
+        }
+        else {
+            //Speed-up disconnect dialog dismissed
+            Slog.d(TAG, "Call removeDisplayDeviceLocked()");
+            removeDisplayDeviceLocked();
+
+            getHandler().post(new Runnable() {
+                @Override
+                public void run() {
+                    if (mDisplayController != null) {
+                        mDisplayController.requestDisconnect();
+                    }
+                }
+            });
+        }
+        Slog.d(TAG, "requestDisconnectedLocked return");
     }
 
     public void requestRenameLocked(String address, String alias) {
@@ -276,6 +315,15 @@ final class WifiDisplayAdapter extends DisplayAdapter {
 
         if (mActiveDisplay != null && mActiveDisplay.getDeviceAddress().equals(address)) {
             requestDisconnectLocked();
+        } else {
+            ///M:@{
+            // error case!
+            if (null != mActiveDisplay) {
+                Slog.e(TAG, "mActiveDisplay = " + mActiveDisplay);
+            } else {
+                Slog.e(TAG, "mActiveDisplay = null");
+            }
+            ///@}
         }
     }
 
@@ -291,6 +339,84 @@ final class WifiDisplayAdapter extends DisplayAdapter {
         }
         return mCurrentStatus;
     }
+
+    ///M:@{ WFD Sink Support
+    public boolean getIfSinkEnabledLocked() {
+
+        if (DEBUG) {
+            Slog.d(TAG, "getIfSinkEnabledLocked");
+        }
+        if (mDisplayController != null) {
+            return mDisplayController.getIfSinkEnabled();
+        } else {
+            return false;
+        }
+
+
+
+    }
+
+    public void requestEnableSinkLocked(final boolean enable) {
+
+        if (DEBUG) {
+            Slog.d(TAG, "requestEnableSinkLocked: enable=" + enable);
+        }
+
+        mSinkEnabled = enable;
+
+        getHandler().post(new Runnable() {
+            @Override
+            public void run() {
+                if (mDisplayController != null) {
+                    mDisplayController.requestEnableSink(enable);
+                }
+            }
+        });
+    }
+
+    public void requestWaitConnectionLocked(final Surface surface) {
+
+        if (DEBUG) {
+            Slog.d(TAG, "requestWaitConnectionLocked");
+        }
+        mSinkConnectRequest = true;
+
+        getHandler().post(new Runnable() {
+            @Override
+            public void run() {
+
+                /* Disconnect sink is a synchronous API.
+                   Add the flag to avoid timing issue */
+                if (mSinkConnectRequest && mDisplayController != null) {
+                    mDisplayController.requestWaitConnection(surface);
+                }
+            }
+        });
+    }
+
+    public void requestSuspendDisplayLocked(final boolean suspend, final Surface surface) {
+
+        if (DEBUG) {
+            Slog.d(TAG, "requestSuspendSinkDisplayLocked: suspend=" + suspend);
+        }
+
+        getHandler().post(new Runnable() {
+            @Override
+            public void run() {
+                if (mDisplayController != null) {
+                    mDisplayController.requestSuspendDisplay(suspend, surface);
+                }
+            }
+        });
+    }
+
+    public void sendUibcInputEventLocked(String input) {
+        if (DEBUG) {
+            Slog.d(TAG, "sendUibcInputEvent: input=" + input);
+        }
+        mDisplayController.sendUibcInputEvent(input);
+    }
+    ///@}
 
     private void updateDisplaysLocked() {
         List<WifiDisplay> displays = new ArrayList<WifiDisplay>(
@@ -375,6 +501,12 @@ final class WifiDisplayAdapter extends DisplayAdapter {
                 deviceFlags |= DisplayDeviceInfo.FLAG_SUPPORTS_PROTECTED_BUFFERS;
             }
         }
+
+        ///@M:{ Portrait WFD support
+        if (width < height) {
+            deviceFlags |= DisplayDeviceInfo.FLAG_ROTATES_WITH_CONTENT;
+        }
+        //} @M
 
         float refreshRate = 60.0f; // TODO: get this for real
 
@@ -497,6 +629,13 @@ final class WifiDisplayAdapter extends DisplayAdapter {
         @Override
         public void onDisplayConnecting(WifiDisplay display) {
             synchronized (getSyncRoot()) {
+                ///M:@{ WFD Sink Support
+                if (mSinkEnabled) {
+                    handleSinkEvent(display, SinkEvent.SINK_EVENT_CONNECTING);
+                    return;
+                }
+                ///@}
+
                 display = mPersistentDataStore.applyWifiDisplayAlias(display);
 
                 if (mActiveDisplayState != WifiDisplayStatus.DISPLAY_STATE_CONNECTING
@@ -512,6 +651,13 @@ final class WifiDisplayAdapter extends DisplayAdapter {
         @Override
         public void onDisplayConnectionFailed() {
             synchronized (getSyncRoot()) {
+                ///M:@{ WFD Sink Support
+                if (mSinkEnabled) {
+                    handleSinkEvent(null, SinkEvent.SINK_EVENT_CONNECTION_FAILED);
+                    return;
+                }
+                ///@}
+
                 if (mActiveDisplayState != WifiDisplayStatus.DISPLAY_STATE_NOT_CONNECTED
                         || mActiveDisplay != null) {
                     mActiveDisplayState = WifiDisplayStatus.DISPLAY_STATE_NOT_CONNECTED;
@@ -525,6 +671,13 @@ final class WifiDisplayAdapter extends DisplayAdapter {
         public void onDisplayConnected(WifiDisplay display, Surface surface,
                 int width, int height, int flags) {
             synchronized (getSyncRoot()) {
+                ///M:@{ WFD Sink Support
+                if (mSinkEnabled) {
+                    handleSinkEvent(display, SinkEvent.SINK_EVENT_CONNECTED);
+                    return;
+                }
+                ///@}
+
                 display = mPersistentDataStore.applyWifiDisplayAlias(display);
                 addDisplayDeviceLocked(display, surface, width, height, flags);
 
@@ -564,6 +717,13 @@ final class WifiDisplayAdapter extends DisplayAdapter {
         public void onDisplayDisconnected() {
             // Stop listening.
             synchronized (getSyncRoot()) {
+                ///M:@{ WFD Sink Support
+                if (mSinkEnabled) {
+                    handleSinkEvent(null, SinkEvent.SINK_EVENT_DISCONNECTED);
+                    return;
+                }
+                ///@}
+
                 removeDisplayDeviceLocked();
 
                 if (mActiveDisplayState != WifiDisplayStatus.DISPLAY_STATE_NOT_CONNECTED
@@ -574,6 +734,16 @@ final class WifiDisplayAdapter extends DisplayAdapter {
                 }
             }
         }
+
+        @Override
+        ///M:@{ ALPS00740892+ALPS00726377: refresh statusbar to speed-up disconnect dialog dismissed
+        public void onDisplayDisconnecting() {
+            if (true == mInDisconnectingThread) {
+                Slog.e(TAG, "still in WfdDisConnThread!");
+                return;
+            }
+        }
+        ///@}
     };
 
     private final class WifiDisplayDevice extends DisplayDevice {
@@ -663,4 +833,41 @@ final class WifiDisplayAdapter extends DisplayAdapter {
             }
         }
     }
+
+    ///M:@{ WFD Sink Support
+    private void handleSinkEvent(WifiDisplay display, SinkEvent event) {
+        Slog.d(TAG, "handleSinkEvent(), event:" + event + ", DisplayState:" + mActiveDisplayState);
+
+        mActiveDisplay = display;
+        if (event == SinkEvent.SINK_EVENT_CONNECTING) {
+
+            if (mActiveDisplayState != WifiDisplayStatus.DISPLAY_STATE_CONNECTING) {
+                mActiveDisplayState = WifiDisplayStatus.DISPLAY_STATE_CONNECTING;
+            }
+        }
+        else if (event == SinkEvent.SINK_EVENT_CONNECTION_FAILED) {
+
+            if (mActiveDisplayState != WifiDisplayStatus.DISPLAY_STATE_NOT_CONNECTED) {
+                mActiveDisplayState = WifiDisplayStatus.DISPLAY_STATE_NOT_CONNECTED;
+            }
+        }
+        else if (event == SinkEvent.SINK_EVENT_CONNECTED) {
+
+            if (mActiveDisplayState != WifiDisplayStatus.DISPLAY_STATE_CONNECTED) {
+                mActiveDisplayState = WifiDisplayStatus.DISPLAY_STATE_CONNECTED;
+            }
+        }
+        else if (event == SinkEvent.SINK_EVENT_DISCONNECTED) {
+
+            if (mActiveDisplayState != WifiDisplayStatus.DISPLAY_STATE_NOT_CONNECTED) {
+                mActiveDisplayState = WifiDisplayStatus.DISPLAY_STATE_NOT_CONNECTED;
+            }
+        } else {
+
+            /* Impossible! */
+        }
+
+        scheduleStatusChangedBroadcastLocked();
+    }
+    ///@}
 }

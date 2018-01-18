@@ -26,6 +26,10 @@ import dalvik.system.VMRuntime;
 
 import java.util.Objects;
 
+/// M: CTA requirement - permission control  @{
+import com.mediatek.cta.CtaUtils;
+///@}
+
 /**
  * Information about the current build, extracted from system properties.
  */
@@ -888,4 +892,16 @@ public class Build {
             return -1;
         }
     }
+
+    /// M: CTA requirement - permission control  @{
+    /**
+     * Specifies whether the permissions needed by a app should be
+     * reviewed before any of its components can run.
+     *
+     * @hide
+     */
+    public static boolean isPermissionReviewRequired() {
+        return PERMISSIONS_REVIEW_REQUIRED || CtaUtils.isCtaSupported();
+    }
+    ///@}
 }

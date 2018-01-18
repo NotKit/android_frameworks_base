@@ -1,3 +1,8 @@
+/*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
 //
 // Copyright 2006 The Android Open Source Project
 //
@@ -354,7 +359,17 @@ int main(int argc, char* const argv[])
                 bundle.setUpdate(true);
                 break;
             case 'x':
-                bundle.setExtending(true);
+                ///M:Original 'bundle.setExtending(true)',We add code for more resource ID, @{
+                if(*(argv[0] +2) == '\0' ){
+                    bundle.setExtending(true);
+                } else {
+                    const char* mtk = argv[0] +2;
+                    bundle.setExtending(true);
+                    bundle.setmtkCur(true);
+                    bundle.setmtkCurNum(atoi(mtk));
+                    cp += strlen(cp) - 1;
+                }
+                ///@}
                 break;
             case 'z':
                 bundle.setRequireLocalization(true);

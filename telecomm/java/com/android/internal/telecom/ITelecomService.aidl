@@ -249,4 +249,23 @@ interface ITelecomService {
     * @see TelecomServiceImpl#createManageBlockedNumbersIntent
     **/
     Intent createManageBlockedNumbersIntent();
+
+    /// M: CC: TelecomManager API to get IMS specific feature capable PhoneAccounts @{
+    /**
+     * @see TelecomService#getVolteCallCapablePhoneAccounts
+     */
+    List<PhoneAccountHandle> getVolteCallCapablePhoneAccounts();
+
+    /**
+     * @see TelecomService#getVideoCallCapablePhoneAccounts
+     */
+    List<PhoneAccountHandle> getVideoCallCapablePhoneAccounts();
+    /// @}
+
+    /**
+     * M: is in video call.
+     * @see TelecomServiceImpl#isInVideoCall
+     */
+    boolean isInVideoCall(String callingPackage);
+
 }

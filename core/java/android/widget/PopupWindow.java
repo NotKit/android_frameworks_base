@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,6 +41,7 @@ import android.transition.TransitionInflater;
 import android.transition.TransitionManager;
 import android.transition.TransitionSet;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -99,6 +105,9 @@ import static android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
  * @see android.widget.Spinner
  */
 public class PopupWindow {
+    private static final String TAG = "PopupWindow";
+    private static final boolean DBG = "eng".equals(Build.TYPE);
+
     /**
      * Mode for {@link #setInputMethodMode(int)}: the requirements for the
      * input method should be based on the focusability of the popup.  That is
@@ -1375,6 +1384,11 @@ public class PopupWindow {
 
         setLayoutDirectionFromAnchor();
 
+        if (DBG) {
+            Log.d(TAG, "invokePopup: mDecorView = " + mDecorView +
+                    ", WindowManager.LayoutParams = " + p);
+        }
+
         mWindowManager.addView(decorView, p);
 
         if (mEnterTransition != null) {
@@ -1796,7 +1810,8 @@ public class PopupWindow {
             returnedHeight -= mTempRect.top + mTempRect.bottom;
         }
 
-        return returnedHeight;
+        /// M: [ALPS01263615] Should not return negative value.
+        return returnedHeight > 0 ? returnedHeight : 0;
     }
 
     /**
@@ -1975,14 +1990,21 @@ public class PopupWindow {
             update = true;
         }
 
-        final int newGravity = computeGravity();
-        if (newGravity != p.gravity) {
-            p.gravity = newGravity;
+        /// M: Fix google commit side effect for popup window update revise,
+        ///    we shouldn't modify gravity when update.
+        if (mClipToScreen || mClippingEnabled) {
+            p.gravity |= Gravity.DISPLAY_CLIP_VERTICAL;
             update = true;
         }
 
         if (update) {
             setLayoutDirectionFromAnchor();
+
+            if (DBG) {
+                Log.d(TAG, "update1: mDecorView = " + mDecorView +
+                        ", WindowManager.LayoutParams = " + p);
+            }
+
             mWindowManager.updateViewLayout(mDecorView, p);
         }
     }
@@ -2087,9 +2109,10 @@ public class PopupWindow {
             update = true;
         }
 
-        final int newGravity = computeGravity();
-        if (newGravity != p.gravity) {
-            p.gravity = newGravity;
+        /// M: Fix google commit side effect for popup window update revise,
+        ///    we shouldn't modify gravity when update.
+        if (mClipToScreen || mClippingEnabled) {
+            p.gravity |= Gravity.DISPLAY_CLIP_VERTICAL;
             update = true;
         }
 
@@ -2102,6 +2125,12 @@ public class PopupWindow {
 
         if (update) {
             setLayoutDirectionFromAnchor();
+
+            if (DBG) {
+                Log.d(TAG, "update2: mDecorView = " + mDecorView +
+                        ", WindowManager.LayoutParams = " + p);
+            }
+
             mWindowManager.updateViewLayout(mDecorView, p);
         }
     }

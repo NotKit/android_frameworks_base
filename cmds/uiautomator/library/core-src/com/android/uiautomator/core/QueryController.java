@@ -36,6 +36,7 @@ class QueryController {
     private final UiAutomatorBridge mUiAutomatorBridge;
 
     private final Object mLock = new Object();
+    private final Object mFindNodeLock = new Object();
 
     private String mLastActivityName = null;
 
@@ -146,7 +147,7 @@ class QueryController {
         if (DEBUG)
             Log.d(LOG_TAG, "Searching: " + selector);
 
-        synchronized (mLock) {
+        synchronized (mFindNodeLock) {
             AccessibilityNodeInfo rootNode = getRootNode();
             if (rootNode == null) {
                 Log.e(LOG_TAG, "Cannot proceed when root node is null. Aborted search");

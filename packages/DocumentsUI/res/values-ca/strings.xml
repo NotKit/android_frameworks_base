@@ -99,6 +99,7 @@
     <string name="notification_touch_for_details" msgid="6268189413228855582">"Toca per veure\'n els detalls"</string>
     <string name="close" msgid="3043722427445528732">"Tanca"</string>
     <string name="copy_failure_alert_content" msgid="4563147454522476183">"Aquests fitxers no s\'han copiat: <xliff:g id="LIST">%1$s</xliff:g>"</string>
+    <string name="mode_selected_count">"Seleccionats: <xliff:g id="COUNT">%1$d</xliff:g>"</string>
     <string name="move_failure_alert_content" msgid="2635075788682922861">"Aquests fitxers no s\'han mogut: <xliff:g id="LIST">%1$s</xliff:g>"</string>
     <string name="delete_failure_alert_content" msgid="892393767207938353">"Aquests fitxers no s\'han suprimit: <xliff:g id="LIST">%1$s</xliff:g>"</string>
     <string name="copy_converted_warning_content" msgid="5753861488218674361">"Aquests fitxers s\'han convertit a un altre format: <xliff:g id="LIST">%1$s</xliff:g>"</string>
@@ -140,4 +141,6 @@
     </plurals>
     <string name="too_many_selected" msgid="6781456208116966753">"Només pots seleccionar un màxim de 1.000 elements a la vegada."</string>
     <string name="too_many_in_select_all" msgid="8281987479885307456">"Només s\'han pogut seleccionar 1.000 elements"</string>
+		<string name="drm_file_cannot_move">Alguns fitxers protegits no es poden moure</string>
+		<string name="drm_file_cannot_copy">Alguns fitxers protegits no es poden copiar</string>
 </resources>

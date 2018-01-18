@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -200,7 +205,7 @@ public abstract class AdapterView<T extends Adapter> extends ViewGroup {
      * The last selected position we used when notifying
      */
     int mOldSelectedPosition = INVALID_POSITION;
-    
+
     /**
      * The id of the last selected position we used when notifying
      */
@@ -770,8 +775,8 @@ public abstract class AdapterView<T extends Adapter> extends ViewGroup {
             // We are now GONE, so pending layouts will not be dispatched.
             // Force one here to make sure that the state of the list matches
             // the state of the adapter.
-            if (mDataChanged) {           
-                this.onLayout(false, mLeft, mTop, mRight, mBottom); 
+            if (mDataChanged) {
+                this.onLayout(false, mLeft, mTop, mRight, mBottom);
             }
         } else {
             if (mEmptyView != null) mEmptyView.setVisibility(View.GONE);
@@ -823,7 +828,7 @@ public abstract class AdapterView<T extends Adapter> extends ViewGroup {
 
         @Override
         public void onChanged() {
-            mDataChanged = true;
+            setDataChanged(true);
             mOldItemCount = mItemCount;
             mItemCount = getAdapter().getCount();
 
@@ -842,7 +847,7 @@ public abstract class AdapterView<T extends Adapter> extends ViewGroup {
 
         @Override
         public void onInvalidated() {
-            mDataChanged = true;
+            setDataChanged(true);
 
             if (AdapterView.this.getAdapter().hasStableIds()) {
                 // Remember the current state for the case where our hosting activity is being
@@ -1219,7 +1224,7 @@ public abstract class AdapterView<T extends Adapter> extends ViewGroup {
         mNextSelectedRowId = getItemIdAtPosition(position);
         // If we are trying to sync to the selection, update that too
         if (mNeedSync && mSyncMode == SYNC_SELECTED_POSITION && position >= 0) {
-            mSyncPosition = position;
+            setSyncPosition(position);
             mSyncRowId = mNextSelectedRowId;
         }
     }
@@ -1237,7 +1242,7 @@ public abstract class AdapterView<T extends Adapter> extends ViewGroup {
                 // Sync the selection state
                 View v = getChildAt(mSelectedPosition - mFirstPosition);
                 mSyncRowId = mNextSelectedRowId;
-                mSyncPosition = mNextSelectedPosition;
+                setSyncPosition(mNextSelectedPosition);
                 if (v != null) {
                     mSpecificTop = v.getTop();
                 }
@@ -1251,7 +1256,7 @@ public abstract class AdapterView<T extends Adapter> extends ViewGroup {
                 } else {
                     mSyncRowId = NO_ID;
                 }
-                mSyncPosition = mFirstPosition;
+                setSyncPosition(mFirstPosition);
                 if (v != null) {
                     mSpecificTop = v.getTop();
                 }
@@ -1271,4 +1276,32 @@ public abstract class AdapterView<T extends Adapter> extends ViewGroup {
         encoder.addProperty("list:selectedPosition", mSelectedPosition);
         encoder.addProperty("list:itemCount", mItemCount);
     }
+
+    /**
+     * M: set data changed or not.
+     *
+     * @param changed data is changed or not
+     * @return whether data status is changed ever
+     *
+     */
+    boolean setDataChanged(boolean changed) {
+        boolean ret = mDataChanged != changed;
+        mDataChanged = changed;
+        return ret;
+    }
+
+    /**
+     * M: set sync position.
+     *
+     * @param new position to be set for sync
+     * @return whether position changed
+     *
+     */
+    boolean setSyncPosition(int pos) {
+        boolean ret = mSyncPosition != pos;
+        mSyncPosition = pos;
+        return ret;
+    }
+
+
 }

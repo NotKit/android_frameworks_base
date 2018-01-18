@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2008 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -259,6 +264,7 @@ public class EditorInfo implements InputType, Parcelable {
      * definition, and this value will override any value the app may have passed to
      * {@link InputMethodManager#updateSelection(android.view.View, int, int, int, int)}
      * before.</p>
+
      */
     public int initialSelStart = -1;
 

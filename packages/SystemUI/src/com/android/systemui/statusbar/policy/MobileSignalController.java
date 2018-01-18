@@ -19,6 +19,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.net.NetworkCapabilities;
 import android.os.Looper;
+import android.os.SystemProperties;
 import android.telephony.PhoneStateListener;
 import android.telephony.ServiceState;
 import android.telephony.SignalStrength;
@@ -29,6 +30,9 @@ import android.text.TextUtils;
 import android.util.Log;
 import android.util.SparseArray;
 
+import com.android.ims.ImsManager;
+import com.android.ims.ImsConfig;
+import com.android.ims.ImsException;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.TelephonyIntents;
 import com.android.internal.telephony.cdma.EriInfo;
@@ -37,6 +41,12 @@ import com.android.systemui.statusbar.policy.NetworkController.IconState;
 import com.android.systemui.statusbar.policy.NetworkController.SignalCallback;
 import com.android.systemui.statusbar.policy.NetworkControllerImpl.Config;
 import com.android.systemui.statusbar.policy.NetworkControllerImpl.SubscriptionDefaults;
+import com.mediatek.systemui.ext.IMobileIconExt;
+import com.mediatek.systemui.ext.ISystemUIStatusBarExt;
+import com.mediatek.systemui.PluginManager;
+import com.mediatek.systemui.statusbar.networktype.NetworkTypeUtils;
+
+import com.mediatek.telephony.TelephonyManagerEx;
 
 import java.io.PrintWriter;
 import java.util.BitSet;
@@ -45,6 +55,8 @@ import java.util.Objects;
 
 public class MobileSignalController extends SignalController<
         MobileSignalController.MobileState, MobileSignalController.MobileIconGroup> {
+    private static final String TAG = "MobileSignalController";
+
     private final TelephonyManager mPhone;
     private final SubscriptionDefaults mDefaults;
     private final String mNetworkNameDefault;
@@ -52,7 +64,8 @@ public class MobileSignalController extends SignalController<
     @VisibleForTesting
     final PhoneStateListener mPhoneStateListener;
     // Save entire info for logging, we only use the id.
-    final SubscriptionInfo mSubscriptionInfo;
+    /// M: Fix bug ALPS02416794
+    /*final*/ SubscriptionInfo mSubscriptionInfo;
 
     // @VisibleForDemoMode
     final SparseArray<MobileIconGroup> mNetworkToIconLookup;
@@ -66,6 +79,11 @@ public class MobileSignalController extends SignalController<
     private SignalStrength mSignalStrength;
     private MobileIconGroup mDefaultIcons;
     private Config mConfig;
+
+    /// M: Add for Plugin feature. @ {
+    private IMobileIconExt mMobileIconExt;
+    private ISystemUIStatusBarExt mStatusBarExt;
+    /// @ }
 
     // TODO: Reduce number of vars passed in, if we have the NetworkController, probably don't
     // need listener lists anymore.
@@ -81,6 +99,10 @@ public class MobileSignalController extends SignalController<
         mPhone = phone;
         mDefaults = defaults;
         mSubscriptionInfo = info;
+        /// M: Init plugin @ {
+        mMobileIconExt = PluginManager.getMobileIconExt(context);
+        mStatusBarExt = PluginManager.getSystemUIStatusBarExt(context);
+        /// @ }
         mPhoneStateListener = new MobilePhoneStateListener(info.getSubscriptionId(),
                 receiverLooper);
         mNetworkNameSeparator = getStringIfExists(R.string.status_bar_network_name_separator);
@@ -95,10 +117,27 @@ public class MobileSignalController extends SignalController<
         mLastState.networkNameData = mCurrentState.networkNameData = networkName;
         mLastState.enabled = mCurrentState.enabled = hasMobileData;
         mLastState.iconGroup = mCurrentState.iconGroup = mDefaultIcons;
+        /// M: Support volte icon
+        initImsRegisterState();
         // Get initial data sim state.
         updateDataSim();
     }
 
+    /// M: Support volte icon @{
+    private void initImsRegisterState(){
+        int phoneId = SubscriptionManager.getPhoneId(mSubscriptionInfo.getSubscriptionId());
+        try {
+            boolean imsRegStatus = ImsManager
+                    .getInstance(mContext, phoneId).getImsRegInfo();
+            mCurrentState.imsRegState = imsRegStatus
+                    ? ServiceState.STATE_IN_SERVICE : ServiceState.STATE_OUT_OF_SERVICE;
+            Log.d(mTag, "init imsRegState:" + mCurrentState.imsRegState
+                    + ",phoneId:" + phoneId);
+        } catch (ImsException ex) {
+            Log.e(mTag, "Fail to get Ims Status");
+        }
+    }
+    /// @}
     public void setConfiguration(Config config) {
         mConfig = config;
         mapIconSets();
@@ -125,6 +164,12 @@ public class MobileSignalController extends SignalController<
         mCurrentState.isDefault = connectedTransports.get(mTransportType);
         // Only show this as not having connectivity if we are default.
         mCurrentState.inetCondition = (isValidated || !mCurrentState.isDefault) ? 1 : 0;
+        Log.d(mTag,"mCurrentState.inetCondition = " + mCurrentState.inetCondition);
+        /// M: Disable inetCondition check as this condition is not sufficient in some cases.
+        /// So always set it is in net with value 1. @ {
+        mCurrentState.inetCondition =
+                mMobileIconExt.customizeMobileNetCondition(mCurrentState.inetCondition);
+        /// @}
         notifyListenersIfNecessary();
     }
 
@@ -144,6 +189,7 @@ public class MobileSignalController extends SignalController<
                         | PhoneStateListener.LISTEN_DATA_CONNECTION_STATE
                         | PhoneStateListener.LISTEN_DATA_ACTIVITY
                         | PhoneStateListener.LISTEN_CARRIER_NETWORK_CHANGE);
+        mStatusBarExt.registerOpStateListener();
     }
 
     /**
@@ -226,12 +272,22 @@ public class MobileSignalController extends SignalController<
         final boolean dataDisabled = mCurrentState.iconGroup == TelephonyIcons.DATA_DISABLED
                 && mCurrentState.userSetup;
 
+        /// M: Customize the signal strength icon id. @ {
+        int iconId = getCurrentIconId();
+        iconId = mStatusBarExt.getCustomizeSignalStrengthIcon(
+                    mSubscriptionInfo.getSubscriptionId(),
+                    iconId,
+                    mSignalStrength,
+                    mDataNetType,
+                    mServiceState);
+        /// @ }
+
         // Show icon in QS when we are connected or need to show roaming or data is disabled.
         boolean showDataIcon = mCurrentState.dataConnected
                 || mCurrentState.iconGroup == TelephonyIcons.ROAMING
                 || dataDisabled;
         IconState statusIcon = new IconState(mCurrentState.enabled && !mCurrentState.airplaneMode,
-                getCurrentIconId(), contentDescription);
+                iconId, contentDescription);
 
         int qsTypeIcon = 0;
         IconState qsIcon = null;
@@ -253,9 +309,41 @@ public class MobileSignalController extends SignalController<
                 || mCurrentState.iconGroup == TelephonyIcons.ROAMING
                 || dataDisabled;
         int typeIcon = showDataIcon ? icons.mDataType : 0;
-        callback.setMobileDataIndicators(statusIcon, qsIcon, typeIcon, qsTypeIcon,
-                activityIn, activityOut, dataContentDescription, description, icons.mIsWide,
-                mSubscriptionInfo.getSubscriptionId());
+        /** M: Support [Network Type on StatusBar], change the implement methods.
+          * Get the network icon base on service state.
+          * Add one more parameter for network type.
+          * @ { **/
+        int networkIcon = mCurrentState.networkIcon;
+
+        /// M: Support volte icon.Bug fix when airplane mode is on go to hide volte icon
+        int volteIcon = mCurrentState.airplaneMode && !isWfcEnable()
+                ? 0 : mCurrentState.volteIcon;
+
+        /// M: Customize the data type icon id. @ {
+        typeIcon = mStatusBarExt.getDataTypeIcon(
+                        mSubscriptionInfo.getSubscriptionId(),
+                        typeIcon,
+                        mDataNetType,
+                        mCurrentState.dataConnected ? TelephonyManager.DATA_CONNECTED :
+                            TelephonyManager.DATA_DISCONNECTED,
+                        mServiceState);
+        /// @ }
+        /// M: Customize the network type icon id. @ {
+        networkIcon = mStatusBarExt.getNetworkTypeIcon(
+                        mSubscriptionInfo.getSubscriptionId(),
+                        networkIcon,
+                        mDataNetType,
+                        mServiceState);
+        /// @ }
+
+        callback.setMobileDataIndicators(statusIcon, qsIcon, typeIcon, networkIcon, volteIcon,
+                qsTypeIcon, activityIn, activityOut, dataContentDescription, description,
+                icons.mIsWide, mSubscriptionInfo.getSubscriptionId());
+        /** @ }*/
+
+        /// M: update plmn label @{
+        mNetworkController.refreshPlmnCarrierLabel();
+        /// @}
     }
 
     @Override
@@ -295,14 +383,26 @@ public class MobileSignalController extends SignalController<
 
     private boolean isRoaming() {
         if (isCdma()) {
+            /// M: fix ALPS02742814
+            if (mServiceState == null) {
+                return false;
+            }
             final int iconMode = mServiceState.getCdmaEriIconMode();
-            return mServiceState.getCdmaEriIconIndex() != EriInfo.ROAMING_INDICATOR_OFF
+            return mServiceState != null
+                    && mServiceState.getCdmaEriIconIndex() != EriInfo.ROAMING_INDICATOR_OFF
                     && (iconMode == EriInfo.ROAMING_ICON_MODE_NORMAL
                         || iconMode == EriInfo.ROAMING_ICON_MODE_FLASH);
         } else {
             return mServiceState != null && mServiceState.getRoaming();
         }
     }
+
+    /// M: Support VoLte @{
+    public boolean isLteNetWork() {
+        return (mDataNetType == TelephonyManager.NETWORK_TYPE_LTE
+            || mDataNetType == TelephonyManager.NETWORK_TYPE_LTE_CA);
+    }
+    /// M: @}
 
     private boolean isCarrierNetworkChangeActive() {
         return mCurrentState.carrierNetworkChangeMode;
@@ -320,8 +420,63 @@ public class MobileSignalController extends SignalController<
         } else if (action.equals(TelephonyIntents.ACTION_DEFAULT_DATA_SUBSCRIPTION_CHANGED)) {
             updateDataSim();
             notifyListenersIfNecessary();
+        } else if (action.equals(ImsManager.ACTION_IMS_STATE_CHANGED)) {
+          /// M: support dual Ims. @{
+            handleImsAction(intent);
+            notifyListenersIfNecessary();
+            /// @}
         }
     }
+
+    /// M: Add for volte @{
+    private void handleImsAction(Intent intent){
+        mCurrentState.imsRegState = intent.getIntExtra(ImsManager.EXTRA_IMS_REG_STATE_KEY,
+                ServiceState.STATE_OUT_OF_SERVICE);
+        mCurrentState.imsCap = getImsEnableCap(intent);
+        mCurrentState.volteIcon = getVolteIcon();
+        Log.d(mTag, "handleImsAction imsRegstate=" + mCurrentState.imsRegState + ",imsCap = " +
+                mCurrentState.imsCap + ",volteIconId=" + mCurrentState.volteIcon);
+    }
+    private int getVolteIcon() {
+        int icon = 0;
+        if (isImsOverWfc()) {
+            boolean isNonSsProject
+                = !(SystemProperties.get("persist.radio.multisim.config", "ss").equals("ss"));
+            if (isNonSsProject) {
+                icon = NetworkTypeUtils.WFC_ICON;
+            }
+        } else if (isImsOverVoice() && isLteNetWork() &&
+            mCurrentState.imsRegState == ServiceState.STATE_IN_SERVICE) {
+            icon = NetworkTypeUtils.VOLTE_ICON;
+        }
+        return icon;
+    }
+    private int getImsEnableCap(Intent intent) {
+        int cap = ImsConfig.FeatureConstants.FEATURE_TYPE_UNKNOWN;
+        boolean[] enabledFeatures =
+                intent.getBooleanArrayExtra(ImsManager.EXTRA_IMS_ENABLE_CAP_KEY);
+        if (enabledFeatures != null) {
+            if (enabledFeatures[ImsConfig.FeatureConstants.FEATURE_TYPE_VOICE_OVER_WIFI]) {
+                cap = ImsConfig.FeatureConstants.FEATURE_TYPE_VOICE_OVER_WIFI;
+            } else if (enabledFeatures[ImsConfig.FeatureConstants.FEATURE_TYPE_VOICE_OVER_LTE]) {
+                cap = ImsConfig.FeatureConstants.FEATURE_TYPE_VOICE_OVER_LTE;
+            }
+        }
+        return cap;
+    }
+    public boolean isImsOverWfc() {
+        return mCurrentState.imsCap == ImsConfig.FeatureConstants.FEATURE_TYPE_VOICE_OVER_WIFI;
+    }
+    private boolean isImsOverVoice() {
+        return mCurrentState.imsCap == ImsConfig.FeatureConstants.FEATURE_TYPE_VOICE_OVER_LTE;
+    }
+
+    public boolean isWfcEnable() {
+        boolean isWfcEnabled = TelephonyManagerEx.getDefault().isWifiCallingEnabled(
+            mSubscriptionInfo.getSubscriptionId());
+        return isWfcEnabled;
+    }
+    /// @}
 
     private void updateDataSim() {
         int defaultDataSub = mDefaults.getDefaultDataSubId();
@@ -372,6 +527,15 @@ public class MobileSignalController extends SignalController<
             }
             strData.append(dataSpn);
         }
+
+        // M: ALPS02744648 for C2K, there isn't dataspn parameter, when no plmn
+        // and no dataspn, show spn instead "no service" here @{
+        if (strData.length() == 0 && showSpn && spn != null) {
+            Log.d("CarrierLabel", "show spn instead 'no service' here: " + spn);
+            strData.append(spn);
+        }
+        // @}
+
         if (strData.length() != 0) {
             mCurrentState.networkNameData = strData.toString();
         } else {
@@ -390,20 +554,37 @@ public class MobileSignalController extends SignalController<
                     + " ss=" + mSignalStrength);
         }
         mCurrentState.connected = hasService() && mSignalStrength != null;
+        handleIWLANNetwork();
         if (mCurrentState.connected) {
             if (!mSignalStrength.isGsm() && mConfig.alwaysShowCdmaRssi) {
                 mCurrentState.level = mSignalStrength.getCdmaLevel();
             } else {
                 mCurrentState.level = mSignalStrength.getLevel();
             }
+            /// M: Customize the signal strength level. @ {
+            mCurrentState.level = mStatusBarExt.getCustomizeSignalStrengthLevel(
+                    mCurrentState.level, mSignalStrength, mServiceState);
+            /// @ }
         }
         if (mNetworkToIconLookup.indexOfKey(mDataNetType) >= 0) {
             mCurrentState.iconGroup = mNetworkToIconLookup.get(mDataNetType);
         } else {
             mCurrentState.iconGroup = mDefaultIcons;
         }
+        /// M: Add for data network type.
+        mCurrentState.dataNetType = mDataNetType;
         mCurrentState.dataConnected = mCurrentState.connected
                 && mDataState == TelephonyManager.DATA_CONNECTED;
+        /// M: Add for op network tower type.
+        mCurrentState.customizedState = mStatusBarExt.getCustomizeCsState(mServiceState,
+                mCurrentState.customizedState);
+        /// M: Add for op signal strength tower icon.
+        mCurrentState.customizedSignalStrengthIcon = mStatusBarExt.getCustomizeSignalStrengthIcon(
+                mSubscriptionInfo.getSubscriptionId(),
+                mCurrentState.customizedSignalStrengthIcon,
+                mSignalStrength,
+                mDataNetType,
+                mServiceState);
 
         if (isCarrierNetworkChangeActive()) {
             mCurrentState.iconGroup = TelephonyIcons.CARRIER_NETWORK_CHANGE;
@@ -421,12 +602,35 @@ public class MobileSignalController extends SignalController<
                 && !TextUtils.isEmpty(mServiceState.getOperatorAlphaShort())) {
             mCurrentState.networkName = mServiceState.getOperatorAlphaShort();
         }
+        /// M: For network type big icon.
+        mCurrentState.networkIcon =
+            NetworkTypeUtils.getNetworkTypeIcon(mServiceState, mConfig, hasService());
+        /// M: For volte type icon.
+        mCurrentState.volteIcon = getVolteIcon();
 
         notifyListenersIfNecessary();
     }
 
     private boolean isDataDisabled() {
         return !mPhone.getDataEnabled(mSubscriptionInfo.getSubscriptionId());
+    }
+
+    /// M: bug fix for ALPS02603527.
+    /** IWLAN is special case in which the transmission via WIFI, no need cellular network, then
+    whenever PS type is IWLAN, cellular network is not connected. However, in special case, CS may
+    still connect under IWLAN with valid network type.
+    **/
+     private void handleIWLANNetwork() {
+        /// M: fix ALPS02742814
+        if (mCurrentState.connected && mServiceState != null &&
+            mServiceState.getDataNetworkType() == TelephonyManager.NETWORK_TYPE_IWLAN &&
+            mServiceState.getVoiceNetworkType() == TelephonyManager.NETWORK_TYPE_UNKNOWN) {
+            Log.d(mTag,"Current is IWLAN network only, no cellular network available");
+            mCurrentState.connected = false;
+        }
+        /// M: Add for plugin wifi-only mode.
+        mCurrentState.connected = mStatusBarExt.updateSignalStrengthWifiOnlyMode(
+            mServiceState, mCurrentState.connected);
     }
 
     @VisibleForTesting
@@ -471,6 +675,7 @@ public class MobileSignalController extends SignalController<
             }
             mServiceState = state;
             mDataNetType = state.getDataNetworkType();
+            //TODO:: Double check with FWK
             if (mDataNetType == TelephonyManager.NETWORK_TYPE_LTE && mServiceState != null &&
                     mServiceState.isUsingCarrierAggregation()) {
                 mDataNetType = TelephonyManager.NETWORK_TYPE_LTE_CA;
@@ -486,6 +691,7 @@ public class MobileSignalController extends SignalController<
             }
             mDataState = state;
             mDataNetType = networkType;
+            //TODO:: Double check with FWK
             if (mDataNetType == TelephonyManager.NETWORK_TYPE_LTE && mServiceState != null &&
                     mServiceState.isUsingCarrierAggregation()) {
                 mDataNetType = TelephonyManager.NETWORK_TYPE_LTE_CA;
@@ -542,6 +748,19 @@ public class MobileSignalController extends SignalController<
         boolean isDefault;
         boolean userSetup;
 
+        /// M: For network type big icon.
+        int networkIcon;
+        /// M: Add for data network type.
+        int dataNetType;
+        /// M: Add for op network tower type.
+        int customizedState;
+        /// M: Add for op signal strength tower icon.
+        int customizedSignalStrengthIcon;
+        /// M: Add for volte @{
+        int imsRegState = ServiceState.STATE_POWER_OFF;
+        int imsCap;
+        int volteIcon;
+        /// @}
         @Override
         public void copyFrom(State s) {
             super.copyFrom(s);
@@ -555,6 +774,19 @@ public class MobileSignalController extends SignalController<
             airplaneMode = state.airplaneMode;
             carrierNetworkChangeMode = state.carrierNetworkChangeMode;
             userSetup = state.userSetup;
+
+            /// M: For network type big icon.
+            networkIcon = state.networkIcon;
+            /// M: Add for data network type.
+            dataNetType = state.dataNetType;
+            /// M: Add for op network tower type.
+            customizedState = state.customizedState;
+            /// M: Add for op signal strength tower icon.
+            customizedSignalStrengthIcon = state.customizedSignalStrengthIcon;
+            /// M: Add for volte
+            imsRegState = state.imsRegState;
+            imsCap = state.imsCap;
+            volteIcon = state.volteIcon;
         }
 
         @Override
@@ -571,6 +803,21 @@ public class MobileSignalController extends SignalController<
             builder.append("carrierNetworkChangeMode=").append(carrierNetworkChangeMode)
                     .append(',');
             builder.append("userSetup=").append(userSetup);
+
+            /// M: For network type big icon.
+            builder.append("networkIcon").append(networkIcon).append(',');
+            /// M: Add for data network type.
+            builder.append("dataNetType").append(dataNetType).append(',');
+            /// M: Add for op network tower type.
+            builder.append("customizedState").append(customizedState).append(',');
+            /// M: Add for op signal strength tower icon.
+            builder.append("customizedSignalStrengthIcon").append(customizedSignalStrengthIcon)
+                    .append(',');
+            /// M: Add for volte.
+            builder.append("imsRegState=").append(imsRegState).append(',');
+            builder.append("imsCap=").append(imsCap).append(',');
+            builder.append("volteIconId=").append(volteIcon).append(',');
+            builder.append("carrierNetworkChangeMode=").append(carrierNetworkChangeMode);
         }
 
         @Override
@@ -583,8 +830,28 @@ public class MobileSignalController extends SignalController<
                     && ((MobileState) o).isEmergency == isEmergency
                     && ((MobileState) o).airplaneMode == airplaneMode
                     && ((MobileState) o).carrierNetworkChangeMode == carrierNetworkChangeMode
+                    /// M: For network type big icon.
+                    && ((MobileState) o).networkIcon == networkIcon
+                    && ((MobileState) o).volteIcon == volteIcon
+                    /// M: Add for data network type.
+                    && ((MobileState) o).dataNetType == dataNetType
+                    /// M: Add for op network tower type.
+                    && ((MobileState) o).customizedState == customizedState
+                    /// M: Add for op signal strength tower icon.
+                    && ((MobileState) o).customizedSignalStrengthIcon ==
+                                             customizedSignalStrengthIcon
                     && ((MobileState) o).userSetup == userSetup
                     && ((MobileState) o).isDefault == isDefault;
         }
     }
+
+    /// M: Support for PLMN. @{
+    public SubscriptionInfo getControllerSubInfo() {
+        return mSubscriptionInfo;
+    }
+
+    public boolean getControllserHasService() {
+        return hasService();
+    }
+    /// M: Support for PLMN. @}
 }

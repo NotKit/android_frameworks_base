@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2015 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2008 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -245,8 +250,12 @@ public class GpsNetInitiatedHandler {
     }
 
     public boolean getInEmergency() {
-        boolean isInEmergencyCallback = Boolean.parseBoolean(
-                SystemProperties.get(TelephonyProperties.PROPERTY_INECM_MODE));
+        ///M: INECM_MODE property may contain multiple boolean string for multiple subId
+        String propertyStr = SystemProperties.get(TelephonyProperties.PROPERTY_INECM_MODE);
+        boolean isInEmergencyCallback = false;
+        if (propertyStr != null && propertyStr.indexOf("true") != -1) {
+            isInEmergencyCallback = true;
+        }
         return mIsInEmergency || isInEmergencyCallback;
     }
 
@@ -391,8 +400,13 @@ public class GpsNetInitiatedHandler {
                 .setContentText(message)
                 .setContentIntent(pi);
 
-        notificationManager.notifyAsUser(null, notif.notificationId, mNiNotificationBuilder.build(),
+        /// M: Fix notification message display not completed
+        Notification niNotification = new Notification.BigTextStyle(mNiNotificationBuilder)
+                .bigText(message).build();
+
+        notificationManager.notifyAsUser(null, notif.notificationId, niNotification,
                 UserHandle.ALL);
+        /// mtk added end
     }
 
     // Opens the notification dialog and waits for user input

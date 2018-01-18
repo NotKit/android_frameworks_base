@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +25,8 @@ import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.util.Log;
 import android.util.Printer;
+
+
 
 /**
   * Class used to run a message loop for a thread.  Threads by default do
@@ -73,6 +80,11 @@ public final class Looper {
 
     private Printer mLogging;
     private long mTraceTag;
+    /// M: ANR mechanism for Message Monitor Service @{
+    private Printer mMsgMonitorLogging;
+    private static final boolean IS_USER_BUILD = "user".equals(Build.TYPE) ||
+            "userdebug".equals(Build.TYPE);
+    /// M: ANR mechanism for Message Monitor Service @}
 
      /** Initialize the current thread as a looper.
       * This gives you a chance to create handlers that then reference
@@ -146,6 +158,43 @@ public final class Looper {
                         msg.callback + ": " + msg.what);
             }
 
+            /// M: ANR mechanism for Message Monitor Service @{
+            if (!IS_USER_BUILD) {
+                Printer msglogging = me.mMsgMonitorLogging;
+                if (msglogging != null) {
+                    msglogging.println(">>>>> Dispatching to " + msg.target + " " +
+                            msg.callback + ": " + msg.what);
+                }
+
+                if (MessageMonitorLogger.monitorMsg.containsKey(msg)) {
+                    MessageMonitorLogger.MonitorMSGInfo monitorMsg =
+                        MessageMonitorLogger.monitorMsg.get(msg);
+                    if (MessageMonitorLogger.mMsgLoggerHandler.hasMessages(
+                        MessageMonitorLogger.START_MONITOR_PENDING_TIMEOUT_MSG, monitorMsg)) {
+                        Log.d("Looper", "RemoveMessages PENDING_TIMEOUT_MSG msg= " + msg);
+                        MessageMonitorLogger.mMsgLoggerHandler.removeMessages(
+                            MessageMonitorLogger.START_MONITOR_PENDING_TIMEOUT_MSG, monitorMsg);
+                        try {
+                            if (monitorMsg.executionTimeout > 100) {
+                                Message msg1 = MessageMonitorLogger.mMsgLoggerHandler.obtainMessage(
+                                    MessageMonitorLogger.START_MONITOR_EXECUTION_TIMEOUT_MSG,
+                                    monitorMsg);
+                                MessageMonitorLogger.mMsgLoggerHandler.sendMessageDelayed(
+                                    msg1, monitorMsg.executionTimeout);
+                            } else {
+                                MessageMonitorLogger.monitorMsg.remove(msg);
+                                if (monitorMsg.executionTimeout !=
+                                    MessageMonitorLogger.DISABLE_MONITOR_EXECUTION_TIMEOUT_MSG)
+                                    throw new IllegalArgumentException(
+                                        "Execution timeout <100 ms!");
+                            }
+                        } catch (IllegalArgumentException e) {
+                            Log.d(TAG, "Execution timeout exception " + e);
+                        }
+                    }
+                }
+            }
+            /// M: ANR mechanism for Message Monitor Service @}
             final long traceTag = me.mTraceTag;
             if (traceTag != 0 && Trace.isTagEnabled(traceTag)) {
                 Trace.traceBegin(traceTag, msg.target.getTraceName(msg));
@@ -162,6 +211,25 @@ public final class Looper {
                 logging.println("<<<<< Finished to " + msg.target + " " + msg.callback);
             }
 
+            /// M: ANR mechanism for Message Monitor Service @{
+            if (!IS_USER_BUILD) {
+                Printer msglogging = me.mMsgMonitorLogging;
+                if (msglogging != null) {
+                    msglogging.println("<<<<< Finished to " + msg.target + " " + msg.callback);
+                }
+                if (MessageMonitorLogger.monitorMsg.containsKey(msg)) {
+                    MessageMonitorLogger.MonitorMSGInfo monitorMsg =
+                        MessageMonitorLogger.monitorMsg.get(msg);
+                    if (MessageMonitorLogger.mMsgLoggerHandler.hasMessages(
+                        MessageMonitorLogger.START_MONITOR_EXECUTION_TIMEOUT_MSG, monitorMsg)) {
+                        Log.d("Looper", "RemoveMessages EXECUTION_TIMEOUT msg=" + msg);
+                        MessageMonitorLogger.mMsgLoggerHandler.removeMessages(
+                            MessageMonitorLogger.START_MONITOR_EXECUTION_TIMEOUT_MSG, monitorMsg);
+                        MessageMonitorLogger.monitorMsg.remove(msg);
+                    }
+                }
+            }
+            /// M: ANR mechanism for Message Monitor Service @}
             // Make sure that during the course of dispatching the
             // identity of the thread wasn't corrupted.
             final long newIdent = Binder.clearCallingIdentity();
@@ -294,4 +362,12 @@ public final class Looper {
         return "Looper (" + mThread.getName() + ", tid " + mThread.getId()
                 + ") {" + Integer.toHexString(System.identityHashCode(this)) + "}";
     }
+   /// M: ANR mechanism for Message Monitor Service @{
+   /**
+     * @hide
+     */
+    public void setMonitorMessageLogging(Printer printer) {
+        mMsgMonitorLogging = printer;
+    }
+   /// M: ANR mechanism for Message Monitor Service @}
 }

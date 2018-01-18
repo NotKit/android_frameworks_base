@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -493,6 +498,14 @@ public class Notification implements Parcelable
      * @deprecated Use {@link #priority} with a positive value.
      */
     public static final int FLAG_HIGH_PRIORITY      = 0x00000080;
+
+    /**
+     *
+     * @hide
+     * @internal
+     * M: MTK proprietary flag for hiding notifications when calling setForeground.
+     */
+    public static final int FLAG_HIDE_NOTIFICATION  = 0x10000000;
 
     /**
      * Bit to be bitswise-ored into the {@link #flags} field that should be
@@ -1897,6 +1910,11 @@ public class Notification implements Parcelable
             // IMPORTANT: Add marshaling code in writeToParcelImpl as we
             // want to intercept all pending events written to the pacel.
             writeToParcelImpl(parcel, flags);
+            /// M: Fix ALPS02856963 no need callback to our onMarshaled this time. @{
+            if (collectPendingIntents) {
+                PendingIntent.setOnMarshaledListener(null);
+            }
+            /// @}
             // Must be written last!
             parcel.writeArraySet(allPendingIntents);
         } finally {

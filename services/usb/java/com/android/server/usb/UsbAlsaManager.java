@@ -51,7 +51,7 @@ import java.util.ArrayList;
  */
 public final class UsbAlsaManager {
     private static final String TAG = UsbAlsaManager.class.getSimpleName();
-    private static final boolean DEBUG = false;
+    private static final boolean DEBUG = true;
 
     private static final String ALSA_DIRECTORY = "/dev/snd/";
 

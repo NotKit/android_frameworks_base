@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +22,7 @@
 package com.android.internal.widget;
 
 import android.annotation.IntDef;
+import android.app.ActivityManager;
 import android.annotation.Nullable;
 import android.app.admin.DevicePolicyManager;
 import android.app.trust.IStrongAuthTracker;
@@ -25,6 +31,8 @@ import android.content.ComponentName;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.pm.UserInfo;
+import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.os.AsyncTask;
 import android.os.Handler;
 import android.os.IBinder;
@@ -33,15 +41,20 @@ import android.os.Message;
 import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.os.SystemClock;
+import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.os.UserManager;
 import android.os.storage.IMountService;
 import android.os.storage.StorageManager;
 import android.provider.Settings;
+import android.telecom.TelecomManager;
 import android.text.TextUtils;
 import android.util.Log;
+import android.view.View;
+import android.widget.Button;
 import android.util.SparseIntArray;
 
+import com.android.internal.R;
 import com.google.android.collect.Lists;
 
 import java.lang.annotation.Retention;
@@ -104,13 +117,11 @@ public class LockPatternUtils {
      */
     public static final int MIN_PATTERN_REGISTER_FAIL = MIN_LOCK_PATTERN_SIZE;
 
-    @Deprecated
     public final static String LOCKOUT_PERMANENT_KEY = "lockscreen.lockedoutpermanently";
     public final static String LOCKOUT_ATTEMPT_DEADLINE = "lockscreen.lockoutattemptdeadline";
     public final static String LOCKOUT_ATTEMPT_TIMEOUT_MS = "lockscreen.lockoutattempttimeoutmss";
     public final static String PATTERN_EVER_CHOSEN_KEY = "lockscreen.patterneverchosen";
     public final static String PASSWORD_TYPE_KEY = "lockscreen.password_type";
-    @Deprecated
     public final static String PASSWORD_TYPE_ALTERNATE_KEY = "lockscreen.password_type_alternate";
     public final static String LOCK_PASSWORD_SALT_KEY = "lockscreen.password_salt";
     public final static String DISABLE_LOCKSCREEN_KEY = "lockscreen.disabled";
@@ -140,6 +151,45 @@ public class LockPatternUtils {
     // Maximum allowed number of repeated or ordered characters in a sequence before we'll
     // consider it a complex PIN/password.
     public static final int MAX_ALLOWED_SEQUENCE = 3;
+
+    /// M : VoiceUnlock
+    /**
+     * @internal
+     * M: Intent extra key to specify which command id is set for voice unlock settings.
+     */
+    public static final String SETTINGS_COMMAND_KEY = "settings_command_key";
+
+    /**
+     * @internal
+     * M: Intent extra key to specify launching which activity is launched in this command.
+     */
+    public static final String SETTINGS_COMMAND_VALUE = "settings_command_value";
+
+    /**
+     * @internal
+     * M: Intent extra key to specify if it is for weak fallback.
+     */
+    public final static String LOCKSCREEN_WEAK_FALLBACK
+            = "lockscreen.weak_fallback";
+
+    /**
+     * @internal
+     * M: Intent extra key to specify which weak fallback is set.
+     */
+    public final static String LOCKSCREEN_WEAK_FALLBACK_FOR
+            = "lockscreen.weak_fallback_for";
+
+    /**
+     * @internal
+     * M: The lock screen type of voice unlock.
+     */
+    public final static String TYPE_VOICE_UNLOCK = "voice_unlock"; /// M: fallback for VoiceUnlock
+
+    /**
+     * M: Settings db key to specify if the weak fallback lock is set or not
+     */
+    public final static String VOICE_WEAK_FALLBACK_SET_KEY
+            = "lockscreen.voice_weak_fallback_set";
 
     public static final String PROFILE_KEY_NAME_ENCRYPT = "profile_key_name_encrypt_";
     public static final String PROFILE_KEY_NAME_DECRYPT = "profile_key_name_decrypt_";
@@ -561,6 +611,58 @@ public class LockPatternUtils {
 
         return DevicePolicyManager.PASSWORD_QUALITY_UNSPECIFIED;
     }
+    /*public int getActivePasswordQuality(int userId) {
+        int activePasswordQuality = DevicePolicyManager.PASSWORD_QUALITY_UNSPECIFIED;
+        int quality =
+                (int) getLong(PASSWORD_TYPE_KEY,
+                        DevicePolicyManager.PASSWORD_QUALITY_SOMETHING, userId);
+
+        switch (quality) {
+        case DevicePolicyManager.PASSWORD_QUALITY_SOMETHING:
+            if (isLockPatternEnabledWithBackup(userId)) {
+                activePasswordQuality = DevicePolicyManager.PASSWORD_QUALITY_SOMETHING;
+            }
+            break;
+        case DevicePolicyManager.PASSWORD_QUALITY_BIOMETRIC_WEAK:
+            //if (isBiometricWeakInstalled()) {
+                activePasswordQuality = DevicePolicyManager.PASSWORD_QUALITY_BIOMETRIC_WEAK;
+            //}
+            break;
+        /// M: VoiceUnlock
+        case DevicePolicyManager.PASSWORD_QUALITY_VOICE_WEAK:
+            if (isLockPasswordEnabledWithBackUp(userId)) {
+                activePasswordQuality = DevicePolicyManager.PASSWORD_QUALITY_VOICE_WEAK;
+            }
+            break;
+        case DevicePolicyManager.PASSWORD_QUALITY_NUMERIC:
+            if (isLockPasswordEnabledWithBackUp(userId)) {
+                activePasswordQuality = DevicePolicyManager.PASSWORD_QUALITY_NUMERIC;
+            }
+            break;
+        case DevicePolicyManager.PASSWORD_QUALITY_NUMERIC_COMPLEX:
+            if (isLockPasswordEnabledWithBackUp(userId)) {
+                activePasswordQuality = DevicePolicyManager.PASSWORD_QUALITY_NUMERIC_COMPLEX;
+            }
+            break;
+        case DevicePolicyManager.PASSWORD_QUALITY_ALPHABETIC:
+            if (isLockPasswordEnabledWithBackUp(userId)) {
+                activePasswordQuality = DevicePolicyManager.PASSWORD_QUALITY_ALPHABETIC;
+            }
+            break;
+        case DevicePolicyManager.PASSWORD_QUALITY_ALPHANUMERIC:
+            if (isLockPasswordEnabledWithBackUp(userId)) {
+                activePasswordQuality = DevicePolicyManager.PASSWORD_QUALITY_ALPHANUMERIC;
+            }
+            break;
+        case DevicePolicyManager.PASSWORD_QUALITY_COMPLEX:
+            if (isLockPasswordEnabledWithBackUp(userId)) {
+                activePasswordQuality = DevicePolicyManager.PASSWORD_QUALITY_COMPLEX;
+            }
+            break;
+        }
+
+        return activePasswordQuality;
+    }*/
 
     /**
      * Use it to reset keystore without wiping work profile
@@ -578,6 +680,17 @@ public class LockPatternUtils {
      * Clear any lock pattern or password.
      */
     public void clearLock(int userHandle) {
+        clearLock(false, userHandle);
+    }
+
+    /**
+     * M: Clear any lock pattern or password.
+     */
+    public void clearLock(boolean isFallback, int userHandle) {
+        if (!isFallback) {
+            deleteGallery(userHandle);
+        }
+
         setLong(PASSWORD_TYPE_KEY, DevicePolicyManager.PASSWORD_QUALITY_UNSPECIFIED, userHandle);
 
         try {
@@ -632,7 +745,21 @@ public class LockPatternUtils {
      * @param savedPattern The previously saved pattern, converted to String format
      * @param userId the user whose pattern is to be saved.
      */
-    public void saveLockPattern(List<LockPatternView.Cell> pattern, String savedPattern, int userId) {
+    public void saveLockPattern(List<LockPatternView.Cell> pattern, String savedPattern,
+            int userId) {
+        saveLockPattern(pattern, savedPattern, false, null, userId);
+    }
+
+    /**
+     * Save a lock pattern for a specific biometric lock.
+     * @param pattern The new pattern to save.
+     * @param savedPattern The previously saved pattern, converted to String format
+     * @param isFallback Specifies if this is a fallback to biometric weak
+     * @param fallbackFor Specifies if it's a face or voice unlock
+     * @param userId the user whose pattern is to be saved.
+     */
+    public void saveLockPattern(List<LockPatternView.Cell> pattern, String savedPattern,
+            boolean isFallback, String fallbackFor, int userId) {
         try {
             if (pattern == null || pattern.size() < MIN_LOCK_PATTERN_SIZE) {
                 throw new IllegalArgumentException("pattern must not be null and at least "
@@ -655,6 +782,20 @@ public class LockPatternUtils {
             }
 
             setBoolean(PATTERN_EVER_CHOSEN_KEY, true, userId);
+
+            if (!isFallback) {
+                deleteGallery(userId);
+            } else {
+                if (fallbackFor.equals(TYPE_VOICE_UNLOCK)) { /// M: VoiceUnlock
+                    setLong(PASSWORD_TYPE_KEY, DevicePolicyManager.PASSWORD_QUALITY_VOICE_WEAK,
+                            userId);
+                    setLong(PASSWORD_TYPE_ALTERNATE_KEY,
+                            DevicePolicyManager.PASSWORD_QUALITY_SOMETHING, userId);
+                    finishVoiceWeak(userId);
+                    dpm.setActivePasswordState(DevicePolicyManager.PASSWORD_QUALITY_VOICE_WEAK,
+                            0, 0, 0, 0, 0, 0, 0, userId);
+                }
+            }
 
             onAfterChangingPassword(userId);
         } catch (RemoteException re) {
@@ -851,6 +992,23 @@ public class LockPatternUtils {
      */
     public void saveLockPassword(String password, String savedPassword, int quality,
             int userHandle) {
+        saveLockPassword(password, savedPassword, quality, false, null,userHandle);
+    }
+
+    /**
+     * M: Add fallback target
+     * Save a lock password for a specific biometric lock.  Does not ensure that the password
+     * is as good as the requested mode, but will adjust the mode to be as good as the
+     * pattern.
+     * @param password The password to save
+     * @param savedPassword The previously saved lock password, or null if none
+     * @param quality {@see DevicePolicyManager#getPasswordQuality(android.content.ComponentName)}
+     * @param isFallback Specifies if this is a fallback to biometric weak
+     * @param fallbackFor Specifies if it's a face or voice unlock
+     * @param userHandle The userId of the user to change the password for
+     */
+    public void saveLockPassword(String password, String savedPassword, int quality,
+            boolean isFallback, String fallbackFor, int userHandle) {
         try {
             DevicePolicyManager dpm = getDevicePolicyManager();
             if (password == null || password.length() < MIN_LOCK_PASSWORD_SIZE) {
@@ -875,6 +1033,20 @@ public class LockPatternUtils {
                     int type = numeric || numericComplex ? StorageManager.CRYPT_TYPE_PIN
                             : StorageManager.CRYPT_TYPE_PASSWORD;
                     updateEncryptionPassword(type, password);
+                }
+            }
+
+            if (!isFallback) {
+                deleteGallery(userHandle);
+            } else {
+                if (fallbackFor.equals(TYPE_VOICE_UNLOCK)) { /// M: VoiceUnlock
+                    setLong(PASSWORD_TYPE_KEY, DevicePolicyManager.PASSWORD_QUALITY_VOICE_WEAK,
+                            userHandle);
+                    setLong(PASSWORD_TYPE_ALTERNATE_KEY, Math.max(quality, computedQuality),
+                            userHandle);
+                    finishVoiceWeak(userHandle);
+                    dpm.setActivePasswordState(DevicePolicyManager.PASSWORD_QUALITY_VOICE_WEAK,
+                            0, 0, 0, 0, 0, 0, 0, userHandle);
                 }
             }
 
@@ -936,8 +1108,18 @@ public class LockPatternUtils {
      * @return stored password quality
      */
     public int getKeyguardStoredPasswordQuality(int userHandle) {
-        return (int) getLong(PASSWORD_TYPE_KEY,
+        int quality = (int) getLong(PASSWORD_TYPE_KEY,
                 DevicePolicyManager.PASSWORD_QUALITY_UNSPECIFIED, userHandle);
+
+        // If the user has chosen to use weak biometric sensor, then return the backup locking
+        // method and treat biometric as a special case.
+        if (quality == DevicePolicyManager.PASSWORD_QUALITY_BIOMETRIC_WEAK ||
+            quality == DevicePolicyManager.PASSWORD_QUALITY_VOICE_WEAK) { /// M: VoiceUnlock
+            quality = (int) getLong(PASSWORD_TYPE_ALTERNATE_KEY,
+                        DevicePolicyManager.PASSWORD_QUALITY_UNSPECIFIED, userHandle);
+        }
+
+        return quality;
     }
 
     /**
@@ -1639,5 +1821,197 @@ public class LockPatternUtils {
                 }
             }
         };
+    }
+
+    /// M: MTK added functions
+
+    /**
+     * @internal
+     * M: Indicate VoiceUnlock has set up voice unlock
+      * @return true if the lockscreen method is set to voiceunlock
+      */
+    public boolean usingVoiceWeak() {
+        return usingVoiceWeak(ActivityManager.getCurrentUser());
+    }
+
+    public boolean usingVoiceWeak(int userId) {
+        if (SystemProperties.get("ro.mtk_voice_unlock_support").equals("1")) {
+            int quality =
+                    (int) getLong(PASSWORD_TYPE_KEY,
+                            DevicePolicyManager.PASSWORD_QUALITY_SOMETHING,
+                            userId);
+            return quality == DevicePolicyManager.PASSWORD_QUALITY_VOICE_WEAK;
+        } else {
+            return false;
+        }
+    }
+
+    /**
+     * @internal
+     * M: When voice unlock setup is done, update fallback setting and show setup done activity.
+     */
+    private void finishVoiceWeak(int userId) {
+        setVoiceUnlockFallbackSet(true);
+
+        // Launch intent to show final screen, this also
+        // moves the temporary gallery to the actual gallery
+        Intent intent = new Intent();
+        intent.setClassName("com.mediatek.voiceunlock",
+                "com.mediatek.voiceunlock.VoiceUnlockSetupEnd");
+        mContext.startActivityAsUser(intent, new UserHandle(userId));
+    }
+
+    /**
+     * M: Set voice unlock fallback has been set or not.
+     * @param set True if fallback unlock is set.
+     */
+    public void setVoiceUnlockFallbackSet(boolean set) {
+        setVoiceUnlockFallbackSet(set, ActivityManager.getCurrentUser());
+    }
+
+    public void setVoiceUnlockFallbackSet(boolean set, int userId) {
+        setBoolean(VOICE_WEAK_FALLBACK_SET_KEY, set, userId);
+    }
+
+    /**
+     * M: Indicates whether voice unlock fallback has been set.
+     *
+     * @return true if voice unlock fallback has been set, false otherwise.
+     * @hide
+     * @internal
+     */
+    public boolean getVoiceUnlockFallbackSet() {
+        return getVoiceUnlockFallbackSet(ActivityManager.getCurrentUser());
+    }
+    public boolean getVoiceUnlockFallbackSet(int userId) {
+        return getBoolean(VOICE_WEAK_FALLBACK_SET_KEY, false, userId);
+    }
+
+    /**
+     * @internal
+     * M: reset Lockout attempt Dead line, to reset it as 0
+     * The deadline value has to be reset after each time system rebooted
+     */
+    public void resetLockoutAttemptDeadline() {
+        resetLockoutAttemptDeadline(ActivityManager.getCurrentUser());
+    }
+
+    public void resetLockoutAttemptDeadline(int userId) {
+        setLong(LOCKOUT_ATTEMPT_DEADLINE, 0L, userId);
+    }
+
+    /**
+     * @return true if the lockscreen method is set to biometric weak
+     */
+    public boolean usingBiometricWeak() {
+        return usingBiometricWeak(ActivityManager.getCurrentUser());
+    }
+
+    /**
+     * @return true if the lockscreen method is set to biometric weak
+     */
+    public boolean usingBiometricWeak(int userId) {
+        int quality = (int) getLong(
+                PASSWORD_TYPE_KEY, DevicePolicyManager.PASSWORD_QUALITY_UNSPECIFIED, userId);
+        return quality == DevicePolicyManager.PASSWORD_QUALITY_BIOMETRIC_WEAK;
+    }
+
+    void deleteGallery(int userId) {
+        if(usingBiometricWeak(userId)) {
+            Intent intent = new Intent().setAction("com.android.facelock.DELETE_GALLERY");
+            intent.putExtra("deleteGallery", true);
+            mContext.sendBroadcastAsUser(intent, new UserHandle(userId));
+        }
+    }
+
+    public boolean isLockPasswordEnabledWithBackUp(int userId) {
+        long mode = getLong(PASSWORD_TYPE_KEY, 0, userId);
+        long backupMode = getLong(PASSWORD_TYPE_ALTERNATE_KEY, 0, userId);
+        final boolean passwordEnabled = mode == DevicePolicyManager.PASSWORD_QUALITY_ALPHABETIC
+                || mode == DevicePolicyManager.PASSWORD_QUALITY_NUMERIC
+                || mode == DevicePolicyManager.PASSWORD_QUALITY_NUMERIC_COMPLEX
+                || mode == DevicePolicyManager.PASSWORD_QUALITY_ALPHANUMERIC
+                || mode == DevicePolicyManager.PASSWORD_QUALITY_COMPLEX;
+        final boolean backupEnabled = backupMode == DevicePolicyManager.PASSWORD_QUALITY_ALPHABETIC
+                || backupMode == DevicePolicyManager.PASSWORD_QUALITY_NUMERIC
+                || backupMode == DevicePolicyManager.PASSWORD_QUALITY_NUMERIC_COMPLEX
+                || backupMode == DevicePolicyManager.PASSWORD_QUALITY_ALPHANUMERIC
+                || backupMode == DevicePolicyManager.PASSWORD_QUALITY_COMPLEX;
+
+        boolean isPWEnabled = savedPasswordExists(userId) && (passwordEnabled ||
+                ((usingBiometricWeak() || usingVoiceWeak()) && backupEnabled));  /// M: VoiceUnlock
+        Log.d(TAG, "isLockPasswordEnabled = " + isPWEnabled) ;
+
+        return isPWEnabled ;
+    }
+
+    /**
+     * @return Whether the lock pattern is enabled, or if it is set as a backup for biometric weak
+     */
+    public boolean isLockPatternEnabledWithBackup(int userId) {
+        final boolean backupEnabled =
+                getLong(PASSWORD_TYPE_ALTERNATE_KEY,
+                        DevicePolicyManager.PASSWORD_QUALITY_UNSPECIFIED, userId)
+                                == DevicePolicyManager.PASSWORD_QUALITY_SOMETHING;
+
+        boolean save = savedPatternExists(userId);
+        boolean lockPatternEnabled = getBoolean(Settings.Secure.LOCK_PATTERN_ENABLED, false,
+                userId);
+        boolean qualityIsSthing = (getLong(PASSWORD_TYPE_KEY,
+                                           DevicePolicyManager.PASSWORD_QUALITY_SOMETHING, userId)
+                                == DevicePolicyManager.PASSWORD_QUALITY_SOMETHING);
+        boolean voiceWeak = usingVoiceWeak();
+
+        Log.d(TAG, "s=" + save + " ,L=" + lockPatternEnabled +
+            " ,q=" + qualityIsSthing + " ,v=" + voiceWeak) ;
+
+        /// M: VoiceUnlock
+        return savedPatternExists(userId)
+                && getBoolean(Settings.Secure.LOCK_PATTERN_ENABLED, false, userId)
+                && (getLong(PASSWORD_TYPE_KEY, DevicePolicyManager.PASSWORD_QUALITY_SOMETHING,
+                        userId) == DevicePolicyManager.PASSWORD_QUALITY_SOMETHING
+                        || ((usingBiometricWeak() || usingVoiceWeak()) && backupEnabled));
+    }
+
+    public boolean isPermanentlyLocked() {
+        return getBoolean(LOCKOUT_PERMANENT_KEY, false, ActivityManager.getCurrentUser());
+    }
+
+    public boolean isEmergencyCallCapable() {
+        return mContext.getResources().getBoolean(
+                com.android.internal.R.bool.config_voice_capable);
+    }
+
+    private TelecomManager getTelecommManager() {
+        return (TelecomManager) mContext.getSystemService(Context.TELECOM_SERVICE);
+    }
+
+    /**
+     * @return {@code true} if there is a call currently in progress, {@code false} otherwise.
+     */
+    public boolean isInCall() {
+        return getTelecommManager().isInCall();
+    }
+
+    public void updateEmergencyCallButtonState(Button button, boolean shown, boolean showIcon) {
+        if (isEmergencyCallCapable() && shown) {
+            button.setVisibility(View.VISIBLE);
+        } else {
+            button.setVisibility(View.INVISIBLE);
+            return;
+        }
+
+        int textId;
+        if (isInCall()) {
+            // show "return to call" text and show phone icon
+            textId = R.string.lockscreen_return_to_call;
+            int phoneCallIcon = showIcon ? R.drawable.stat_sys_phone_call : 0;
+            button.setCompoundDrawablesWithIntrinsicBounds(phoneCallIcon, 0, 0, 0);
+        } else {
+            textId = R.string.lockscreen_emergency_call;
+            int emergencyIcon = showIcon ? R.drawable.ic_emergency : 0;
+            button.setCompoundDrawablesWithIntrinsicBounds(emergencyIcon, 0, 0, 0);
+        }
+        button.setText(textId);
     }
 }

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2015 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,6 +32,8 @@ import android.telephony.ServiceState;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.Slog;
+
+import com.android.server.LocationManagerService;
 
 import java.util.Locale;
 import java.util.Timer;
@@ -58,7 +65,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 public class ComprehensiveCountryDetector extends CountryDetectorBase {
 
     private final static String TAG = "CountryDetector";
-    /* package */ static final boolean DEBUG = false;
+    /* package */ static final boolean DEBUG = LocationManagerService.D; //false;
 
     /**
      * Max length of logs to maintain for debugging.
@@ -311,9 +318,10 @@ public class ComprehensiveCountryDetector extends CountryDetectorBase {
 
     void runAfterDetection(final Country country, final Country detectedCountry,
             final boolean notifyChange, final boolean startLocationBasedDetection) {
-        if (notifyChange) {
-            notifyIfCountryChanged(country, detectedCountry);
-        }
+        ///M: ignore notifyChange flage, which should always notify listeners that country changed.
+        //if (notifyChange) {
+        notifyIfCountryChanged(country, detectedCountry);
+        //}
         if (DEBUG) {
             Slog.d(TAG, "startLocationBasedDetection=" + startLocationBasedDetection
                     + " detectCountry=" + (detectedCountry == null ? null :
@@ -440,9 +448,10 @@ public class ComprehensiveCountryDetector extends CountryDetectorBase {
                     mCountServiceStateChanges++;
                     mTotalCountServiceStateChanges++;
 
-                    if (!isNetworkCountryCodeAvailable()) {
-                        return;
-                    }
+                    /// M: fix CDMA SIM changed but not notify callback issue
+                    //if (!isNetworkCountryCodeAvailable()) {
+                    //    return;
+                    //}
                     if (DEBUG) Slog.d(TAG, "onServiceStateChanged: " + serviceState.getState());
 
                     detectCountry(true, true);

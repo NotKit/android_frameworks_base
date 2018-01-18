@@ -48,6 +48,15 @@ import android.view.WindowManagerPolicy;
 import java.io.PrintWriter;
 import java.util.ArrayList;
 
+/// M: Live Wallpaper Slim
+import android.app.IWallpaperManager;
+import android.content.Context;
+import android.os.ServiceManager;
+import android.os.SystemProperties;
+
+/// M: BMW
+import com.mediatek.multiwindow.MultiWindowManager;
+
 /**
  * Controls wallpaper windows visibility, ordering, and so on.
  * NOTE: All methods in this class must be called with the window manager service lock held.
@@ -239,6 +248,17 @@ class WallpaperController {
                         "Updating vis of wallpaper " + wallpaper
                                 + ": " + visible + " from:\n" + Debug.getCallers(4, "  "));
                 wallpaper.mClient.dispatchAppVisibility(visible);
+                /// M: Live Wallpaper Slim @{
+                if (SystemProperties.get("ro.mtk_gmo_ram_optimize").equals("1")) {
+                    if (mWallpaperManagerService == null) {
+                        mWallpaperManagerService = IWallpaperManager.Stub.asInterface(
+                            ServiceManager.getService(Context.WALLPAPER_SERVICE));
+                    }
+                    if (mWallpaperManagerService != null) {
+                        mWallpaperManagerService.onVisibilityChanged(visible);
+                    }
+                }
+                /// @}
             } catch (RemoteException e) {
             }
         }
@@ -517,6 +537,11 @@ class WallpaperController {
 
             final boolean hasWallpaper = (w.mAttrs.flags & FLAG_SHOW_WALLPAPER) != 0;
             if (hasWallpaper && w.isOnScreen() && (mWallpaperTarget == w || w.isDrawFinishedLw())) {
+                ///M: BMW. ALPS02834524. In freeform mode we set the wallpaper as its own target @{
+                if (MultiWindowManager.isSupported() && inFreeformSpace) {
+                    continue;
+                }
+                /// @}
                 if (DEBUG_WALLPAPER) Slog.v(TAG, "Found wallpaper target: #" + i + "=" + w);
                 result.setWallpaperTarget(w, i);
                 if (w == mWallpaperTarget && w.mWinAnimator.isAnimationSet()) {
@@ -708,6 +733,23 @@ class WallpaperController {
 
         // Start stepping backwards from here, ensuring that our wallpaper windows
         // are correctly placed.
+
+        /// M: Live Wallpaper Slim @{
+        try {
+            if (SystemProperties.get("ro.mtk_gmo_ram_optimize").equals("1")
+                    && !hasAnyWallpaperLock() && visible) {
+                if (mWallpaperManagerService == null) {
+                    mWallpaperManagerService =  IWallpaperManager.Stub.asInterface(
+                        ServiceManager.getService(Context.WALLPAPER_SERVICE));
+                }
+                if (mWallpaperManagerService != null) {
+                    mWallpaperManagerService.onVisibilityChanged(true);
+                }
+            }
+        } catch (Exception e) {
+            Slog.e(TAG, "WALLPAPER_SERVICE onVisibilityChanged error: ", e);
+        }
+        /// @}
         boolean changed = false;
         for (int curTokenNdx = mWallpaperTokens.size() - 1; curTokenNdx >= 0; curTokenNdx--) {
             WindowToken token = mWallpaperTokens.get(curTokenNdx);
@@ -962,4 +1004,22 @@ class WallpaperController {
             wallpaperTarget = null;
         }
     }
+
+    ///M: Live Wallpaper Slim @{
+    private IWallpaperManager mWallpaperManagerService;
+    /// @}
+
+    ///M: Live Wallpaper Slim @{
+    private boolean hasAnyWallpaperLock() {
+        int i = mWallpaperTokens.size();
+        while (i > 0) {
+            WindowToken token = mWallpaperTokens.get(i - 1);
+            if (token.windows.size() > 0) {
+                return true;
+            }
+            i--;
+        }
+        return false;
+    }
+    /// @}
 }

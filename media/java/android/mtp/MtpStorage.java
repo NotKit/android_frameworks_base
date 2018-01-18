@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,10 +35,11 @@ public class MtpStorage {
 
     private final int mStorageId;
     private final String mPath;
-    private final String mDescription;
     private final long mReserveSpace;
-    private final boolean mRemovable;
     private final long mMaxFileSize;
+
+    private String mDescription;
+    private boolean mRemovable;
 
     public MtpStorage(StorageVolume volume, Context context) {
         mStorageId = volume.getStorageId();
@@ -42,6 +48,24 @@ public class MtpStorage {
         mReserveSpace = volume.getMtpReserveSpace() * 1024L * 1024L;
         mRemovable = volume.isRemovable();
         mMaxFileSize = volume.getMaxFileSize();
+    }
+
+   /**
+     * set the description string for the storage unit
+     *
+     * @internal
+     */
+    public void setDescription(String desc) {
+        mDescription = desc;
+    }
+
+    /**
+     * set true if the storage is removable.
+     *
+     * @internal
+     */
+    public void setRemovable(boolean removable) {
+        mRemovable = removable;
     }
 
     /**

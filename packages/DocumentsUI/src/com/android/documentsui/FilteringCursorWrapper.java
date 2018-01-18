@@ -18,6 +18,7 @@ package com.android.documentsui;
 
 import static com.android.documentsui.Shared.DEBUG;
 import static com.android.documentsui.Shared.TAG;
+import static com.android.documentsui.model.DocumentInfo.getCursorInt;
 import static com.android.documentsui.model.DocumentInfo.getCursorLong;
 import static com.android.documentsui.model.DocumentInfo.getCursorString;
 
@@ -25,7 +26,12 @@ import android.database.AbstractCursor;
 import android.database.Cursor;
 import android.os.Bundle;
 import android.provider.DocumentsContract.Document;
+import android.provider.MediaStore;
 import android.util.Log;
+
+/// M: Add to support drm
+import com.mediatek.omadrm.OmaDrmStore;
+
 
 /**
  * Cursor wrapper that filters MIME types not matching given list.
@@ -35,6 +41,9 @@ public class FilteringCursorWrapper extends AbstractCursor {
 
     private final int[] mPosition;
     private int mCount;
+
+    /// M: add to support drm, only show these drm files match given drm level.
+    private int mDrmLevel = -1;
 
     public FilteringCursorWrapper(Cursor cursor, String[] acceptMimes) {
         this(cursor, acceptMimes, null, Long.MIN_VALUE);
@@ -70,6 +79,62 @@ public class FilteringCursorWrapper extends AbstractCursor {
             Log.d(TAG, "Before filtering " + cursor.getCount() + ", after " + mCount);
         }
     }
+
+    /**
+     * M: init FilteringCursorWrapper with given drm level.
+     */
+    public FilteringCursorWrapper(Cursor cursor, int drmLevel) {
+        mCursor = cursor;
+        mDrmLevel = drmLevel;
+
+        final int count = cursor.getCount();
+        mPosition = new int[count];
+
+        /// M: Add to support drm. we only show match given drm level in intent extra,
+        /// if don't limit drm level, we will show all drm files to user. {@
+        int needShowDrmMethod = 0;
+        if (DocumentsFeatureOption.IS_SUPPORT_DRM) {
+            switch (mDrmLevel) {
+                case OmaDrmStore.DrmIntentExtra.LEVEL_FL:
+                    needShowDrmMethod = OmaDrmStore.Method.FL;
+                    break;
+                case OmaDrmStore.DrmIntentExtra.LEVEL_SD:
+                    needShowDrmMethod = OmaDrmStore.Method.SD;
+                    break;
+                case OmaDrmStore.DrmIntentExtra.LEVEL_ALL:
+                    needShowDrmMethod = OmaDrmStore.Method.FL | OmaDrmStore.Method.CD
+                            | OmaDrmStore.Method.SD | OmaDrmStore.Method.FLSD;
+                    break;
+                default:
+                    needShowDrmMethod = OmaDrmStore.Method.FL | OmaDrmStore.Method.CD
+                            | OmaDrmStore.Method.SD | OmaDrmStore.Method.FLSD;
+                    break;
+            }
+        }
+        /// @}
+
+        cursor.moveToPosition(-1);
+        for (int i = 0; i < count; i++) {
+            cursor.moveToNext();
+            /// M: If it's no need show drmMethod, ignore it and make it hidden. {@
+            if (DocumentsFeatureOption.IS_SUPPORT_DRM) {
+                boolean isDrm = getCursorInt(cursor, MediaStore.MediaColumns.IS_DRM) > 0;
+                int drmMethod = getCursorInt(cursor, MediaStore.MediaColumns.DRM_METHOD);
+                /// M: If IS_DRM is true but drm_method is invalid(-1)
+                /// with given need show drm level(mDrmLevel>0),
+                /// this may happen when drm file has been deleted,
+                /// we don't need show these drm files.
+                if (isDrm && ((mDrmLevel > 0 && drmMethod < 0) ||
+                 (needShowDrmMethod & drmMethod) == 0)) {
+                    continue;
+                }
+            }
+            mPosition[mCount] = cursor.getPosition();
+            /// @}
+            mCount++;
+        }
+    }
+
 
     @Override
     public Bundle getExtras() {

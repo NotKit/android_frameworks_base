@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2008 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,7 +24,10 @@ package android.net.wifi;
 import android.annotation.SdkConstant;
 import android.annotation.SdkConstant.SdkConstantType;
 import android.annotation.SystemApi;
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.net.ConnectivityManager;
 import android.net.DhcpInfo;
 import android.net.Network;
@@ -42,8 +50,11 @@ import com.android.internal.util.Protocol;
 import com.android.server.net.NetworkPinner;
 
 import java.net.InetAddress;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import android.os.Process;
 
 /**
  * This class provides the primary API for managing all aspects of Wi-Fi
@@ -665,6 +676,109 @@ public class WifiManager {
 
     /* Number of currently active WifiLocks and MulticastLocks */
     private int mActiveLockCount;
+
+    // M: Added constant
+    /**
+     * Broadcast intent action indicating that no WAPI certification error.
+     * @hide
+     * @internal
+     */
+    @SdkConstant(SdkConstantType.BROADCAST_INTENT_ACTION)
+    public static final String NO_CERTIFICATION_ACTION = "android.net.wifi.NO_CERTIFICATION";
+
+    /**
+     * Broadcast intent action notifies WifiService to clear the notification show flag
+     * @hide
+     * @internal
+     */
+    @SdkConstant(SdkConstantType.BROADCAST_INTENT_ACTION)
+    public static final String WIFI_CLEAR_NOTIFICATION_SHOW_FLAG_ACTION =
+        "android.net.wifi.WIFI_CLEAR_NOTIFICATION_SHOW_FLAG_ACTION";
+
+    /**
+     * The lookup key for a boolean that indicates whether the pick network activity
+     * is triggered by the notification.
+     * Retrieve with {@link android.content.Intent#getBooleanExtra(String,boolean)}.
+     * @hide
+     */
+    public static final String EXTRA_TRIGGERED_BY_NOTIFICATION = "notification";
+
+    /**
+     * Broadcast intent action indicating that WPS check pin fails.
+     * @hide
+     * @internal
+     */
+    @SdkConstant(SdkConstantType.BROADCAST_INTENT_ACTION)
+    public static final String WIFI_WPS_CHECK_PIN_FAIL_ACTION = "android.net.wifi.WIFI_WPS_CHECK_PIN_FAIL";
+
+    /**
+     * Broadcast intent action indicating that the hotspot clients changed.
+     * @hide
+     * @internal
+     */
+    @SdkConstant(SdkConstantType.BROADCAST_INTENT_ACTION)
+    public static final String WIFI_HOTSPOT_CLIENTS_CHANGED_ACTION = "android.net.wifi.WIFI_HOTSPOT_CLIENTS_CHANGED";
+
+    /**
+     * Broadcast intent action indicating that the hotspot overlap occurs.
+     * @hide
+     * @internal
+     */
+    @SdkConstant(SdkConstantType.BROADCAST_INTENT_ACTION)
+    public static final String WIFI_HOTSPOT_OVERLAP_ACTION = "android.net.wifi.WIFI_HOTSPOT_OVERLAP";
+
+    /**
+     * Broadcast intent action indicating that the PAC has updated for EAP-FAST.
+     * @hide
+     * @internal
+     */
+    public static final String NEW_PAC_UPDATED_ACTION = "android.net.wifi.NEW_PAC_UPDATED";
+
+    /** @hide */
+    public static final String WIFI_PPPOE_COMPLETED_ACTION = "android.net.wifi.PPPOE_COMPLETED_ACTION";
+    /** @hide */
+    public static final String EXTRA_PPPOE_STATUS = "pppoe_result_status";
+    /** @hide */
+    public static final String EXTRA_PPPOE_ERROR = "pppoe_result_error_code";
+    /** @hide */
+    public static final String PPPOE_STATUS_SUCCESS = "SUCCESS";
+    /** @hide */
+    public static final String PPPOE_STATUS_FAILURE = "FAILURE";
+    /** @hide */
+    public static final String PPPOE_STATUS_ALREADY_ONLINE = "ALREADY_ONLINE";
+
+    /** @hide */
+    public static final String WIFI_PPPOE_STATE_CHANGED_ACTION = "android.net.wifi.PPPOE_STATE_CHANGED";
+    /** @hide */
+    public static final String EXTRA_PPPOE_STATE = "pppoe_state";
+    /** @hide */
+    public static final String PPPOE_STATE_CONNECTING = "PPPOE_STATE_CONNECTING";
+    /** @hide */
+    public static final String PPPOE_STATE_CONNECTED = "PPPOE_STATE_CONNECTED";
+    /** @hide */
+    public static final String PPPOE_STATE_DISCONNECTING = "PPPOE_STATE_DISCONNECTING";
+    /** @hide */
+    public static final String PPPOE_STATE_DISCONNECTED = "PPPOE_STATE_DISCONNECTED";
+    /** M: NFC Float II @{ */
+    /** @hide */
+    public static final int TOKEN_TYPE_NDEF = 1;
+    /** @hide */
+    public static final int TOKEN_TYPE_WPS  = 2;
+    /** @} */
+
+    /** M: TDLS Event @{ */
+    /** @hide */
+    public static final String TDLS_CONNECTED_ACTION = "android.net.wifi.TDLS_CONNECTED";
+    /** @hide */
+    public static final String TDLS_DISCONNECTED_ACTION = "android.net.wifi.TDLS_DISCONNECTED";
+    /**
+     * The lookup key for a String giving the BSSID of the peer we are connected/disconnected.
+     * Retrieve with
+     * {@link android.content.Intent#getStringExtra(String)}.
+     */
+    /** @hide */
+    public static final String EXTRA_TDLS_BSSID = "tdls_bssid";
+    /** @} */
 
     private Context mContext;
     IWifiManager mService;
@@ -1750,6 +1864,61 @@ public class WifiManager {
     /** @hide */
     public static final int RSSI_PKTCNT_FETCH_FAILED        = BASE + 22;
 
+    /** @hide */
+    public static final int START_PPPOE                     = BASE + 23;
+    /** @hide */
+    public static final int START_PPPOE_SUCCEEDED           = BASE + 24;
+    /** @hide */
+    public static final int START_PPPOE_FAILED              = BASE + 25;
+    /** @hide */
+    public static final int STOP_PPPOE                      = BASE + 26;
+    /** @hide */
+    public static final int STOP_PPPOE_SUCCEEDED            = BASE + 27;
+    /** @hide */
+    public static final int STOP_PPPOE_FAILED               = BASE + 28;
+
+    /** M: NFC Float II @{ */
+    /** @hide */
+    public static final int START_WPS_REG                   = BASE + 41;
+    /** @hide */
+    public static final int START_WPS_ER                    = BASE + 42;
+    /** @hide */
+    public static final int GET_WPS_PIN_AND_CONNECT         = BASE + 43;
+    /** @hide */
+    public static final int GET_WPS_CRED_AND_CONNECT        = BASE + 44;
+    /** @hide */
+    public static final int GET_WPS_CRED_AND_CONNECT_FAILED = BASE + 45;
+    /** @hide */
+    public static final int GET_WPS_CRED_AND_CONNECT_SUCCEEDED = BASE + 46;
+    /** @hide */
+    public static final int WRITE_CRED_TO_NFC               = BASE + 47;
+    /** @hide */
+    public static final int WRITE_CRED_TO_NFC_FAILED        = BASE + 48;
+    /** @hide */
+    public static final int WRITE_CRED_TO_NFC_SUCCEEDED     = BASE + 49;
+    /** @hide */
+    public static final int WRITE_PIN_TO_NFC                = BASE + 50;
+    /** @hide */
+    public static final int WRITE_PIN_TO_NFC_FAILED         = BASE + 51;
+    /** @hide */
+    public static final int WRITE_PIN_TO_NFC_SUCCEEDED      = BASE + 52;
+    /** @hide */
+    public static final int GET_PIN_FROM_NFC                = BASE + 53;
+    /** @hide */
+    public static final int GET_PIN_FROM_NFC_FAILED         = BASE + 54;
+    /** @hide */
+    public static final int GET_PIN_FROM_NFC_SUCCEEDED      = BASE + 55;
+    /** @hide */
+    public static final int GET_CRED_FROM_NFC               = BASE + 56;
+    /** @hide */
+    public static final int GET_CRED_FROM_NFC_FAILED        = BASE + 57;
+    /** @hide */
+    public static final int GET_CRED_FROM_NFC_SUCCEEDED     = BASE + 58;
+    /** @} */
+    /** @hide */
+    public static final int SET_WIFI_NOT_RECONNECT_AND_SCAN             = BASE + 60;
+    /** @} */
+
     /**
      * Passed with {@link ActionListener#onFailure}.
      * Indicates that the operation failed due to an internal error.
@@ -1797,6 +1966,16 @@ public class WifiManager {
      * @hide
      */
     public static final int NOT_AUTHORIZED              = 9;
+
+    /** M: NFC Float II @{ */
+   /**
+     * WPS/P2P NFC invalid pin
+     * @hide
+     * @internal
+     */
+    public static final int WPS_INVALID_PIN             = 10;
+    /** @} */
+
 
     /**
      * Interface for callback invocation on an application action
@@ -1890,6 +2069,16 @@ public class WifiManager {
                 case WifiManager.FORGET_NETWORK_FAILED:
                 case WifiManager.SAVE_NETWORK_FAILED:
                 case WifiManager.DISABLE_NETWORK_FAILED:
+                ///M:@{
+                case WifiManager.START_PPPOE_FAILED:
+                case WifiManager.STOP_PPPOE_FAILED:
+                 ///@}
+                /** M: NFC Float II @{ */
+                case WifiManager.WRITE_CRED_TO_NFC_FAILED:
+                case WifiManager.WRITE_PIN_TO_NFC_FAILED:
+                case WifiManager.GET_WPS_CRED_AND_CONNECT_FAILED:
+                case WifiManager.GET_PIN_FROM_NFC_FAILED:
+                /** @} */
                     if (listener != null) {
                         ((ActionListener) listener).onFailure(message.arg1);
                     }
@@ -1899,6 +2088,16 @@ public class WifiManager {
                 case WifiManager.FORGET_NETWORK_SUCCEEDED:
                 case WifiManager.SAVE_NETWORK_SUCCEEDED:
                 case WifiManager.DISABLE_NETWORK_SUCCEEDED:
+                ///M:@{
+                case WifiManager.START_PPPOE_SUCCEEDED:
+                case WifiManager.STOP_PPPOE_SUCCEEDED:
+                ///@}
+                /** M: NFC Float II @{ */
+                case WifiManager.WRITE_CRED_TO_NFC_SUCCEEDED:
+                case WifiManager.WRITE_PIN_TO_NFC_SUCCEEDED:
+                case WifiManager.GET_WPS_CRED_AND_CONNECT_SUCCEEDED:
+                case WifiManager.GET_PIN_FROM_NFC_SUCCEEDED:
+                /** @} */
                     if (listener != null) {
                         ((ActionListener) listener).onSuccess();
                     }
@@ -2014,6 +2213,7 @@ public class WifiManager {
      * @hide
      */
     public void connect(WifiConfiguration config, ActionListener listener) {
+        Log.d(TAG, "connect, pid:" + Process.myPid() + ", tid:" + Process.myTid() + ", uid:" + Process.myUid());
         if (config == null) throw new IllegalArgumentException("config cannot be null");
         // Use INVALID_NETWORK_ID for arg1 when passing a config object
         // arg1 is used to pass network id when the network already exists
@@ -2035,6 +2235,7 @@ public class WifiManager {
      * @hide
      */
     public void connect(int networkId, ActionListener listener) {
+        Log.d(TAG, "connect, pid:" + Process.myPid() + ", tid:" + Process.myTid() + ", uid:" + Process.myUid());
         if (networkId < 0) throw new IllegalArgumentException("Network id cannot be negative");
         getChannel().sendMessage(CONNECT_NETWORK, networkId, putListener(listener));
     }
@@ -2058,6 +2259,7 @@ public class WifiManager {
      * @hide
      */
     public void save(WifiConfiguration config, ActionListener listener) {
+        Log.d(TAG, "save, pid:" + Process.myPid() + ", tid:" + Process.myTid() + ", uid:" + Process.myUid());
         if (config == null) throw new IllegalArgumentException("config cannot be null");
         getChannel().sendMessage(SAVE_NETWORK, 0, putListener(listener), config);
     }
@@ -2076,6 +2278,7 @@ public class WifiManager {
      * @hide
      */
     public void forget(int netId, ActionListener listener) {
+        Log.d(TAG, "forget, pid:" + Process.myPid() + ", tid:" + Process.myTid() + ", uid:" + Process.myUid());
         if (netId < 0) throw new IllegalArgumentException("Network id cannot be negative");
         getChannel().sendMessage(FORGET_NETWORK, netId, putListener(listener));
     }
@@ -2090,6 +2293,7 @@ public class WifiManager {
      * @hide
      */
     public void disable(int netId, ActionListener listener) {
+        Log.d(TAG, "disable, pid:" + Process.myPid() + ", tid:" + Process.myTid() + ", uid:" + Process.myUid());
         if (netId < 0) throw new IllegalArgumentException("Network id cannot be negative");
         getChannel().sendMessage(DISABLE_NETWORK, netId, putListener(listener));
     }
@@ -2118,6 +2322,7 @@ public class WifiManager {
      * initialized again
      */
     public void startWps(WpsInfo config, WpsCallback listener) {
+        Log.d(TAG, "startWps, pid:" + Process.myPid() + ", tid:" + Process.myTid() + ", uid:" + Process.myUid());
         if (config == null) throw new IllegalArgumentException("config cannot be null");
         getChannel().sendMessage(START_WPS, 0, putListener(listener), config);
     }
@@ -2130,6 +2335,7 @@ public class WifiManager {
      * initialized again
      */
     public void cancelWps(WpsCallback listener) {
+        Log.d(TAG, "cancelWps, pid:" + Process.myPid() + ", tid:" + Process.myTid() + ", uid:" + Process.myUid());
         getChannel().sendMessage(CANCEL_WPS, 0, putListener(listener));
     }
 
@@ -2739,4 +2945,543 @@ public class WifiManager {
             throw e.rethrowFromSystemServer();
         }
     }
+
+     // M: Added functions
+     /**
+      * Enable CTIA test
+      * @return {@code true} if the operation succeeds else {@code false}
+      * @hide
+      */
+     public boolean doCtiaTestOn() {
+         try {
+             return mService.doCtiaTestOn();
+         } catch (RemoteException e) {
+             return false;
+         }
+     }
+
+     /**
+      * Disable CTIA test
+      * @return {@code true} if the operation succeeds else {@code false}
+      * @hide
+      */
+     public boolean doCtiaTestOff() {
+         try {
+             return mService.doCtiaTestOff();
+         } catch (RemoteException e) {
+             return false;
+         }
+     }
+
+     /**
+      * Set rate
+      * @param rate The value to be set
+      * @return {@code true} if the operation succeeds else {@code false}
+      * @hide
+      */
+     public boolean doCtiaTestRate(int rate) {
+         try {
+             return mService.doCtiaTestRate(rate);
+         } catch (RemoteException e) {
+             return false;
+         }
+     }
+
+     /**
+      * Set the TX power enable or disable
+      * @param enabled {@code true} to enable, {@code false} to disable.
+      * @return {@code true} if the operation succeeds else {@code false}
+      * @hide
+      */
+     public boolean setTxPowerEnabled(boolean enabled) {
+         try {
+             return mService.setTxPowerEnabled(enabled);
+         } catch (RemoteException e) {
+             return false;
+         }
+     }
+
+     /**
+      * Set the TX power offset
+      * @param offset The offset value to be set
+      * @return {@code true} if the operation succeeds else {@code false}
+      * @hide
+      */
+     public boolean setTxPower(int offset) {
+         try {
+             return mService.setTxPower(offset);
+         } catch (RemoteException e) {
+             return false;
+         }
+     }
+
+
+     /**
+      * Suspend the WiFi available notification
+      * @param type Suspend notification type
+      * @return {@code true} if the operation succeeds else {@code false}
+      * @hide
+      */
+     public boolean suspendNotification(int type) {
+         try {
+             mService.suspendNotification(type);
+             return true;
+         } catch (RemoteException e) {
+             return false;
+         }
+     }
+
+     /**
+      * @hide
+      */
+     public String getWifiStatus() {
+         if (null == mService) {
+             Log.d(TAG, "getWifiStatus, fail, null == mService");
+             return "";
+         }
+         try {
+             return mService.getWifiStatus();
+         } catch (RemoteException e) {
+             return "";
+         }
+     }
+
+     /**
+      * @hide
+      */
+     public void setPowerSavingMode(boolean mode) {
+         if (null == mService) {
+             Log.d(TAG, "setPowerSavingMode, fail, null == mService");
+             return ;
+         }
+         try {
+             mService.setPowerSavingMode(mode);
+         } catch (RemoteException e) {
+             return;
+         }
+     }
+
+    /**
+     * For enable or disable TDLS Power Save mode
+     * @param enable set enable true means start TDLS_PS
+     * Set enable false means stop TDLS_PS
+     * @hide
+     */
+     public void setTdlsPowerSave(boolean enable) {
+         if (null == mService) {
+             Log.d(TAG, "setTdlsPowerSave, fail, null == mService");
+             return ;
+         }
+         try {
+             mService.setTdlsPowerSave(enable);
+         } catch (RemoteException e) {
+             return;
+         }
+     }
+
+     /**
+      * Start PPPOE Dial Up
+      * @param config PPPOE configuration
+      * @hide
+      */
+     public void startPPPOE(PPPOEConfig config) {
+         Log.d("WifiManager", "DEBUG", new Throwable());
+         if (config == null) throw new IllegalArgumentException("config cannot be null");
+         getChannel().sendMessage(START_PPPOE, 0, putListener(null), config);
+     }
+
+     /**
+      * Stop PPPOE Dial Up
+      * @hide
+      */
+     public void stopPPPOE() {
+         Log.d("WifiManager", "DEBUG", new Throwable());
+         getChannel().sendMessage(STOP_PPPOE, 0, putListener(null));
+     }
+
+     /**
+      * Return PPPOE info
+      * @hide
+      */
+     public PPPOEInfo getPPPOEInfo() {
+         Log.d("WifiManager", "DEBUG", new Throwable());
+         try {
+             return mService.getPPPOEInfo();
+         } catch (RemoteException e) {
+             return null;
+         }
+     }
+     /** M: NFC Float II @{ */
+    /**
+      * Start Wi-fi Protected Setup Reg.
+      *
+      * @param config WPS configuration
+      * @param listener for callbacks on success or failure. Can be null.
+      * @hide
+      * @internal
+      */
+     public void startWpsRegistrar(WpsInfo config, WpsCallback listener) {
+         if (config == null) {
+            throw new IllegalArgumentException("config cannot be null");
+         }
+         getChannel().sendMessage(START_WPS_REG, 0, putListener(listener), config);
+     }
+
+     /**
+      * Start Wi-fi Protected Setup Er
+      *
+      * @param config WPS configuration
+      * @param listener for callbacks on success or failure. Can be null.
+      * @hide
+      * @internal
+      */
+     public void startWpsExternalRegistrar(WpsInfo config, WpsCallback listener) {
+         if (config == null) {
+            throw new IllegalArgumentException("config cannot be null");
+         }
+         getChannel().sendMessage(START_WPS_ER, 0, putListener(listener), config);
+     }
+
+     /**
+      * Get WPS pin and connect.
+      *
+      * @param tokenType Token type
+      * @param listener for callbacks on success or failure. Can be null.
+      * @hide
+      * @internal
+      */
+     public void connectWithWpsPin(int tokenType, WpsCallback listener) {
+         getChannel().sendMessage(GET_WPS_PIN_AND_CONNECT, tokenType, putListener(listener));
+     }
+
+     /**
+      * Get WPS credential and connect
+      *
+      * @param tokenType Token type
+      * @param listener for callbacks on success or failure. Can be null.
+      * @hide
+      */
+     public void getWpsCredAndConnect(int tokenType, ActionListener listener) {
+         getChannel().sendMessage(GET_WPS_CRED_AND_CONNECT, tokenType, putListener(listener));
+     }
+
+     /**
+      * Write pin to Nfc
+      *
+      * @param tokenType Token type
+      * @param listener for callbacks on success or failure. Can be null.
+      * @hide
+      */
+     public void writePinToNfc(int tokenType, ActionListener listener) {
+         getChannel().sendMessage(WRITE_PIN_TO_NFC, tokenType, putListener(listener));
+     }
+
+     /**
+      * Write credential to Nfc
+      *
+      * @param tokenType Token type
+      * @param listener for callbacks on success or failure. Can be null.
+      * @hide
+      */
+     public void writeCredToNfc(int tokenType, ActionListener listener) {
+         getChannel().sendMessage(WRITE_CRED_TO_NFC, tokenType, putListener(listener));
+     }
+
+     /**
+      * Get pin from Nfc
+      *
+      * @param tokenType Token type
+      * @param listener for callbacks on success or failure. Can be null.
+      * @hide
+      */
+     public void getPinFromNfc(int tokenType, ActionListener listener) {
+         getChannel().sendMessage(GET_PIN_FROM_NFC, tokenType, putListener(listener));
+     }
+
+     /**
+      * Get credential from Nfc
+      *
+      * @param listener for callbacks on success or failure. Can be null.
+      * @hide
+      */
+     public void getCredFromNfc(ActionListener listener) {
+         getChannel().sendMessage(GET_CRED_FROM_NFC, 0, putListener(listener));
+     }
+     /** @} */
+
+     ///M: Add API For Set WOWLAN Mode @{
+     /**
+      * Set Driver WOWLAN normal mode
+      * This API is used by Setting UI
+      * @return {@code true} if the operation succeeds, {@code false} otherwise
+      * @hide
+      */
+     public boolean setWoWlanNormalMode() {
+         if (null == mService) {
+             Log.d(TAG, "setWoWlanNormalMode, fail, null == mService");
+             return false;
+         }
+
+         try {
+             return  mService.setWoWlanNormalMode();
+         } catch (RemoteException e) {
+             return false;
+         }
+     }
+     /**
+      * Set Driver WOWLAN magic mode
+      * This API is used by Setting UI
+      * @return {@code true} if the operation succeeds, {@code false} otherwise
+      * @hide
+      */
+     public boolean setWoWlanMagicMode() {
+         if (null == mService) {
+             Log.d(TAG, "setWoWlanMagicMode, fail, null == mService");
+             return false;
+         }
+
+         try {
+             return  mService.setWoWlanMagicMode();
+
+         } catch (RemoteException e) {
+             return false;
+         }
+     }
+
+    ///M: for proprietary use, not reconnect or scan during a period time
+    /**
+     *  for proprietary use, not reconnect or scan during a period time.
+     * @param enable set enable true means do not reconnect and scan.
+     * Set enable= false back to normal.
+     * @param period units: seconds. a timeout value bring back to normal ,
+     * use only when enable =true.
+     * @return {@code true} if the operation succeeds,{@code false} otherwise
+     * @hide
+     * @internal
+     */
+    public boolean stopReconnectAndScan(boolean enable, int period) {
+        stopReconnectAndScan(enable, period, /*isAllowReconnect*/ false);
+        return true;
+    }
+
+    /**
+     *  for proprietary use, not reconnect or scan during a period time.
+     * @param enable set enable true means do not reconnect and scan.
+     * Set enable= false back to normal.
+     * @param period units: seconds. a timeout value bring back to normal ,
+     * use only when enable =true.
+     * @param isAllowReconnect set false means do not reconnect.
+     * Only effectve when enable is true.
+     * @return {@code true} if the operation succeeds,{@code false} otherwise
+     * @hide
+     */
+    public boolean stopReconnectAndScan(boolean enable, int period, boolean isAllowReconnect) {
+        Log.d(TAG, "stopReconnectAndScan, " + enable + " period=" + period +
+                " isAllowReconnect=" + isAllowReconnect);
+        Log.d(TAG, "stopReconnectAndScan, pid:" + Process.myPid() +
+            ", tid:" + Process.myTid() + ", uid:" + Process.myUid());
+        if (enable == true && isAllowReconnect == true) {
+            getChannel().sendMessage(
+                    SET_WIFI_NOT_RECONNECT_AND_SCAN, 1, period);
+        } else if (enable == true && isAllowReconnect == false) {
+            getChannel().sendMessage(
+                    SET_WIFI_NOT_RECONNECT_AND_SCAN, 2, period);
+        } else {
+            getChannel().sendMessage(SET_WIFI_NOT_RECONNECT_AND_SCAN, 0, 0);
+        }
+        return true;
+    }
+
+
+    /**
+     * Returns true if the connectivity IC supports 5G band.
+     * @return {@code true} if the Wi-Fi 5G band is supported,{@code false} otherwise
+     * @hide
+     */
+    public boolean is5gBandSupported() {
+        if (null == mService) {
+             Log.d(TAG, "is5gBandSupported, fail, null == mService");
+             return false;
+         }
+
+         try {
+             return  mService.is5gBandSupported();
+         } catch (RemoteException e) {
+             return false;
+         }
+    }
+
+    /**
+     * Returns true if set hotspot optimization success.
+     * @param enable set enable true means enable.
+     * @return {@code true}  if set hotspot optimization success,{@code false} otherwise
+     * @hide
+     */
+    public boolean setHotspotOptimization(boolean enable) {
+        if (null == mService) {
+             Log.d(TAG, "setHotspotOptimization, fail, null == mService");
+             return false;
+         }
+
+         try {
+             return  mService.setHotspotOptimization(enable);
+         } catch (RemoteException e) {
+             return false;
+         }
+    }
+
+    /**
+     * Get test environment.
+     * @param channel Wi-Fi channel
+     * @param result Output parameter for storing info
+     * @return {@code true}  if it's suitable for test,{@code false} otherwise
+     * @hide
+     */
+    public boolean isSuitableForTest(int channel, HashMap<Integer, Integer> result) {
+        String env = null;
+        boolean testResult = false;
+        if (null == mService) {
+            Log.e(TAG, "isSuitableForTest fail, mService is null!");
+            return testResult;
+        }
+        try {
+            env = mService.getTestEnv(channel);
+        } catch (RemoteException e) {
+            return testResult;
+        }
+        if (env == null) {
+            return testResult;
+        } else {
+            String[] lines = env.split("\n");
+            if (lines.length > 1) {
+                String[] tmp = lines[1].split(":");
+                if (tmp.length == 2 && tmp[1].equals("1")) {
+                    testResult = true;
+                }
+            }
+            if (lines.length > 2 && result != null) {
+                for (int i = 2; i < lines.length; i++) {
+                    String[] nameValue = lines[i].split(",");
+                    if (nameValue.length == 2) {
+                        try {
+                            int ch = Integer.parseInt(nameValue[0].substring(6));
+                            int num = Integer.parseInt(nameValue[1].substring(6));
+                            result.put(ch, num);
+                        } catch (NumberFormatException e) {
+                            Log.e(TAG, "NumberFormatException, lines[" + i + "]:" + lines[i]);
+                        }
+                    }
+                }
+            }
+        }
+        Log.d(TAG, "isSuitableForTest result:" + testResult);
+        return testResult;
+    }
+
+    ///M: ALPS02230807 Other modules can use WifiOffListener to know wifi is going to disabled.
+    //    And turn off itself and call setWifiDisable to close wifi. @{
+    ///M: ALPS02230807 Broacast Receiver should be unregister
+    BroadcastReceiver mWifiOffNotifyReceiver;
+
+    /**
+     * Broadcast intent action indicating wifi is going to off.
+     * @hide
+     */
+    public static final String WIFI_OFF_NOTIFY = "com.mediatek.android.wifi_off_notify";
+    /**
+     * Broadcast intent action indicating the reason of wifi off.
+     * @hide
+     */
+    public static final String EXTRA_WIFI_OFF_REASON = "wifi_off_reason";
+
+    /**
+     * Disable Wi-Fi.
+     * @param flag the flag type of disable method.
+     * @return the disable functin is succeed or nots   .
+     * {@hide}
+     */
+    public boolean setWifiDisabled(int flag) {
+        Log.d(TAG, "setWifiDisabled, flag = " + flag);
+
+        if (null == mService) {
+            Log.d(TAG, "setWifiDisabled, fail, null == mService");
+            return false;
+        }
+
+        try {
+            return mService.setWifiDisabled(flag);
+        } catch (RemoteException e) {
+            return false;
+        }
+    }
+
+    private ArrayList<WifiOffListener> mWifiOffListenerList
+            = new ArrayList<WifiOffListener>();
+    /**
+     * Register WifiOffListener callback function.
+     * @param listener is the listener to receive onWifiOff event
+     *
+     * @hide
+     */
+    public void addWifiOffListener(final WifiOffListener listener) {
+        if (mWifiOffListenerList.size() == 0) {
+            ///M: ALPS02230807 Receive broadcast to notify listeners
+            mWifiOffNotifyReceiver = new BroadcastReceiver() {
+                @Override
+                public void onReceive(Context context, Intent intent) {
+                    if (mWifiOffListenerList.size() > 0) {
+                        String action = intent.getAction();
+                        Log.d(TAG, "onReceive, action: " + action);
+                        int reason = intent.getIntExtra(EXTRA_WIFI_OFF_REASON,
+                                /*DISABLE_WIFI_SETTING*/ 0);
+                        Log.d(TAG, "wifi_off_reason: " + reason);
+                        for (WifiOffListener listener : mWifiOffListenerList) {
+                            listener.onWifiOff(reason);
+                        }
+                    }
+                }
+            };
+            mContext.registerReceiver(mWifiOffNotifyReceiver,
+                    new IntentFilter(WIFI_OFF_NOTIFY));
+        }
+        mWifiOffListenerList.add(listener);
+        try {
+            mService.registerWifiOffListener();
+        } catch (RemoteException e){
+        }
+    }
+
+    /**
+     * Unregister WifiOffListener callback function.
+     * @param listener is the listener to receive onWifiOff event
+     *
+     * @hide
+     */
+    public void removeWifiOffListener(WifiOffListener listener) {
+        mWifiOffListenerList.remove(listener);
+        if (mWifiOffListenerList.size() == 0) {
+            ///M: ALPS02230807 No listener unregister receiver @{
+            try {
+                mContext.unregisterReceiver(mWifiOffNotifyReceiver);
+            } catch (IllegalArgumentException e){
+                // ignore this exception
+            }
+            ///@}
+        }
+        try {
+            mService.unregisterWifiOffListener();
+        } catch (RemoteException e){
+        }
+    }
+
+    /** for IMS to know wifi is going to off. {@hide} */
+    public interface WifiOffListener {
+        /**
+         * When wifi off
+         * @param reason of wifi off
+         */
+        public void onWifiOff(int reason);
+    }
+
+    ///@}
 }

@@ -29,6 +29,9 @@
 #include <utils/FileMap.h>
 #include <utils/String8.h>
 
+/// M: ALPS01993812, Add a mutex lock for crucial section
+#include <utils/threads.h>
+
 namespace android {
 
 /*
@@ -325,6 +328,8 @@ private:
     class StreamingZipInflater* mZipInflater;  // for streaming large compressed assets
 
     unsigned char*  mBuf;       // for getBuffer()
+
+    Mutex       mLock;          /// M: ALPS01993812, Add a mutex lock for crucial section
 };
 
 // need: shared mmap version?

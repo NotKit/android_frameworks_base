@@ -96,4 +96,16 @@ oneway interface IWindow {
      * Called when Keyboard Shortcuts are requested for the window.
      */
     void requestAppKeyboardShortcuts(IResultReceiver receiver, int deviceId);
+
+    /**
+     * M: Enable/Disable the log
+     */
+    void enableLog(boolean enable);
+
+    /**
+     * M: Dump input dispatching status for ANR analysis. @{
+     * @hide
+     */
+    void dumpInputDispatchingStatus();
+    /** @} */
 }

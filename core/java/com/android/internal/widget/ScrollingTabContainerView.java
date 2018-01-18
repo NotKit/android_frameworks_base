@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -399,6 +404,7 @@ public class ScrollingTabContainerView extends HorizontalScrollView
 
         @Override
         public void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+            forceLayout();
             super.onMeasure(widthMeasureSpec, heightMeasureSpec);
 
             // Re-measure if we went beyond our maximum size.
@@ -454,7 +460,14 @@ public class ScrollingTabContainerView extends HorizontalScrollView
                     if (mTextView == null) {
                         TextView textView = new TextView(getContext(), null,
                                 com.android.internal.R.attr.actionBarTabTextStyle);
-                        textView.setEllipsize(TruncateAt.END);
+
+                        /// M: Long string setting
+                        //textView.setEllipsize(TruncateAt.END);
+                        textView.setSingleLine(true);
+                        textView.setEllipsize(TruncateAt.MARQUEE);
+                        textView.setMarqueeRepeatLimit(2);
+                        textView.setHorizontalFadingEdgeEnabled(true);
+
                         LayoutParams lp = new LayoutParams(LayoutParams.WRAP_CONTENT,
                                 LayoutParams.WRAP_CONTENT);
                         lp.gravity = Gravity.CENTER_VERTICAL;

@@ -60,6 +60,7 @@ import android.os.ServiceManager;
 import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.text.TextUtils;
+import android.util.ArrayMap;
 import android.util.DisplayMetrics;
 import android.util.Size;
 
@@ -915,7 +916,14 @@ public class ActivityManager {
      */
     static public int getMaxRecentTasksStatic() {
         if (gMaxRecentTasks < 0) {
-            return gMaxRecentTasks = isLowRamDeviceStatic() ? 36 : 48;
+            /// M: Memory Optimization for system ui @{
+            if (SystemProperties.get("ro.mtk_gmo_ram_optimize").equals("1") ||
+                    isLowRamDeviceStatic()) {
+                return gMaxRecentTasks = 36;
+            } else {
+                return gMaxRecentTasks = 48;
+            }
+            /// M: Memory Optimization for system ui @}
         }
         return gMaxRecentTasks;
     }
@@ -3740,4 +3748,68 @@ public class ActivityManager {
             }
         }
     }
+
+    /// M: Mediatek added APIs start
+    /// M: Running booster @{
+    /**
+     * Get package list from pid.
+     *
+     * @param pid The process id.
+     *
+     * @hide
+     */
+    public String[] getPackageListFromPid(int pid) {
+        try {
+            return ActivityManagerNative.getDefault().getPackageListFromPid(pid);
+        } catch (RemoteException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Get processes with adj.
+     *
+     * @hide
+     */
+    public ArrayMap<Integer, ArrayList<Integer>> getProcessesWithAdj() {
+        try {
+            return ActivityManagerNative.getDefault().getProcessesWithAdj();
+        } catch (RemoteException e) {
+            return null;
+        }
+    }
+    /// M: Running booster @}
+    /// M: App-based AAL @{
+    /**
+     * Set AAL mode.
+     *
+     * @param mode AAL mode
+     *
+     * @hide
+     */
+    public void setAalMode(int mode) {
+        try {
+            ActivityManagerNative.getDefault().setAalMode(mode);
+        } catch (RemoteException e) {
+            // System dead, we will be dead too soon!
+        }
+    }
+
+    /**
+     * Enable/Disable App-based AAL.
+     *
+     * @param enabled Enable/Disable
+     *
+     * @hide
+     */
+    public void setAalEnabled(boolean enabled) {
+        try {
+            ActivityManagerNative.getDefault().setAalEnabled(enabled);
+        } catch (RemoteException e) {
+            // System dead, we will be dead too soon!
+        }
+    }
+    /// M: App-based AAL @}
+
+    /// M: Mediatek added APIs end
 }

@@ -33,6 +33,9 @@
 #include <hwui/Paint.h>
 
 #include "core_jni_helpers.h"
+#include <utils/Log.h>
+#include <utils/Condition.h>
+#include <utils/Mutex.h>
 
 namespace android {
 
@@ -579,7 +582,6 @@ static void android_view_RenderNode_requestPositionUpdates(JNIEnv* env, jobject,
                 (jlong) info.canvasContext.getFrameNumber(),
                 (jint) bounds.left, (jint) bounds.top,
                 (jint) bounds.right, (jint) bounds.bottom);
-
             info.canvasContext.enqueueFrameWork(std::move(functor));
         }
 

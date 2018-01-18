@@ -36,6 +36,8 @@ import java.lang.reflect.Modifier;
 import java.util.TimeZone;
 import java.util.logging.LogManager;
 import org.apache.harmony.luni.internal.util.TimezoneGetter;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 
 /**
  * Main entry point for runtime initialization.  Not for
@@ -59,6 +61,23 @@ public class RuntimeInit {
 
     private static int Clog_e(String tag, String msg, Throwable tr) {
         return Log.printlns(Log.LOG_ID_CRASH, Log.ERROR, tag, msg, tr);
+    }
+
+    private static String executeCommand(String command) {
+        StringBuffer output = new StringBuffer();
+        try {
+            java.lang.Process p = Runtime.getRuntime().exec(command);
+            p.waitFor();
+            BufferedReader reader =
+              new BufferedReader(new InputStreamReader(p.getInputStream()));
+            String line = "";
+            while ((line = reader.readLine())!= null) {
+                output.append(line + "\n");
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return output.toString();
     }
 
     /**
@@ -107,6 +126,12 @@ public class RuntimeInit {
                     }
                 }
             } finally {
+                String aeeMode = SystemProperties.get("persist.mtk.aee.mode","0");
+                if(aeeMode.equals("4")){
+                    Log.i("RuntimeInit","RuntimeInit: enable FTRACE");
+                    executeCommand("aee -d ftraceon");
+                }
+
                 // Try everything to make sure this process goes away.
                 Process.killProcess(Process.myPid());
                 System.exit(10);
@@ -254,6 +279,13 @@ public class RuntimeInit {
         }
 
         commonInit();
+
+        // If the program (ex: uiautomator) calls System.exit(), terminate the process
+        // immediately without running any shutdown hooks.  It is not possible to
+        // shutdown an Android runtime process gracefully.  Among other things, the
+        // Android runtime shutdown hooks close the Binder driver, which can cause
+        // leftover running threads to crash before the process actually exits.
+        nativeSetExitWithoutCleanup(true);
 
         /*
          * Now that we're running in interpreted code, call back into native code

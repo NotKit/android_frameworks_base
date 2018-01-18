@@ -41,6 +41,8 @@
     <uses-permission android:name="android.permission.ACCESS_KEYGUARD_SECURE_STORAGE" />
     <uses-permission android:name="android.permission.TRUST_LISTENER" />
     <uses-permission android:name="android.permission.USE_FINGERPRINT" />
+    <uses-permission android:name="com.mediatek.ppl.permission.ACCESS_PPL_MANAGER" />
+    <uses-permission android:name="android.permission.BROADCAST_STICKY" />
 
     <application android:label="@string/app_name"
         android:process="com.android.systemui"
@@ -50,4 +52,15 @@
         android:directBootAware="true">
 
     </application>
+
+    <!-- Add keyguard usage protected broadcast -->
+    <protected-broadcast android:name="android.intent.action.normal.boot" />
+    <protected-broadcast android:name="android.intent.action.normal.boot.done" />
+    <protected-broadcast android:name="android.intent.action.normal.shutdown" />
+    <protected-broadcast android:name="android.intent.action.LAUNCH_POWEROFF_ALARM" />
+    <protected-broadcast android:name="alarm.boot.remove.ipowin" />
+    <protected-broadcast android:name="com.android.deskclock.SNOOZE_ALARM" />
+    <protected-broadcast android:name="com.android.deskclock.DISMISS_ALARM" />
+    <protected-broadcast android:name="com.android.deskclock.POWER_ON_ALARM" />
+
 </manifest>

@@ -55,6 +55,8 @@ static const char* kPathWhitelist[] = {
   "/dev/urandom",
   "/dev/ion",
   "/dev/dri/renderD129", // Fixes b/31172436
+  "/proc/ged", // MTK add
+  "/system/vendor/framework/mediatek-res/mediatek-res.apk" // MTK add
 };
 
 static const char* kFdPath = "/proc/self/fd";
@@ -256,6 +258,7 @@ class FileDescriptorInfo {
   // under /system/framework that ends with ".jar" or if it is a system
   // framework overlay.
   static bool IsWhitelisted(const std::string& path) {
+    // ALOGI("Checking %s is in whitelist ... ", path.c_str());
     for (size_t i = 0; i < (sizeof(kPathWhitelist) / sizeof(kPathWhitelist[0])); ++i) {
       if (kPathWhitelist[i] == path) {
         return true;

@@ -111,6 +111,11 @@ public class ImsReasonInfo implements Parcelable {
     // 3xx responses
     // SIP request is redirected
     public static final int CODE_SIP_REDIRECTED = 321;
+
+    /// M: @{
+    public static final int CODE_SIP_REDIRECTED_EMERGENCY = 329;
+    /// @}
+
     // 4xx responses
     // 400 : Bad Request
     public static final int CODE_SIP_BAD_REQUEST = 331;
@@ -211,6 +216,10 @@ public class ImsReasonInfo implements Parcelable {
     public static final int CODE_UT_OPERATION_NOT_ALLOWED = 803;
     public static final int CODE_UT_NETWORK_ERROR = 804;
     public static final int CODE_UT_CB_PASSWORD_MISMATCH = 821;
+    public static final int CODE_UT_XCAP_403_FORBIDDEN = 830;
+    public static final int CODE_UT_UNKNOWN_HOST = 831;
+    public static final int CODE_UT_XCAP_404_NOT_FOUND = 832;
+    public static final int CODE_UT_XCAP_409_CONFLICT = 833;
 
     /**
      * ECBM
@@ -314,6 +323,18 @@ public class ImsReasonInfo implements Parcelable {
     public static final String EXTRA_MSG_SERVICE_NOT_AUTHORIZED
             = "Forbidden. Not Authorized for Service";
 
+
+    ///M: ALPS02112553. For WFC @{
+    public static final int CODE_SIP_WIFI_SIGNAL_LOST = 905;
+    public static final int CODE_SIP_WFC_ISP_PROBLEM = 906;
+    public static final int CODE_SIP_HANDOVER_WIFI_FAIL = 907;
+    public static final int CODE_SIP_HANDOVER_LTE_FAIL = 908;
+    ///@}
+
+    /// M: ALPS02501206. For OP07 requirement. @{
+    public static final int CODE_SIP_503_ECC_OVER_WIFI_UNSUPPORTED = 1500;
+    public static final int CODE_SIP_403_WFC_UNAVAILABLE_IN_CURRENT_LOCATION = 1501;
+    /// @}
 
     // For main reason code
     public int mCode;

@@ -50,6 +50,8 @@ import com.android.systemui.recents.misc.Utilities;
 import com.android.systemui.recents.model.Task;
 import com.android.systemui.statusbar.FlingAnimationUtils;
 
+import android.util.Log;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -257,6 +259,13 @@ class TaskStackViewTouchHandler implements SwipeHelper.Callback {
             }
             case MotionEvent.ACTION_MOVE: {
                 int activePointerIndex = ev.findPointerIndex(mActivePointerId);
+                /// M: [ALPS01903572] handle multi-touch exception @{
+                if (activePointerIndex < 0) {
+                    Log.d("TaskStackViewTouchHandler", "findPointerIndex failed");
+                    mActivePointerId = INACTIVE_POINTER_ID;
+                    break;
+                }
+                /// M: [ALPS01903572] handle multi-touch exception @}
                 int y = (int) ev.getY(activePointerIndex);
                 int x = (int) ev.getX(activePointerIndex);
                 if (!mIsScrolling) {
@@ -639,7 +648,6 @@ class TaskStackViewTouchHandler implements SwipeHelper.Callback {
                 // just ignore it
                 continue;
             }
-
             TaskViewTransform fromTransform = mCurrentTaskTransforms.get(taskIndex);
             TaskViewTransform toTransform = mFinalTaskTransforms.get(taskIndex);
 

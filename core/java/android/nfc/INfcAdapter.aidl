@@ -24,6 +24,9 @@ import android.nfc.Tag;
 import android.nfc.TechListParcel;
 import android.nfc.IAppCallback;
 import android.nfc.INfcAdapterExtras;
+/// M: @ {
+import com.mediatek.nfcgsma_extras.INfcAdapterGsmaExtras;
+/// }
 import android.nfc.INfcTag;
 import android.nfc.INfcCardEmulation;
 import android.nfc.INfcFCardEmulation;
@@ -62,6 +65,13 @@ interface INfcAdapter
 
     void setReaderMode (IBinder b, IAppCallback callback, int flags, in Bundle extras);
     void setP2pModes(int initatorModes, int targetModes);
+
+	
+	/// M: @ {
+    INfcAdapterGsmaExtras getNfcAdapterGsmaExtrasInterface();
+	int getModeFlag(int mode);
+	void setModeFlag(int mode, int flag);
+	/// }
 
     void addNfcUnlockHandler(INfcUnlockHandler unlockHandler, in int[] techList);
     void removeNfcUnlockHandler(INfcUnlockHandler unlockHandler);

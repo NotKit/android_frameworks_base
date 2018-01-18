@@ -41,6 +41,7 @@ import android.util.AttributeSet;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.util.LongSparseArray;
+import android.util.ArrayMap;
 import android.util.Slog;
 import android.util.TypedValue;
 import android.util.Xml;
@@ -87,6 +88,11 @@ public class ResourcesImpl {
             = new LongSparseArray<>();
     private static final LongSparseArray<android.content.res.ConstantState<ComplexColor>>
             sPreloadedComplexColors = new LongSparseArray<>();
+
+    /// M: Boost cache on system @{
+    private static final ArrayMap<String, LongSparseArray<Drawable.ConstantState>>
+        sBoostDrawableCache = new ArrayMap<String, LongSparseArray<Drawable.ConstantState>>();
+    /// @}
 
     /** Lock object used to protect access to caches and configuration. */
     private final Object mAccessLock = new Object();
@@ -422,6 +428,18 @@ public class ResourcesImpl {
                             + mDisplayAdjustments.getCompatibilityInfo());
                 }
 
+                /// M: Boost cache on system @{
+                final String boostKey = this.toString().split("@")[0];
+                if (isBoostApp(boostKey)) {
+                    LongSparseArray<Drawable.ConstantState> boostCache
+                        = sBoostDrawableCache.get(boostKey);
+                    if (boostCache != null) {
+                        clearBoostDrawableCacheLocked(boostCache, configChanges);
+                        Slog.w(TAG, "Clear boost cache");
+                    }
+                }
+            /// @}
+
                 mDrawableCache.onConfigurationChange(configChanges);
                 mColorDrawableCache.onConfigurationChange(configChanges);
                 mComplexColorCache.onConfigurationChange(configChanges);
@@ -439,6 +457,50 @@ public class ResourcesImpl {
             Trace.traceEnd(Trace.TRACE_TAG_RESOURCES);
         }
     }
+
+    /// M: Boost cache on system @{
+    private boolean isBoostApp(String appname) {
+        if (appname.equals("android.content.res.Resources"))
+            return false;
+
+        String[] applist = { "com.tencent.mm" };
+        for (String name : applist) {
+            if (appname.contains(name))
+                return true;
+        }
+        return false;
+    }
+
+    private void clearBoostDrawableCacheLocked(LongSparseArray<Drawable.ConstantState> cache,
+            int configChanges) {
+        if (DEBUG_CONFIG) {
+            Log.d(TAG, "Cleaning up boost drawables config changes: 0x"
+                  + Integer.toHexString(configChanges));
+        }
+        final int N = cache.size();
+        for (int i = 0; i < N; i++) {
+            final Drawable.ConstantState cs = cache.valueAt(i);
+            if (cs != null) {
+                if (Configuration.needNewResources(
+                        configChanges, cs.getChangingConfigurations())) {
+                    if (DEBUG_CONFIG) {
+                        Log.d(TAG, "FLUSHING #0x"
+                              + Long.toHexString(cache.keyAt(i))
+                                                            + " / " + cs + " with changes: 0x"
+                              + Integer.toHexString(cs.getChangingConfigurations()));
+                    }
+                    cache.setValueAt(i, null);
+                } else if (DEBUG_CONFIG) {
+                    Log.d(TAG, "(Keeping #0x"
+                          + Long.toHexString(cache.keyAt(i))
+                                                    + " / " + cs + " with changes: 0x"
+                          + Integer.toHexString(cs.getChangingConfigurations())
+                          + ")");
+                }
+            }
+        }
+    }
+    /// @}
 
     /**
      * Applies the new configuration, returning a bitmask of the changes
@@ -551,6 +613,14 @@ public class ResourcesImpl {
                 if (cachedDrawable != null) {
                     return cachedDrawable;
                 }
+                /// M: Boost cache on system @{
+                final Drawable boostDrawable =
+                    getBoostCachedDrawable(wrapper, key);
+                if (boostDrawable != null) {
+                    Slog.w(TAG, "Using Boost");
+                    return boostDrawable;
+                }
+                /// @}
             }
 
             // Next, check preloaded drawables. Preloaded drawables may contain
@@ -639,9 +709,60 @@ public class ResourcesImpl {
         } else {
             synchronized (mAccessLock) {
                 caches.put(key, theme, cs, usesTheme);
+
+                /// M: Boost cache on system @{
+                if (!isColorDrawable) {
+                    final String boostKey = this.toString().split("@")[0];
+                    if (isBoostApp(boostKey)) {
+                        LongSparseArray<Drawable.ConstantState> boostCache =
+                            sBoostDrawableCache.get(boostKey);
+                        if (boostCache == null) {
+                            boostCache = new LongSparseArray<Drawable.ConstantState>(1);
+                            sBoostDrawableCache.put(boostKey, boostCache);
+                            for (String resKey : sBoostDrawableCache.keySet())
+                                Slog.w(TAG, "ResourceKey:" + resKey);
+                        }
+                        boostCache.put(key, cs);
+                        Slog.w(TAG, "CacheKey:" + key + " Resource:" + this.toString());
+                    }
+                }
+                /// @}
             }
         }
     }
+
+    /// M: Boost cache on system @{
+    private Drawable getBoostCachedDrawable(Resources wrapper, long key) {
+        synchronized (mAccessLock) {
+            final String boostKey = this.toString().split("@")[0];
+            if (isBoostApp(boostKey)) {
+                LongSparseArray<Drawable.ConstantState> boostCache =
+                    sBoostDrawableCache.get(boostKey);
+                if (boostCache != null) {
+                    final Drawable boostDrawable =
+                          getBoostCachedDrawableLocked(wrapper, boostCache, key);
+                    if (boostDrawable != null) {
+                        return boostDrawable;
+                    }
+                }
+            }
+
+            // No cached drawable, we'll need to create a new one.
+            return null;
+        }
+    }
+
+    private Drawable getBoostCachedDrawableLocked(Resources wrapper,
+            LongSparseArray<Drawable.ConstantState> drawableCache, long key) {
+        final Drawable.ConstantState entry = drawableCache.get(key);
+        if (entry != null) {
+            return entry.newDrawable(wrapper);
+        } else {
+            drawableCache.delete(key);
+        }
+        return null;
+    }
+    /// @}
 
     private boolean verifyPreloadConfig(@Config int changingConfigurations,
             @Config int allowVarying, @AnyRes int resourceId, @Nullable String name) {

@@ -230,6 +230,10 @@ final class SettingsState {
 
     // The settings provider must hold its lock when calling here.
     public Setting getSettingLocked(String name) {
+        if (DEBUG) {
+            Slog.i(LOG_TAG, "getSettingLocked, name = " + name);
+        }
+
         if (TextUtils.isEmpty(name)) {
             return mNullSetting;
         }
@@ -251,6 +255,10 @@ final class SettingsState {
 
     // The settings provider must hold its lock when calling here.
     public boolean insertSettingLocked(String name, String value, String packageName) {
+        if (DEBUG) {
+            Slog.i(LOG_TAG, "insertSettingLocked, name = " + name + ", value = " + value);
+        }
+
         if (TextUtils.isEmpty(name)) {
             return false;
         }
@@ -286,6 +294,10 @@ final class SettingsState {
 
     // The settings provider must hold its lock when calling here.
     public boolean deleteSettingLocked(String name) {
+        if (DEBUG) {
+            Slog.i(LOG_TAG, "deleteSettingLocked, name = " + name);
+        }
+
         if (TextUtils.isEmpty(name) || !hasSettingLocked(name)) {
             return false;
         }
@@ -494,6 +506,11 @@ final class SettingsState {
 
     static void writeSingleSetting(int version, XmlSerializer serializer, String id,
             String name, String value, String packageName) throws IOException {
+        if (DEBUG) {
+            Slog.i(LOG_TAG, "writeSingleSetting, version = " + version + ", name = " + name
+                    + ", value = " + value + ", packageName = " + packageName);
+        }
+
         if (id == null || isBinary(id) || name == null || isBinary(name)
                 || packageName == null || isBinary(packageName)) {
             // This shouldn't happen.

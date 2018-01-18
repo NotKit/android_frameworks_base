@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +25,7 @@ import android.annotation.SystemApi;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.SystemClock;
 
 import java.lang.String;
 import java.util.ArrayList;
@@ -29,6 +35,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
+
 
 /**
  * Represents an ongoing phone call that the in-call app should present to the user.
@@ -255,8 +262,41 @@ public final class Call {
          */
         public static final int CAPABILITY_CAN_PULL_CALL = 0x00800000;
 
+        /* M: CC part start */
+        /**
+         * M: Can record voice
+         * @hide
+         * @internal
+         */
+        public static final int CAPABILITY_VOICE_RECORD = 0x01000000;
+
+        /**
+         * M: Device support ECT(explicit call transfer).
+         * @hide
+         * @internal
+         */
+        public static final int CAPABILITY_ECT = 0x02000000;
+
+        /* M: CC part end */
+
+        /// M: For VoLTE @{
+        /**
+         * Indicate the call has capability to invite conference participant(s).
+         * (for VoLTE conference host).
+         * @hide
+         * @internal
+         */
+        public static final int CAPABILITY_INVITE_PARTICIPANTS = 0x04000000;
+        /// @}
+
+        /**
+         * M: Device support blind/assured ECT(explicit call transfer).
+         * @hide
+         */
+        public static final int CAPABILITY_BLIND_ASSURED_ECT = 0x08000000;
+
         //******************************************************************************************
-        // Next CAPABILITY value: 0x01000000
+        // Next CAPABILITY value: 0x10000000
         //******************************************************************************************
 
         /**
@@ -316,6 +356,26 @@ public final class Call {
         // Next PROPERTY value: 0x00000100
         //******************************************************************************************
 
+        /// M: MTK added customized properties base value.
+        private static final int PROPERTY_CUSTOMIZATION_BASE = 0x00010000;
+
+        /// M: For VoLTE @{
+        /**
+         * Connection is using voice over LTE.
+         * @hide
+         * @internal
+         */
+        public static final int PROPERTY_VOLTE = PROPERTY_CUSTOMIZATION_BASE << 0;
+        /// @}
+
+        /// M: For ViLTE @{
+        /**
+         * Connection is held by remote side.
+         * @hide
+         */
+        public static final int PROPERTY_HELD = PROPERTY_CUSTOMIZATION_BASE << 1;
+        /// @}
+
         private final String mTelecomCallId;
         private final Uri mHandle;
         private final int mHandlePresentation;
@@ -326,6 +386,8 @@ public final class Call {
         private final int mCallProperties;
         private final DisconnectCause mDisconnectCause;
         private final long mConnectTimeMillis;
+        ///M: System clock elapsed real time when call connected
+        private long mConnectClockElapsedMillis;
         private final GatewayInfo mGatewayInfo;
         private final int mVideoState;
         private final StatusHints mStatusHints;
@@ -416,6 +478,30 @@ public final class Call {
             if (can(capabilities, CAPABILITY_CAN_PULL_CALL)) {
                 builder.append(" CAPABILITY_CAN_PULL_CALL");
             }
+            /* M: CC part start */
+            if (can(capabilities, CAPABILITY_VOICE_RECORD)) {
+                builder.append(" CAPABILITY_VOICE_RECORD");
+            }
+            if (can(capabilities, CAPABILITY_ECT)) {
+                builder.append(" CAPABILITY_ECT");
+            }
+            /* M: CC part end */
+            /// M: For VoLTE @{
+            if (can(capabilities, CAPABILITY_INVITE_PARTICIPANTS)) {
+                builder.append(" CAPABILITY_INVITE_PARTICIPANTS");
+            }
+            if (can(capabilities, CAPABILITY_SEPARATE_FROM_CONFERENCE)) {
+                builder.append(" CAPABILITY_SEPARATE_FROM_CONFERENCE");
+            }
+            if (can(capabilities, CAPABILITY_DISCONNECT_FROM_CONFERENCE)) {
+                builder.append(" CAPABILITY_DISCONNECT_FROM_CONFERENCE");
+            }
+            /// @}
+            ///M: For blind/assured ECT @{
+            if (can(capabilities, CAPABILITY_BLIND_ASSURED_ECT)) {
+                builder.append(" CAPABILITY_BLIND_ASSURED_ECT");
+            }
+            /// @}
             builder.append("]");
             return builder.toString();
         }
@@ -471,6 +557,16 @@ public final class Call {
             if(hasProperty(properties, PROPERTY_HAS_CDMA_VOICE_PRIVACY)) {
                 builder.append(" PROPERTY_HAS_CDMA_VOICE_PRIVACY");
             }
+            /// For VoLTE @{
+            if (hasProperty(properties, PROPERTY_VOLTE)) {
+                builder.append(" PROPERTY_VOLTE");
+            }
+            /// @}
+            /// For ViLTE @{
+            if (hasProperty(properties, PROPERTY_HELD)) {
+                builder.append(" PROPERTY_HELD");
+            }
+            /// @}
             builder.append("]");
             return builder.toString();
         }
@@ -549,7 +645,10 @@ public final class Call {
          * clock".
          */
         public final long getConnectTimeMillis() {
-            return mConnectTimeMillis;
+            /// M: Original code:
+            // return mConnectTimeMillis;  @{
+            return System.currentTimeMillis()
+                    - (SystemClock.elapsedRealtime() - mConnectClockElapsedMillis);
         }
 
         /**
@@ -658,6 +757,9 @@ public final class Call {
             mCallProperties = properties;
             mDisconnectCause = disconnectCause;
             mConnectTimeMillis = connectTimeMillis;
+            ///M: For revising call duration
+            mConnectClockElapsedMillis = SystemClock.elapsedRealtime()
+                    - (System.currentTimeMillis() - connectTimeMillis);
             mGatewayInfo = gatewayInfo;
             mVideoState = videoState;
             mStatusHints = statusHints;
@@ -1628,6 +1730,28 @@ public final class Call {
             });
         }
     }
+
+    /**
+     * M: get the telecom call id.
+     * @hide
+     */
+    public String getCallId() {
+        return internalGetCallId();
+    }
+
+    /// M: For VoLTE @{
+    /**
+     * This function is used to invite conference participant(s) for VoLTE conference host.
+     * {@link android.telecom.Call.Details#CAPABILITY_INVITE_PARTICIPANTS}
+     * and {@link android.telecom.InCallAdapter#inviteConferenceParticipants(String, List)}}
+     * @param numbers number of participants who will be invited.
+     * @return
+     * @hide
+     */
+    public void inviteConferenceParticipants(List<String> numbers) {
+        mInCallAdapter.inviteConferenceParticipants(mTelecomCallId, numbers);
+    }
+    /// @}
 
     /**
      * Determines if two bundles are equal.

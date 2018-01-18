@@ -42,5 +42,8 @@
         <item>23434</item>
         <item>23486</item>
     </string-array>
-
+    <!-- MTK add for IMS capability -->
+    <bool translatable="false" name="config_device_volte_available">true</bool>
+    <bool translatable="false" name="config_device_vt_available">false</bool>
+    <bool translatable="false" name="config_device_wfc_ims_available">true</bool>
 </resources>

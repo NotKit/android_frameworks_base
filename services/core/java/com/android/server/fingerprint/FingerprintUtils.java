@@ -26,6 +26,11 @@ import com.android.internal.annotations.GuardedBy;
 
 import java.util.List;
 
+/// M: Soter support @{
+import android.os.SystemProperties;
+import android.security.keystore.SoterUtil;
+/// M: Soter support @}
+
 /**
  * Utility class for dealing with fingerprints and fingerprint settings.
  */
@@ -96,5 +101,12 @@ public class FingerprintUtils {
             return state;
         }
     }
+
+    /// M: Soter support @{
+    public static boolean isSoterSimulated() {
+        if (!SoterUtil.isSupported()) return false;
+        return SystemProperties.get("persist.mtk_soter_simulate_fp", "0").equals("1");
+    }
+    /// M: Soter support @}
 }
 

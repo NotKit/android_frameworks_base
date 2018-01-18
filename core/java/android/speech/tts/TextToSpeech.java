@@ -1493,6 +1493,12 @@ public class TextToSpeech {
                 // Sanitize locale using isLanguageAvailable.
                 int result = service.isLanguageAvailable(language, country, variant);
                 if (result >= LANG_AVAILABLE) {
+                    if (result < LANG_COUNTRY_VAR_AVAILABLE) {
+                        variant = "";
+                        if (result < LANG_COUNTRY_AVAILABLE) {
+                            country = "";
+                        }
+                    }
                     // Get the default voice for the locale.
                     String voiceName = service.getDefaultVoiceNameFor(language, country, variant);
                     if (TextUtils.isEmpty(voiceName)) {
@@ -1509,34 +1515,10 @@ public class TextToSpeech {
                         return LANG_NOT_SUPPORTED;
                     }
 
-                    // Set the language/country/variant of the voice, so #getLanguage will return
-                    // the currently set voice locale when called.
-                    Voice voice = getVoice(service, voiceName);
-                    if (voice == null) {
-                        Log.w(TAG, "getDefaultVoiceNameFor returned " + voiceName + " for locale "
-                                + language + "-" + country + "-" + variant
-                                + " but getVoice returns null");
-                        return LANG_NOT_SUPPORTED;
-                    }
-                    String voiceLanguage = "";
-                    try {
-                        voiceLanguage = voice.getLocale().getISO3Language();
-                    } catch (MissingResourceException e) {
-                        Log.w(TAG, "Couldn't retrieve ISO 639-2/T language code for locale: " +
-                                voice.getLocale(), e);
-                    }
-
-                    String voiceCountry = "";
-                    try {
-                        voiceCountry = voice.getLocale().getISO3Country();
-                    } catch (MissingResourceException e) {
-                        Log.w(TAG, "Couldn't retrieve ISO 3166 country code for locale: " +
-                                voice.getLocale(), e);
-                    }
                     mParams.putString(Engine.KEY_PARAM_VOICE_NAME, voiceName);
-                    mParams.putString(Engine.KEY_PARAM_LANGUAGE, voiceLanguage);
-                    mParams.putString(Engine.KEY_PARAM_COUNTRY, voiceCountry);
-                    mParams.putString(Engine.KEY_PARAM_VARIANT, voice.getLocale().getVariant());
+                    mParams.putString(Engine.KEY_PARAM_LANGUAGE, language);
+                    mParams.putString(Engine.KEY_PARAM_COUNTRY, country);
+                    mParams.putString(Engine.KEY_PARAM_VARIANT, variant);
                 }
                 return result;
             }

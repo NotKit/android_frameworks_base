@@ -135,4 +135,9 @@ interface IWallpaperManager {
      * wallpaper content has changed.
      */
     boolean setLockWallpaperCallback(IWallpaperManagerCallback cb);
+
+    /**
+     * Wallpaper Slim: for WMS tell WpMS the visible state changed of wallpaper
+     */
+    void onVisibilityChanged(boolean isVisible);
 }

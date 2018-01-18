@@ -40,7 +40,7 @@ Caches* Caches::sInstance = nullptr;
 ///////////////////////////////////////////////////////////////////////////////
 
 #if DEBUG_CACHE_FLUSH
-    #define FLUSH_LOGD(...) ALOGD(__VA_ARGS__)
+    #define FLUSH_LOGD(...) MLOGD(DEBUG_CACHE_FLUSH, __VA_ARGS__)
 #else
     #define FLUSH_LOGD(...)
 #endif
@@ -72,6 +72,9 @@ bool Caches::init() {
     mProgram = nullptr;
 
     patchCache.init();
+
+    /// M: Initialize program cache
+    programCache.init();
 
     mInitialized = true;
 

@@ -480,6 +480,10 @@ public final class MediaSync {
             // TODO: create the timestamp in native
             MediaTimestamp timestamp = new MediaTimestamp();
             if (native_getTimestamp(timestamp)) {
+                    /// M: add log for MediaSyncTest 1/2 @{
+                    long MediaTimeUs = timestamp.mediaTimeUs;
+                    Log.d(TAG, "MediaSync getTimestamp ="+MediaTimeUs);
+                    /// @}
                 return timestamp;
             } else {
                 return null;
@@ -565,7 +569,15 @@ public final class MediaSync {
                     }
                     long pendingTimeMs = TimeUnit.MICROSECONDS.toMillis(
                             native_getPlayTimeForPendingAudioFrames());
-                    postRenderAudio(pendingTimeMs / 2);
+                            /// M: add for pending time too large issue 2/2 @{
+                                 if(pendingTimeMs > 400) {
+                                   Log.d(TAG, "pendingTimeMs is too large = "+pendingTimeMs);
+                                   postRenderAudio(pendingTimeMs / 3);
+                                 } else {
+                                    postRenderAudio(pendingTimeMs / 2);
+                                 }
+                            //    postRenderAudio(pendingTimeMs / 2);
+                            /// @}
                 }
             }
         }, delayMillis);

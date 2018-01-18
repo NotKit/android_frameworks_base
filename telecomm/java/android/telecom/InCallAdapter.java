@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -375,4 +380,116 @@ public final class InCallAdapter {
         } catch (RemoteException ignored) {
         }
     }
+
+    /**
+     * M: Start to record the voice of the call talking {@hide}
+     */
+    public void startVoiceRecording() {
+        try {
+            mAdapter.startVoiceRecording();
+        } catch (RemoteException ignored) {
+        }
+    }
+
+    /**
+     * M: Stop to record the voice of the call talking, the voice will
+     * be recorded in a specific file
+     * {@hide}
+     */
+    public void stopVoiceRecording() {
+        try {
+            mAdapter.stopVoiceRecording();
+        } catch (RemoteException ignored) {
+        }
+    }
+
+    /**
+     * M: Add for OP09 2W request.
+     * @return
+     */
+    public void setSortedIncomingCallList(List<String> list) {
+        try {
+            mAdapter.setSortedIncomingCallList(list);
+        } catch (RemoteException ignored) {
+        }
+    }
+
+    /**
+     * M: Do the explicit call transfer for SIM base calls.
+     */
+    public void explicitCallTransfer(String callId) {
+        try {
+            mAdapter.explicitCallTransfer(callId);
+        } catch (RemoteException ignored) {
+        }
+    }
+
+    /**
+     * M: Do the blind/assured explicit call transfer for SIM base calls.
+     */
+    public void explicitCallTransfer(String callId, String number, int type) {
+        try {
+            mAdapter.blindAssuredEct(callId, number, type);
+        } catch (RemoteException ignored) {
+        }
+    }
+
+    /**
+     * M: Instructs Telecom to hangup all the calls.
+     *
+     */
+    public void hangupAll() {
+        try {
+            mAdapter.hangupAll();
+        } catch (RemoteException e) {
+        }
+    }
+
+    /**
+     * M: Instructs Telecom to hangup all the HOLDING calls.
+     *
+     */
+    public void hangupAllHoldCalls() {
+        try {
+            mAdapter.hangupAllHoldCalls();
+        } catch (RemoteException e) {
+        }
+    }
+
+    /**
+     * M: Instructs Telecom to hangup active call and answer waiting call.
+     *
+     */
+    public void hangupActiveAndAnswerWaiting() {
+        try {
+            mAdapter.hangupActiveAndAnswerWaiting();
+        } catch (RemoteException e) {
+        }
+    }
+
+    /**
+     * M: Power on/off device when connecting to smart book
+     */
+    public void updatePowerForSmartBook(boolean onOff) {
+        try {
+            mAdapter.updatePowerForSmartBook(onOff);
+        } catch (RemoteException e) {
+        }
+    }
+
+    /// M: For VoLTE @{
+    /**
+     * This function used to invite conference participant(s) for VoLTE conference host.
+     * see IInCallAdapter.inviteConferenceParticipants()
+     * and android.telecom.PhoneCapabilities.INVITE_PARTICIPANTS.
+     * @param conferenceCallId
+     * @param numbers
+     */
+    public void inviteConferenceParticipants(String conferenceCallId, List<String> numbers) {
+        try {
+            mAdapter.inviteConferenceParticipants(conferenceCallId, numbers);
+        } catch (RemoteException e) {
+        }
+    }
+    /// @}
 }

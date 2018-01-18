@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,9 +29,11 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.res.TypedArray;
 import android.graphics.drawable.Drawable;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
+import android.util.Log;
 import android.text.TextUtils;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
@@ -109,6 +116,8 @@ import android.widget.TextView;
 public abstract class PreferenceFragment extends Fragment implements
         PreferenceManager.OnPreferenceTreeClickListener {
 
+    private static final String TAG = "PreferenceFragment";
+    private static final boolean DBG = "eng".equals(Build.TYPE);
     private static final String PREFERENCES_TAG = "android:preferences";
 
     private PreferenceManager mPreferenceManager;
@@ -160,6 +169,11 @@ public abstract class PreferenceFragment extends Fragment implements
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        if (DBG) {
+            Log.d(TAG, "onCreate, this = " + this);
+        }
+
         mPreferenceManager = new PreferenceManager(getActivity(), FIRST_REQUEST_CODE);
         mPreferenceManager.setFragment(this);
     }
@@ -167,6 +181,9 @@ public abstract class PreferenceFragment extends Fragment implements
     @Override
     public View onCreateView(LayoutInflater inflater, @Nullable ViewGroup container,
             @Nullable Bundle savedInstanceState) {
+        if (DBG) {
+            Log.d(TAG, "onCreateView, this = " + this);
+        }
 
         TypedArray a = getActivity().obtainStyledAttributes(null,
                 com.android.internal.R.styleable.PreferenceFragment,
@@ -204,6 +221,10 @@ public abstract class PreferenceFragment extends Fragment implements
     public void onActivityCreated(@Nullable Bundle savedInstanceState) {
         super.onActivityCreated(savedInstanceState);
 
+        if (DBG) {
+            Log.d(TAG, "onActivityCreated, mHavePrefs = " + mHavePrefs + ", this = " + this);
+        }
+
         if (mHavePrefs) {
             bindPreferences();
         }
@@ -224,11 +245,20 @@ public abstract class PreferenceFragment extends Fragment implements
     @Override
     public void onStart() {
         super.onStart();
+
+        if (DBG) {
+            Log.d(TAG, "onStart, this = " + this);
+        }
+
         mPreferenceManager.setOnPreferenceTreeClickListener(this);
     }
 
     @Override
     public void onStop() {
+        if (DBG) {
+            Log.d(TAG, "onStop, this = " + this);
+        }
+
         super.onStop();
         mPreferenceManager.dispatchActivityStop();
         mPreferenceManager.setOnPreferenceTreeClickListener(null);
@@ -239,6 +269,11 @@ public abstract class PreferenceFragment extends Fragment implements
         if (mList != null) {
             mList.setOnKeyListener(null);
         }
+
+        if (DBG) {
+            Log.d(TAG, "onDestroyView, this = " + this);
+        }
+
         mList = null;
         mHandler.removeCallbacks(mRequestFocus);
         mHandler.removeMessages(MSG_BIND_PREFERENCES);
@@ -247,6 +282,10 @@ public abstract class PreferenceFragment extends Fragment implements
 
     @Override
     public void onDestroy() {
+        if (DBG) {
+            Log.d(TAG, "onDestroy, this = " + this);
+        }
+
         super.onDestroy();
         mPreferenceManager.dispatchActivityDestroy();
     }
@@ -254,6 +293,10 @@ public abstract class PreferenceFragment extends Fragment implements
     @Override
     public void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);
+
+        if (DBG) {
+            Log.d(TAG, "onSaveInstanceState, this = " + this);
+        }
 
         final PreferenceScreen preferenceScreen = getPreferenceScreen();
         if (preferenceScreen != null) {
@@ -309,6 +352,10 @@ public abstract class PreferenceFragment extends Fragment implements
      * @param intent The {@link Intent} to query activities.
      */
     public void addPreferencesFromIntent(Intent intent) {
+        if (DBG) {
+            Log.d(TAG, "addPreferencesFromIntent, intent = " + intent + ", this = " + this);
+        }
+
         requirePreferenceManager();
 
         setPreferenceScreen(mPreferenceManager.inflateFromIntent(intent, getPreferenceScreen()));
@@ -321,6 +368,11 @@ public abstract class PreferenceFragment extends Fragment implements
      * @param preferencesResId The XML resource ID to inflate.
      */
     public void addPreferencesFromResource(@XmlRes int preferencesResId) {
+        if (DBG) {
+            Log.d(TAG, "addPreferencesFromResource, resId = " + preferencesResId +
+                    ", this = " + this);
+        }
+
         requirePreferenceManager();
 
         setPreferenceScreen(mPreferenceManager.inflateFromResource(getActivity(),
@@ -361,11 +413,19 @@ public abstract class PreferenceFragment extends Fragment implements
     }
 
     private void postBindPreferences() {
+        if (DBG) {
+            Log.d(TAG, "postBindPreferences, this = " + this);
+        }
+
         if (mHandler.hasMessages(MSG_BIND_PREFERENCES)) return;
         mHandler.obtainMessage(MSG_BIND_PREFERENCES).sendToTarget();
     }
 
     private void bindPreferences() {
+        if (DBG) {
+            Log.d(TAG, "bindPreferences, this = " + this);
+        }
+
         final PreferenceScreen preferenceScreen = getPreferenceScreen();
         if (preferenceScreen != null) {
             View root = getView();
@@ -449,6 +509,12 @@ public abstract class PreferenceFragment extends Fragment implements
 
         @Override
         public boolean onKey(View v, int keyCode, KeyEvent event) {
+            // Fragment is destroyed, but its view is still in the view tree,
+            // e.g., to animate away. Ignore key events in this case.
+            if (mList == null) {
+                return false;
+            }
+
             Object selectedItem = mList.getSelectedItem();
             if (selectedItem instanceof Preference) {
                 View selectedView = mList.getSelectedView();

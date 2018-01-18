@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,6 +34,8 @@ static struct {
     jfieldID ptr;
     jfieldID name;
     jfieldID dispatchingTimeoutNanos;
+    /// M: KeyDispatchingTimeout predump mechanism
+    jfieldID pid;
 } gInputApplicationHandleClassInfo;
 
 static Mutex gHandleMutex;
@@ -74,6 +81,11 @@ bool NativeInputApplicationHandle::updateInfo() {
 
     mInfo->dispatchingTimeout = env->GetLongField(obj,
             gInputApplicationHandleClassInfo.dispatchingTimeoutNanos);
+
+    /// M: KeyDispatchingTimeout predump mechanism @{
+    mInfo->pid = env->GetIntField(obj,
+            gInputApplicationHandleClassInfo.pid);
+    /// KeyDispatchingTimeout predump mechanism @}
 
     env->DeleteLocalRef(obj);
     return true;
@@ -152,6 +164,11 @@ int register_android_server_InputApplicationHandle(JNIEnv* env) {
     GET_FIELD_ID(gInputApplicationHandleClassInfo.dispatchingTimeoutNanos,
             clazz,
             "dispatchingTimeoutNanos", "J");
+
+    /// M: KeyDispatchingTimeout predump mechanism @{
+    GET_FIELD_ID(gInputApplicationHandleClassInfo.pid, clazz,
+            "pid", "I");
+    /// KeyDispatchingTimeout predump mechanism @}
 
     return 0;
 }

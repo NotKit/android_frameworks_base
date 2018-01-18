@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -38,59 +43,68 @@ class ActivityManagerDebugConfig {
     // Default log tag for the activity manager package.
     static final String TAG_AM = "ActivityManager";
 
+    /// M: Dynamically enable AMS logs @{
     // Enable all debug log categories.
-    static final boolean DEBUG_ALL = false;
+    static boolean DEBUG_ALL = false;
 
     // Enable all debug log categories for activities.
-    static final boolean DEBUG_ALL_ACTIVITIES = DEBUG_ALL || false;
+    static boolean DEBUG_ALL_ACTIVITIES = DEBUG_ALL || false;
 
     // Available log categories in the activity manager package.
-    static final boolean DEBUG_ADD_REMOVE = DEBUG_ALL_ACTIVITIES || false;
-    static final boolean DEBUG_ANR = false;
-    static final boolean DEBUG_APP = DEBUG_ALL_ACTIVITIES || false;
-    static final boolean DEBUG_BACKUP = DEBUG_ALL || false;
-    static final boolean DEBUG_BROADCAST = DEBUG_ALL || false;
-    static final boolean DEBUG_BROADCAST_BACKGROUND = DEBUG_BROADCAST || false;
-    static final boolean DEBUG_BROADCAST_LIGHT = DEBUG_BROADCAST || false;
-    static final boolean DEBUG_CLEANUP = DEBUG_ALL || false;
-    static final boolean DEBUG_CONFIGURATION = DEBUG_ALL || false;
-    static final boolean DEBUG_CONTAINERS = DEBUG_ALL_ACTIVITIES || false;
-    static final boolean DEBUG_FOCUS = false;
-    static final boolean DEBUG_IDLE = DEBUG_ALL_ACTIVITIES || false;
-    static final boolean DEBUG_IMMERSIVE = DEBUG_ALL || false;
-    static final boolean DEBUG_LOCKSCREEN = DEBUG_ALL || false;
-    static final boolean DEBUG_LOCKTASK = DEBUG_ALL || false;
-    static final boolean DEBUG_LRU = DEBUG_ALL || false;
-    static final boolean DEBUG_MU = DEBUG_ALL || false;
-    static final boolean DEBUG_OOM_ADJ = DEBUG_ALL || false;
-    static final boolean DEBUG_PAUSE = DEBUG_ALL || false;
-    static final boolean DEBUG_POWER = DEBUG_ALL || false;
-    static final boolean DEBUG_POWER_QUICK = DEBUG_POWER || false;
-    static final boolean DEBUG_PROCESS_OBSERVERS = DEBUG_ALL || false;
-    static final boolean DEBUG_PROCESSES = DEBUG_ALL || false;
-    static final boolean DEBUG_PROVIDER = DEBUG_ALL || false;
-    static final boolean DEBUG_PSS = DEBUG_ALL || false;
-    static final boolean DEBUG_RECENTS = DEBUG_ALL || false;
-    static final boolean DEBUG_RELEASE = DEBUG_ALL_ACTIVITIES || false;
-    static final boolean DEBUG_RESULTS = DEBUG_ALL || false;
-    static final boolean DEBUG_SAVED_STATE = DEBUG_ALL_ACTIVITIES || false;
-    static final boolean DEBUG_SCREENSHOTS = DEBUG_ALL_ACTIVITIES || false;
-    static final boolean DEBUG_SERVICE = DEBUG_ALL || false;
-    static final boolean DEBUG_SERVICE_EXECUTING = DEBUG_ALL || false;
-    static final boolean DEBUG_STACK = DEBUG_ALL || false;
-    static final boolean DEBUG_STATES = DEBUG_ALL_ACTIVITIES || false;
-    static final boolean DEBUG_SWITCH = DEBUG_ALL || false;
-    static final boolean DEBUG_TASKS = DEBUG_ALL || false;
-    static final boolean DEBUG_THUMBNAILS = DEBUG_ALL || false;
-    static final boolean DEBUG_TRANSITION = DEBUG_ALL || false;
-    static final boolean DEBUG_UID_OBSERVERS = DEBUG_ALL || false;
-    static final boolean DEBUG_URI_PERMISSION = DEBUG_ALL || false;
-    static final boolean DEBUG_USER_LEAVING = DEBUG_ALL || false;
-    static final boolean DEBUG_VISIBILITY = DEBUG_ALL || false;
-    static final boolean DEBUG_VISIBLE_BEHIND = DEBUG_ALL_ACTIVITIES || false;
-    static final boolean DEBUG_USAGE_STATS = DEBUG_ALL || false;
-    static final boolean DEBUG_PERMISSIONS_REVIEW = DEBUG_ALL || false;
-    static final boolean DEBUG_WHITELISTS = DEBUG_ALL || false;
+    static boolean DEBUG_ADD_REMOVE = DEBUG_ALL_ACTIVITIES || false;
+    static boolean DEBUG_ANR = false;
+    static boolean DEBUG_APP = DEBUG_ALL_ACTIVITIES || false;
+    static boolean DEBUG_BACKUP = DEBUG_ALL || false;
+    static boolean DEBUG_BROADCAST = DEBUG_ALL || false;
+    static boolean DEBUG_BROADCAST_BACKGROUND = DEBUG_BROADCAST || false;
+    static boolean DEBUG_BROADCAST_LIGHT = DEBUG_BROADCAST || false;
+    static boolean DEBUG_CLEANUP = DEBUG_ALL || false;
+    static boolean DEBUG_CONFIGURATION = DEBUG_ALL || false;
+    static boolean DEBUG_CONTAINERS = DEBUG_ALL_ACTIVITIES || false;
+    static boolean DEBUG_FOCUS = false;
+    static boolean DEBUG_IDLE = DEBUG_ALL_ACTIVITIES || false;
+    static boolean DEBUG_IMMERSIVE = DEBUG_ALL || false;
+    static boolean DEBUG_LOCKSCREEN = DEBUG_ALL || false;
+    static boolean DEBUG_LOCKTASK = DEBUG_ALL || false;
+    static boolean DEBUG_LRU = DEBUG_ALL || false;
+    static boolean DEBUG_MU = DEBUG_ALL || false;
+    static boolean DEBUG_OOM_ADJ = DEBUG_ALL || false;
+    static boolean DEBUG_PAUSE = DEBUG_ALL || false;
+    static boolean DEBUG_POWER = DEBUG_ALL || false;
+    static boolean DEBUG_POWER_QUICK = DEBUG_POWER || false;
+    static boolean DEBUG_PROCESS_OBSERVERS = DEBUG_ALL || false;
+    static boolean DEBUG_PROCESSES = DEBUG_ALL || false;
+    static boolean DEBUG_PROVIDER = DEBUG_ALL || false;
+    static boolean DEBUG_PSS = DEBUG_ALL || false;
+    static boolean DEBUG_RECENTS = DEBUG_ALL || false;
+    static boolean DEBUG_RELEASE = DEBUG_ALL_ACTIVITIES || false;
+    static boolean DEBUG_RESULTS = DEBUG_ALL || false;
+    static boolean DEBUG_SAVED_STATE = DEBUG_ALL_ACTIVITIES || false;
+    static boolean DEBUG_SCREENSHOTS = DEBUG_ALL_ACTIVITIES || false;
+    static boolean DEBUG_SERVICE = DEBUG_ALL || false;
+    static boolean DEBUG_SERVICE_EXECUTING = DEBUG_ALL || false;
+    static boolean DEBUG_STACK = DEBUG_ALL || false;
+    static boolean DEBUG_STATES = DEBUG_ALL_ACTIVITIES || false;
+    static boolean DEBUG_SWITCH = DEBUG_ALL || false;
+    static boolean DEBUG_TASKS = DEBUG_ALL || false;
+    static boolean DEBUG_THUMBNAILS = DEBUG_ALL || false;
+    static boolean DEBUG_TRANSITION = DEBUG_ALL || false;
+    static boolean DEBUG_UID_OBSERVERS = DEBUG_ALL || false;
+    static boolean DEBUG_URI_PERMISSION = DEBUG_ALL || false;
+    static boolean DEBUG_USER_LEAVING = DEBUG_ALL || false;
+    static boolean DEBUG_VISIBILITY = DEBUG_ALL || false;
+    static boolean DEBUG_VISIBLE_BEHIND = DEBUG_ALL_ACTIVITIES || false;
+    static boolean DEBUG_USAGE_STATS = DEBUG_ALL || false;
+    static boolean DEBUG_PERMISSIONS_REVIEW = DEBUG_ALL || false;
+    static boolean DEBUG_WHITELISTS = DEBUG_ALL || false;
+
+    /// M: MTK debug flags @{
+    static boolean DEBUG_PERMISSION = DEBUG_ALL || false;
+    static boolean DEBUG_TASK_RETURNTO = DEBUG_ALL || false;
+    static boolean DEBUG_MULTIWINDOW = DEBUG_ALL || false;
+    /// M: MTK debug flags @}
+
+    /// M: Dynamically enable AMS logs @}
 
     static final String POSTFIX_ADD_REMOVE = (APPEND_CATEGORY_NAME) ? "_AddRemove" : "";
     static final String POSTFIX_APP = (APPEND_CATEGORY_NAME) ? "_App" : "";

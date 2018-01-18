@@ -601,6 +601,12 @@ class AppWindowToken extends WindowToken {
             }
 
             service.removeWindowLocked(win);
+            /// M:[ALPS01754942]Avoid the empty size JE for allAppWindows due to
+            /// removeWindowLocked possibly remove all windows in allAppWindows @{
+            if (allAppWindows.size() == 0) {
+                break;
+            }
+            /// @}
         }
         allAppWindows.clear();
         windows.clear();

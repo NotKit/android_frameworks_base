@@ -839,22 +839,21 @@ public class ResourcesManager {
                             tmpConfig = new Configuration();
                         }
                         tmpConfig.setTo(config);
-
                         // Get new DisplayMetrics based on the DisplayAdjustments given
                         // to the ResourcesImpl. Update a copy if the CompatibilityInfo
                         // changed, because the ResourcesImpl object will handle the
                         // update internally.
+                        /// M: ALPS02820259 Display metrics sholud update on multi-window mode @{
                         DisplayAdjustments daj = r.getDisplayAdjustments();
                         if (compat != null) {
                             daj = new DisplayAdjustments(daj);
                             daj.setCompatibilityInfo(compat);
                         }
                         dm = getDisplayMetrics(displayId, daj);
-
                         if (!isDefaultDisplay) {
                             applyNonDefaultDisplayMetricsToConfiguration(dm, tmpConfig);
                         }
-
+                        /// @}
                         if (hasOverrideConfiguration) {
                             tmpConfig.updateFrom(key.mOverrideConfiguration);
                         }

@@ -95,6 +95,7 @@ oneway interface IStatusBar
     void appTransitionFinished();
 
     void showAssistDisclosure();
+
     void startAssist(in Bundle args);
 
     /**

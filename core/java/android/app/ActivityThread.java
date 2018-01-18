@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -122,7 +127,11 @@ import com.android.internal.util.FastPrintWriter;
 import com.android.org.conscrypt.OpenSSLSocketImpl;
 import com.android.org.conscrypt.TrustedCertificateStore;
 import com.google.android.collect.Lists;
-
+/// M: ANR mechanism for Message History/Queue @{
+import com.mediatek.anrappframeworks.ANRAppFrameworks;
+import com.mediatek.anrappmanager.ANRAppManager;
+import com.mediatek.anrappmanager.MessageLogger;
+/// M: ANR mechanism for Message History/Queue @}
 import java.io.File;
 import java.io.FileDescriptor;
 import java.io.FileOutputStream;
@@ -166,22 +175,33 @@ public final class ActivityThread {
     /** @hide */
     public static final String TAG = "ActivityThread";
     private static final android.graphics.Bitmap.Config THUMBNAIL_FORMAT = Bitmap.Config.RGB_565;
-    static final boolean localLOGV = false;
-    static final boolean DEBUG_MESSAGES = false;
+    static boolean localLOGV = false;
+    static boolean DEBUG_MESSAGES = false;
     /** @hide */
-    public static final boolean DEBUG_BROADCAST = false;
-    private static final boolean DEBUG_RESULTS = false;
-    private static final boolean DEBUG_BACKUP = false;
-    public static final boolean DEBUG_CONFIGURATION = false;
-    private static final boolean DEBUG_SERVICE = false;
-    private static final boolean DEBUG_MEMORY_TRIM = false;
-    private static final boolean DEBUG_PROVIDER = false;
-    private static final boolean DEBUG_ORDER = false;
+    public static boolean DEBUG_BROADCAST = false;
+    private static boolean DEBUG_RESULTS = false;
+    private static boolean DEBUG_BACKUP = false;
+    public static boolean DEBUG_CONFIGURATION = false;
+    private static boolean DEBUG_SERVICE = false;
+    private static boolean DEBUG_MEMORY_TRIM = false;
+    private static boolean DEBUG_PROVIDER = false;
+    private static boolean DEBUG_ORDER = false;
+    /// M: Dynamically enable AMS ActivityThread logs @{
+    private static boolean DEBUG_LIFECYCLE = false;
+    /// M: Dynamically enable AMS ActivityThread logs @}
+
     private static final long MIN_TIME_BETWEEN_GCS = 5*1000;
     private static final int SQLITE_MEM_RELEASED_EVENT_LOG_TAG = 75003;
     private static final int LOG_AM_ON_PAUSE_CALLED = 30021;
     private static final int LOG_AM_ON_RESUME_CALLED = 30022;
     private static final int LOG_AM_ON_STOP_CALLED = 30049;
+
+    /// M: [process suppression] @{
+    private static final int SUPPRESS_ACTION_ALLOWED = 0;
+    private static final int SUPPRESS_ACTION_DELAYED = 1;
+
+    private static final int SUPPRESS_TIME = 5000;
+    /// M: [process suppression] @}
 
     /** Type for IActivityManager.serviceDoneExecuting: anonymous operation */
     public static final int SERVICE_DONE_EXECUTING_ANON = 0;
@@ -196,6 +216,10 @@ public final class ActivityThread {
 
     // Whether to invoke an activity callback after delivering new configuration.
     private static final boolean REPORT_TO_ACTIVITY = true;
+    /// M: ANR mechanism for Message History/Queue @{
+    private final static boolean mIsEngBuild =
+        SystemProperties.get("ro.build.type").equals("eng");
+    /// M: ANR mechanism for Message History/Queue @}
 
     private ContextImpl mSystemContext;
 
@@ -307,6 +331,11 @@ public final class ActivityThread {
     static volatile Handler sMainThreadHandler;  // set once in main()
 
     Bundle mCoreSettings = null;
+
+    /// M: log enhancement @{
+    static final boolean IS_USER_DEBUG_BUILD = "userdebug".equals(Build.TYPE);
+    static final boolean IS_USER_BUILD = "user".equals(Build.TYPE) || IS_USER_DEBUG_BUILD;
+    /// @}
 
     static final class ActivityClientRecord {
         IBinder token;
@@ -1341,6 +1370,26 @@ public final class ActivityThread {
             args.arg2 = voiceInteractor;
             sendMessage(H.LOCAL_VOICE_INTERACTION_STARTED, args);
         }
+        /// M: ANR mechanism for Message History/Queue @{
+        public void enableLooperLog() {
+            ActivityThread.enableLooperLog();
+        }
+        public void dumpMessageHistory() {
+            ANRAppManager.dumpMessageHistory();
+        }
+        /// M: ANR mechanism for Message History/Queue @}
+
+        /// M: ANR mechanism for Message History/Queue for system server @{
+        public void dumpAllMessageHistory() {
+            ANRAppManager.dumpAllMessageHistory();
+        }
+        /// M: ANR mechanism for Message History/Queue for system server @}
+
+        /// M: Dynamically enable AMS ActivityThread logs @{
+        public void configActivityLogTag(String tag, boolean on) {
+            ActivityThread.this.configActivityLogTag(tag, on);
+        }
+        /// M: Dynamically enable AMS ActivityThread logs @}
     }
 
     private int getLifecycleSeq() {
@@ -1407,7 +1456,9 @@ public final class ActivityThread {
         public static final int LOCAL_VOICE_INTERACTION_STARTED = 154;
 
         String codeToString(int code) {
-            if (DEBUG_MESSAGES) {
+            /// M: AMS log enhancement @{
+            if (DEBUG_MESSAGES || isDebuggableMessage(code)) {
+            /// @}
                 switch (code) {
                     case LAUNCH_ACTIVITY: return "LAUNCH_ACTIVITY";
                     case PAUSE_ACTIVITY: return "PAUSE_ACTIVITY";
@@ -1465,6 +1516,22 @@ public final class ActivityThread {
             }
             return Integer.toString(code);
         }
+
+        /// M: AMS log enhancement @{
+        boolean isDebuggableMessage(int code) {
+            if (IS_USER_BUILD) {
+                // user and user-debug
+                return false;
+            }
+            // eng
+            switch (code) {
+                case CONFIGURATION_CHANGED: return false;
+                default:
+                   return true;
+            }
+        }
+        /// @}
+
         public void handleMessage(Message msg) {
             if (DEBUG_MESSAGES) Slog.v(TAG, ">>> handling: " + codeToString(msg.what));
             switch (msg.what) {
@@ -1722,6 +1789,13 @@ public final class ActivityThread {
                 ((SomeArgs) obj).recycle();
             }
             if (DEBUG_MESSAGES) Slog.v(TAG, "<<< done: " + codeToString(msg.what));
+
+            /// M: AMS log enhancement @{
+            if (DEBUG_MESSAGES || isDebuggableMessage(msg.what)) {
+                Slog.d(TAG, codeToString(msg.what) + " handled "
+                    + ": " + msg.arg1 + " / " + msg.obj);
+            }
+            /// @}
         }
 
         private void maybeSnapshot() {
@@ -2015,6 +2089,10 @@ public final class ActivityThread {
     }
 
     ActivityThread() {
+        /// M: Dynamically enable AMS ActivityThread logs @{
+        configActivityLogTag();
+        /// M: Dynamically enable AMS ActivityThread logs @}
+
         mResourcesManager = ResourcesManager.getInstance();
     }
 
@@ -2717,8 +2795,12 @@ public final class ActivityThread {
         // Make sure we are running with the most recent config.
         handleConfigurationChanged(null, null);
 
-        if (localLOGV) Slog.v(
-            TAG, "Handling launch of " + r);
+        /// M: AMS log enhancement @{
+        if (localLOGV || !IS_USER_BUILD || DEBUG_LIFECYCLE) {
+            Slog.d(TAG, "Handling launch of " + r + " reason=" + reason +
+                " startsNotResumed=" + r.startsNotResumed);
+        }
+        /// @}
 
         // Initialize before creating the activity
         WindowManagerGlobal.initialize();
@@ -3037,6 +3119,13 @@ public final class ActivityThread {
             ContextImpl context = (ContextImpl)app.getBaseContext();
             sCurrentBroadcastIntent.set(data.intent);
             receiver.setPendingResult(data);
+
+            /// M: broadcast log enhancement @{
+            Slog.d(TAG, "BDC-Calling onReceive"
+                + ": intent=" +  data.intent
+                + ", receiver=" + receiver);
+            /// @}
+
             receiver.onReceive(context.getReceiverRestrictedContext(),
                     data.intent);
         } catch (Exception e) {
@@ -3180,7 +3269,9 @@ public final class ActivityThread {
         }
 
         try {
-            if (localLOGV) Slog.v(TAG, "Creating service " + data.info.name);
+            /// M: service log enhancement @{
+            Slog.v(TAG, "SVC-Creating service " + data);
+            /// @}
 
             ContextImpl context = ContextImpl.createAppContext(this, packageInfo);
             context.setOuterContext(service);
@@ -3323,6 +3414,12 @@ public final class ActivityThread {
                 }
                 int res;
                 if (!data.taskRemoved) {
+                    /// M: service log enhancement @{
+                    Slog.d(TAG, "SVC-Calling onStartCommand: " + s
+                        + ", flags=" + data.flags
+                        + ", startId=" + data.startId);
+                    /// @}
+
                     res = s.onStartCommand(data.args, data.flags, data.startId);
                 } else {
                     s.onTaskRemoved(data.args);
@@ -3352,7 +3449,10 @@ public final class ActivityThread {
         Service s = mServices.remove(token);
         if (s != null) {
             try {
-                if (localLOGV) Slog.v(TAG, "Destroying service " + s);
+                /// M: service log enhancement @{
+                Slog.v(TAG, "SVC-Destroying service " + s);
+                /// @}
+
                 s.onDestroy();
                 Context context = s.getBaseContext();
                 if (context instanceof ContextImpl) {
@@ -3419,6 +3519,12 @@ public final class ActivityThread {
 
                 EventLog.writeEvent(LOG_AM_ON_RESUME_CALLED, UserHandle.myUserId(),
                         r.activity.getComponentName().getClassName(), reason);
+
+                /// M: AMS log enhancement @{
+                if (!IS_USER_BUILD || DEBUG_LIFECYCLE) {
+                    Slog.d(TAG, "ACT-AM_ON_RESUME_CALLED " + r);
+                }
+                /// @}
 
                 r.paused = false;
                 r.stopped = false;
@@ -3740,6 +3846,13 @@ public final class ActivityThread {
             mInstrumentation.callActivityOnPause(r.activity);
             EventLog.writeEvent(LOG_AM_ON_PAUSE_CALLED, UserHandle.myUserId(),
                     r.activity.getComponentName().getClassName(), reason);
+
+            /// M: AMS log enhancement @{
+            if (!IS_USER_BUILD || DEBUG_LIFECYCLE) {
+                Slog.d(TAG, "ACT-AM_ON_PAUSE_CALLED " + r);
+            }
+            /// @}
+
             if (!r.activity.mCalled) {
                 throw new SuperNotCalledException("Activity " + safeToComponentShortString(r.intent)
                         + " did not call through to super.onPause()");
@@ -3872,6 +3985,12 @@ public final class ActivityThread {
                 r.stopped = true;
                 EventLog.writeEvent(LOG_AM_ON_STOP_CALLED, UserHandle.myUserId(),
                         r.activity.getComponentName().getClassName(), reason);
+
+                /// M: AMS log enhancement @{
+                if (!IS_USER_BUILD || DEBUG_LIFECYCLE) {
+                    Slog.d(TAG, "ACT-AM_ON_STOP_CALLED " + r + " reason:" + reason);
+                }
+                /// @}
             }
         }
     }
@@ -4016,6 +4135,12 @@ public final class ActivityThread {
                 r.stopped = true;
                 EventLog.writeEvent(LOG_AM_ON_STOP_CALLED, UserHandle.myUserId(),
                         r.activity.getComponentName().getClassName(), "sleeping");
+
+                /// M: AMS log enhancement @{
+                if (!IS_USER_BUILD || DEBUG_LIFECYCLE) {
+                    Slog.d(TAG, "ACT-AM_ON_STOP_CALLED " + r + " sleeping");
+                }
+                /// @}
             }
 
             // Make sure any pending writes are now committed.
@@ -4171,6 +4296,12 @@ public final class ActivityThread {
                 r.stopped = true;
                 EventLog.writeEvent(LOG_AM_ON_STOP_CALLED, UserHandle.myUserId(),
                         r.activity.getComponentName().getClassName(), "destroy");
+
+                /// M: AMS log enhancement @{
+                if (!IS_USER_BUILD || DEBUG_LIFECYCLE) {
+                    Slog.d(TAG, "ACT-AM_ON_STOP_CALLED " + r + " destroy");
+                }
+                /// @}
             }
             if (getNonConfigInstance) {
                 try {
@@ -4346,6 +4477,13 @@ public final class ActivityThread {
                                 + existing.paused);;
                         target.startsNotResumed = existing.paused;
                         target.overrideConfig = existing.overrideConfig;
+
+                        /// M: AMS log enhancement @{
+                        if (!IS_USER_BUILD || DEBUG_LIFECYCLE) {
+                            Slog.d(TAG, "requestRelaunchActivity startsNotResumed=" +
+                                target.startsNotResumed);
+                        }
+                        /// @}
                     }
                     target.onlyLocalRequest = true;
                 }
@@ -5121,7 +5259,11 @@ public final class ActivityThread {
             // use hardware accelerated drawing, since this can add too much
             // overhead to the process.
             if (!ActivityManager.isHighEndGfx()) {
-                ThreadedRenderer.disable(false);
+                /// M: ALPS02837469 @{
+                if (!"com.android.systemui".equals(data.processName)) {
+                    ThreadedRenderer.disable(false);
+                }
+                /// @}
             }
         }
 
@@ -5464,6 +5606,27 @@ public final class ActivityThread {
         if (provider != null) {
             return provider;
         }
+
+        /// M: [process suppression] @{
+        if ("1".equals(SystemProperties.get("persist.runningbooster.support")) ||
+                "1".equals(SystemProperties.get("ro.mtk_aws_support"))) {
+            try {
+                int suppressAction = SUPPRESS_ACTION_ALLOWED;
+
+                suppressAction = ActivityManagerNative.getDefault().readyToGetContentProvider(
+                        getApplicationThread(), auth, userId);
+                if (suppressAction == SUPPRESS_ACTION_DELAYED) {
+                    try {
+                        Thread.sleep(SUPPRESS_TIME);
+                    } catch (InterruptedException ex) {
+                        Slog.e(TAG, "InterruptedException " + ex);
+                    }
+                }
+            } catch (RemoteException ex) {
+                Slog.e(TAG, "RemoteException " + ex);
+            }
+        }
+        /// M: [process suppression] @}
 
         // There is a possible race here.  Another thread may try to acquire
         // the same provider at the same time.  When this happens, we want to ensure
@@ -6116,8 +6279,78 @@ public final class ActivityThread {
 
         // End of event ActivityThreadMain.
         Trace.traceEnd(Trace.TRACE_TAG_ACTIVITY_MANAGER);
+        /// M: ANR mechanism for Message History/Queue @{
+        if (mIsEngBuild) {
+            try {
+                ANRAppManager mANRAppManager = ANRAppManager.getDefault(new ANRAppFrameworks());
+                Looper.myLooper().setMessageLogging(
+                       mANRAppManager.newMessageLogger(false));
+            } catch (Exception e) {
+                Log.d(TAG, "set ANR debugging mechanism state fair " + e);
+            }
+        }
+        /// M: ANR mechanism for Message History/Queue @}
         Looper.loop();
 
         throw new RuntimeException("Main thread loop unexpectedly exited");
     }
+
+    /// M: Mediatek added functions start
+
+    /// M: ANR mechanism for Message History/Queue @{
+    public static void enableLooperLog() {
+        Log.d(TAG, "Enable Looper Log");
+        /// M: enable message history debugging log
+        MessageLogger.mEnableLooperLog = true;
+    }
+    /// M: ANR mechanism for Message History/Queue @}
+
+    /// M: Dynamically enable AMS ActivityThread logs @{
+    private void configActivityLogTag() {
+        String activitylog = SystemProperties.get("persist.sys.actthreadlog", null);
+        if (activitylog == null || activitylog.equals("")) {
+            return;
+        }
+
+        if (activitylog.indexOf(" ") + 1 >= activitylog.length()
+            || activitylog.indexOf(" ") == -1) {
+            Slog.d(TAG, "Invalid argument: " + activitylog);
+            SystemProperties.set("persist.sys.actthreadlog", "");
+            return;
+        }
+
+        String[] args = new String[2];
+        args[0] = activitylog.substring(0, activitylog.indexOf(" "));
+        args[1] = activitylog.substring(activitylog.indexOf(" ") + 1, activitylog.length());
+
+        String tag = args[0];
+        boolean on = "on".equals(args[1]) ? true : false;
+        configActivityLogTag(tag, on);
+    }
+
+    public void configActivityLogTag(String tag, boolean on) {
+        Slog.d(TAG, "configActivityLogTag: " + tag + " " + on);
+        if (tag.equals("x")) {
+            DEBUG_MESSAGES = on;
+            DEBUG_LIFECYCLE = on;
+        } else if (tag.equals("all")) {
+            localLOGV = on;
+            DEBUG_MESSAGES = on;
+            DEBUG_BROADCAST = on;
+            DEBUG_RESULTS = on;
+            DEBUG_BACKUP = on;
+            DEBUG_CONFIGURATION = on;
+            DEBUG_SERVICE = on;
+            DEBUG_MEMORY_TRIM = on;
+            DEBUG_PROVIDER = on;
+            DEBUG_ORDER = on;
+            DEBUG_LIFECYCLE = on;
+        } else {
+            Slog.d(TAG, "Invalid argument: " + tag + " " + on);
+            SystemProperties.set("persist.sys.actthreadlog", "");
+        }
+    }
+    /// M: Dynamically enable AMS ActivityThread logs @}
+
+    /// M: Mediatek added functions end
 }

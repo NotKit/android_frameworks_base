@@ -433,7 +433,7 @@ public class ResolverDrawerLayout extends ViewGroup {
     }
 
     private float performDrag(float dy) {
-        final float newPos = Math.max(0, Math.min(mCollapseOffset + dy,
+        final float newPos = Math.max(0, Math.min(mCollapseOffset + (int) (dy + 0.5f),
                 mCollapsibleHeight + mUncollapsibleHeight));
         if (newPos != mCollapseOffset) {
             dy = newPos - mCollapseOffset;
@@ -552,10 +552,34 @@ public class ResolverDrawerLayout extends ViewGroup {
         return listChild != null && isDescendantClipped(listChild);
     }
 
+    /// M: Fix can't click the last item or scroll up on the view @{
+    private boolean isViewAsLastItem(View child, ViewParent p) {
+        boolean bLastChild = true;
+        int nextChildIndex = ((ViewGroup)p).indexOfChild(child) + 1;
+        int childCount = ((ViewGroup)p).getChildCount();
+        if (nextChildIndex < childCount) {
+            for (int i = nextChildIndex; i < childCount; i++) {
+                View nextView = ((ViewGroup)p).getChildAt(i);
+                if (nextView.getVisibility() == GONE || nextView.getHeight() == 0) {
+                    continue;
+                } else {
+                    bLastChild = false;
+                    break;
+                }
+            }
+        }
+        return bLastChild;
+    }
+    /// M: Fix can't click the last item or scroll up on the view @}
+
     private boolean isDescendantClipped(View child) {
         mTempRect.set(0, 0, child.getWidth(), child.getHeight());
         offsetDescendantRectToMyCoords(child, mTempRect);
         View directChild;
+        /// M: Fix can't click the last item or scroll up on the view @{
+        boolean bLastChild = isViewAsLastItem(child, child.getParent());
+        if (bLastChild) return false;
+        /// M: Fix can't click the last item or scroll up on the view @}
         if (child.getParent() == this) {
             directChild = child;
         } else {

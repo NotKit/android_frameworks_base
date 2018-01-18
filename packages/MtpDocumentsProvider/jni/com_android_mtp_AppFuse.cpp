@@ -132,6 +132,7 @@ public:
                 // Return without replying.
                 return;
             case FUSE_INIT:
+                SLOGD("Request op = FUSE_INIT");
                 invoke_handler(fd, req, &AppFuse::handle_fuse_init);
                 return;
             case FUSE_GETATTR:
@@ -450,6 +451,7 @@ void com_android_mtp_AppFuse_start_app_fuse_loop(JNIEnv* env, jobject self, jint
     ScopedFd fd(static_cast<int>(jfd));
     AppFuse appfuse(env, self);
 
+    SLOGD("Start fuse loop.");
     ALOGV("Start fuse loop.");
     while (true) {
         FuseRequest request;

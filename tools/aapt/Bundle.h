@@ -1,3 +1,8 @@
+/*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
 //
 // Copyright 2006 The Android Open Source Project
 //
@@ -49,7 +54,7 @@ public:
     Bundle(void)
         : mCmd(kCommandUnknown), mVerbose(false), mAndroidList(false),
           mForce(false), mGrayscaleTolerance(0), mMakePackageDirs(false),
-          mUpdate(false), mExtending(false),
+          mUpdate(false), mExtending(false),mmtkCur(false),mmtkCurNum(0),
           mRequireLocalization(false), mPseudolocalize(NO_PSEUDOLOCALIZATION),
           mWantUTF16(false), mValues(false), mIncludeMetaData(false),
           mCompressionMethod(0), mJunkPath(false), mOutputAPKFile(NULL),
@@ -95,6 +100,10 @@ public:
     void setUpdate(bool val) { mUpdate = val; }
     bool getExtending(void) const { return mExtending; }
     void setExtending(bool val) { mExtending = val; }
+    bool getmtkCur(void) const { return mmtkCur; }
+    void setmtkCur(bool val) { mmtkCur = val; }
+    int getmtkCurNum(void) const { return mmtkCurNum; }
+    void setmtkCurNum(int val) { mmtkCurNum = val; }
     bool getRequireLocalization(void) const { return mRequireLocalization; }
     void setRequireLocalization(bool val) { mRequireLocalization = val; }
     short getPseudolocalize(void) const { return mPseudolocalize; }
@@ -286,6 +295,8 @@ private:
     bool        mMakePackageDirs;
     bool        mUpdate;
     bool        mExtending;
+    bool        mmtkCur;
+    int         mmtkCurNum;
     bool        mRequireLocalization;
     short       mPseudolocalize;
     bool        mWantUTF16;

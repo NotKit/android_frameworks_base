@@ -70,6 +70,15 @@
                 android:scaleType="fitCenter"
                 android:src="@drawable/ic_check_circle" />
 
+        <ImageView
+            android:id="@+id/icon_drm"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:contentDescription="@null"
+            android:layout_gravity="right|bottom"
+            android:visibility="gone" />
+
+
         </FrameLayout>
 
         <!-- This is the one special case where we want baseline alignment! -->

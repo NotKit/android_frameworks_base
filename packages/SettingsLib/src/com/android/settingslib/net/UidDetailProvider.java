@@ -127,6 +127,11 @@ public class UidDetailProvider {
                 detail.label = res.getString(Utils.getTetheringLabel(cm));
                 detail.icon = pm.getDefaultActivityIcon();
                 return detail;
+            /// M: ViLTE data usage
+            case TrafficStats.UID_VILTE:
+                detail.label = res.getString(R.string.vilte_data_usage_title);
+                detail.icon = pm.getDefaultActivityIcon();
+                return detail;
         }
 
         final UserManager um = (UserManager) mContext.getSystemService(Context.USER_SERVICE);

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -44,7 +49,7 @@ import java.util.List;
 public final class BluetoothInputDevice implements BluetoothProfile {
     private static final String TAG = "BluetoothInputDevice";
     private static final boolean DBG = true;
-    private static final boolean VDBG = false;
+    private static final boolean VDBG = true;
 
     /**
      * Intent used to broadcast the change in connection state of the Input
@@ -246,6 +251,8 @@ public final class BluetoothInputDevice implements BluetoothProfile {
         IBluetoothManager mgr = mAdapter.getBluetoothManager();
         if (mgr != null) {
             try {
+                if (VDBG) Log.d(TAG, "Register mBluetoothStateChangeCallback = "
+                    + mBluetoothStateChangeCallback);
                 mgr.registerStateChangeCallback(mBluetoothStateChangeCallback);
             } catch (RemoteException e) {
                 Log.e(TAG,"",e);
@@ -272,6 +279,8 @@ public final class BluetoothInputDevice implements BluetoothProfile {
         IBluetoothManager mgr = mAdapter.getBluetoothManager();
         if (mgr != null) {
             try {
+                if (VDBG) Log.d(TAG, "Unregister mBluetoothStateChangeCallback = "
+                    + mBluetoothStateChangeCallback);
                 mgr.unregisterStateChangeCallback(mBluetoothStateChangeCallback);
             } catch (Exception e) {
                 Log.e(TAG,"",e);
@@ -478,18 +487,23 @@ public final class BluetoothInputDevice implements BluetoothProfile {
 
     private final ServiceConnection mConnection = new ServiceConnection() {
         public void onServiceConnected(ComponentName className, IBinder service) {
-            if (DBG) Log.d(TAG, "Proxy object connected");
-            mService = IBluetoothInputDevice.Stub.asInterface(service);
+            synchronized (mConnection) {
+                if (DBG) Log.d(TAG, "Proxy object connected");
+                mService = IBluetoothInputDevice.Stub.asInterface(service);
 
-            if (mServiceListener != null) {
-                mServiceListener.onServiceConnected(BluetoothProfile.INPUT_DEVICE, BluetoothInputDevice.this);
+                if (mServiceListener != null) {
+                    mServiceListener.onServiceConnected(BluetoothProfile.INPUT_DEVICE
+                      , BluetoothInputDevice.this);
+                }
             }
         }
         public void onServiceDisconnected(ComponentName className) {
-            if (DBG) Log.d(TAG, "Proxy object disconnected");
-            mService = null;
-            if (mServiceListener != null) {
-                mServiceListener.onServiceDisconnected(BluetoothProfile.INPUT_DEVICE);
+            synchronized (mConnection) {
+                if (DBG) Log.d(TAG, "Proxy object disconnected");
+                mService = null;
+                if (mServiceListener != null) {
+                    mServiceListener.onServiceDisconnected(BluetoothProfile.INPUT_DEVICE);
+                }
             }
         }
     };

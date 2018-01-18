@@ -247,6 +247,18 @@ int main(int argc, char **argv)
         return maybe_inspect(argv[2]);
     }
 
+    /// M: ALPS02521810, support mediatek-res runtime overlay @{
+    if (argc >= 8 && !strcmp(argv[1], "--mediatek-scan")) {
+        android::Vector<const char *> v;
+        for (int i = 7; i < argc; i++) {
+            v.push(argv[i]);
+        }
+        int ret = maybe_scan(argv[2], argv[3], argv[6], &v);
+        maybe_scan(argv[4], argv[5], argv[6], &v);
+        return ret;
+    }
+    /// @}
+
     fprintf(stderr, "Usage: don't use this (cf dexopt usage).\n");
     return EXIT_FAILURE;
 }

@@ -196,6 +196,20 @@ public class RankingHelper implements RankingConfig {
         final int N = mRecords.size();
         for (int i = 0; i < N; i++) {
             final Record r = mRecords.valueAt(i);
+            /// M: [ALPS02808648] Add some logs for getting NPE root cause @{
+            if (r == null) {
+                Slog.d(TAG, "Catch it, this r is null, size: " + N + ", i: " + i);
+                int currentSize = mRecords.size();
+                Slog.d(TAG, "current real size: " + currentSize);
+                for (int j = 0; j < currentSize; j++) {
+                    Slog.d(TAG, "j: " + j + ",record: " + mRecords.keyAt(j));
+                    Slog.d(TAG, "record: " + mRecords.valueAt(j));
+                }
+            }
+            if (r == null) {
+                continue;
+            }
+            /// @}
             //TODO: http://b/22388012
             if (forBackup && UserHandle.getUserId(r.uid) != UserHandle.USER_SYSTEM) {
                 continue;
@@ -538,5 +552,12 @@ public class RankingHelper implements RankingConfig {
         int importance = DEFAULT_IMPORTANCE;
         int priority = DEFAULT_PRIORITY;
         int visibility = DEFAULT_VISIBILITY;
+
+        /// M: [ALPS02808648] Add some logs for getting NPE root cause @{
+        @Override
+        public String toString() {
+            return "pkg: " + pkg + ", uid: " + uid + ", importance: " + importance;
+        }
+        /// @}
    }
 }

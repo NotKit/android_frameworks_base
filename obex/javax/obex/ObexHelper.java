@@ -42,6 +42,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.TimeZone;
+import android.os.SystemProperties;
 
 import android.util.Log;
 
@@ -52,7 +53,7 @@ import android.util.Log;
 public final class ObexHelper {
 
     private static final String TAG = "ObexHelper";
-    public static final boolean VDBG = false;
+    public static final boolean VDBG = !SystemProperties.get("ro.build.type", "").equals("user");
     /**
      * Defines the basic packet length used by OBEX. Every OBEX packet has the
      * same basic format:<BR>

@@ -46,6 +46,7 @@ public class NetworkControllerWifiTest extends NetworkControllerBaseTest {
         verifyLastQsWifiIcon(true, false, WifiIcons.QS_WIFI_NO_NETWORK, null);
 
         setWifiState(true, testSsid);
+
         for (int testLevel = 0; testLevel < WifiIcons.WIFI_LEVEL_COUNT; testLevel++) {
             setWifiLevel(testLevel);
 
@@ -56,6 +57,7 @@ public class NetworkControllerWifiTest extends NetworkControllerBaseTest {
             verifyLastQsWifiIcon(true, true, WifiIcons.QS_WIFI_SIGNAL_STRENGTH[0][testLevel],
                     testSsid);
         }
+
     }
 
     public void testQsDataDirection() {

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -92,6 +97,8 @@ static struct {
     jmethodID getKeyboardLayoutOverlay;
     jmethodID getDeviceAlias;
     jmethodID getTouchCalibrationForInputDevice;
+    /// M: KeyDispatchingTimeout predump mechanism
+    jmethodID notifyPredump;
 } gServiceClassInfo;
 
 static struct {
@@ -250,6 +257,10 @@ public:
             std::map<int32_t, PointerAnimation>* outAnimationResources);
     virtual int32_t getDefaultPointerIconId();
     virtual int32_t getCustomPointerIconId();
+
+/// M: KeyDispatchingTimeout predump mechanism
+    virtual void notifyPredump(const sp<InputApplicationHandle>& inputApplicationHandle,
+            const sp<InputWindowHandle>& inputWindowHandle, int32_t pid, int32_t message);
 
 private:
     sp<InputManager> mInputManager;
@@ -592,6 +603,22 @@ void NativeInputManager::notifyConfigurationChanged(nsecs_t when) {
     env->CallVoidMethod(mServiceObj, gServiceClassInfo.notifyConfigurationChanged, when);
     checkAndClearExceptionFromCallback(env, "notifyConfigurationChanged");
 }
+
+/// M: KeyDispatchingTimeout predump mechanism @{
+void NativeInputManager::notifyPredump(const sp<InputApplicationHandle>& inputApplicationHandle,
+        const sp<InputWindowHandle>& inputWindowHandle, int32_t pid, int32_t message) {
+    JNIEnv* env = jniEnv();
+    jobject inputApplicationHandleObj =
+            getInputApplicationHandleObjLocalRef(env, inputApplicationHandle);
+    jobject inputWindowHandleObj =
+            getInputWindowHandleObjLocalRef(env, inputWindowHandle);
+
+    env->CallVoidMethod(mServiceObj, gServiceClassInfo.notifyPredump,
+            inputApplicationHandleObj, inputWindowHandleObj, pid, message);
+    env->DeleteLocalRef(inputWindowHandleObj);
+    env->DeleteLocalRef(inputApplicationHandleObj);
+}
+/// KeyDispatchingTimeout predump mechanism @}
 
 nsecs_t NativeInputManager::notifyANR(const sp<InputApplicationHandle>& inputApplicationHandle,
         const sp<InputWindowHandle>& inputWindowHandle, const String8& reason) {
@@ -1573,6 +1600,11 @@ int register_android_server_InputManager(JNIEnv* env) {
 
     GET_METHOD_ID(gServiceClassInfo.notifyInputChannelBroken, clazz,
             "notifyInputChannelBroken", "(Lcom/android/server/input/InputWindowHandle;)V");
+
+    /// M: KeyDispatchingTimeout predump mechanism @{
+    GET_METHOD_ID(gServiceClassInfo.notifyPredump, clazz,"notifyPredump",
+            "(Lcom/android/server/input/InputApplicationHandle;Lcom/android/server/input/InputWindowHandle;II)V");
+    /// KeyDispatchingTimeout predump mechanism @}
 
     GET_METHOD_ID(gServiceClassInfo.notifyANR, clazz,
             "notifyANR",

@@ -20,6 +20,7 @@ import android.annotation.NonNull;
 import android.content.res.Resources;
 import android.os.Parcel;
 import android.os.Parcelable;
+import android.os.SystemProperties;
 import android.text.TextUtils;
 import android.util.DebugUtils;
 
@@ -96,6 +97,10 @@ public class DiskInfo implements Parcelable {
     public String getDescription() {
         final Resources res = Resources.getSystem();
         if ((flags & FLAG_SD) != 0) {
+            if (isPhoneStorage(getId())) {
+                return res.getString(com.mediatek.internal.R.string.storage_phone);
+            }
+
             if (isInteresting(label)) {
                 return res.getString(com.android.internal.R.string.storage_sd_card_label, label);
             } else {
@@ -198,5 +203,27 @@ public class DiskInfo implements Parcelable {
         parcel.writeString(label);
         parcel.writeInt(volumeCount);
         parcel.writeString(sysPath);
+    }
+
+    /**
+     * check if this Disk is phone storage
+     * eMMC storage diskid is "disk:179,0"
+     * NAND storage diskid is "disk:7,1"
+     */
+    public static boolean isPhoneStorage(String diskId) {
+        boolean result = false;
+        if (diskId != null) {
+            boolean isEMMCProject = SystemProperties.get("ro.mtk_emmc_support").equals("1");
+            if (isEMMCProject) {
+                if (diskId.equals("disk:179,0")) {
+                    result = true;
+                }
+            } else {
+                if (diskId.equals("disk:7,1")) {
+                    result = true;
+                }
+            }
+        }
+        return result;
     }
 }

@@ -34,6 +34,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.provider.Settings;
+import android.util.Log;
 
 import com.android.systemui.statusbar.policy.BatteryController;
 
@@ -100,6 +101,8 @@ public class BatteryMeterDrawable extends Drawable implements
     private int mLevel = -1;
     private boolean mPluggedIn;
     private boolean mListening;
+    /// M:Support Battery Protection
+    private boolean mCharging;
 
     public BatteryMeterDrawable(Context context, Handler handler, int frameColor) {
         mContext = context;
@@ -216,7 +219,10 @@ public class BatteryMeterDrawable extends Drawable implements
     public void onBatteryLevelChanged(int level, boolean pluggedIn, boolean charging) {
         mLevel = level;
         mPluggedIn = pluggedIn;
-
+        /// M:Support Battery Protection
+        mCharging = charging;
+        Log.d(TAG, "onBatteryLevelChanged level:" + level + ",plugedIn:" + pluggedIn
+                + ",charging:" + charging);
         postInvalidate();
     }
 
@@ -378,8 +384,8 @@ public class BatteryMeterDrawable extends Drawable implements
         mShapePath.lineTo(mFrame.left, mFrame.top);
         mShapePath.lineTo(mButtonFrame.left, mFrame.top);
         mShapePath.lineTo(mButtonFrame.left, mButtonFrame.top);
-
-        if (mPluggedIn) {
+        /// M: Support "Battery Protection".
+        if (mPluggedIn && mCharging) {
             // define the bolt shape
             final float bl = mFrame.left + mFrame.width() / 4f;
             final float bt = mFrame.top + mFrame.height() / 6f;

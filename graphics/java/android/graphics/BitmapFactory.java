@@ -28,12 +28,14 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 
+import com.mediatek.dcfdecoder.DcfDecoder;
+
 /**
  * Creates Bitmap objects from various sources, including files, streams,
  * and byte-arrays.
  */
 public class BitmapFactory {
-    private static final int DECODE_BUFFER_SIZE = 16 * 1024;
+    private static final int DECODE_BUFFER_SIZE = 64 * 1024;
 
     public static class Options {
         /**
@@ -44,6 +46,9 @@ public class BitmapFactory {
             inDither = false;
             inScaled = true;
             inPremultiplied = true;
+            inPreferSize = 0;
+            inPostProc = false;
+            inPostProcFlag = 0;
         }
 
         /**
@@ -127,12 +132,34 @@ public class BitmapFactory {
         public int inSampleSize;
 
         /**
+         * The prefered size for dimension, if source dimension > prefersize,
+         * than scaled to the prefer size.
+         * @hide
+         */
+        public int inPreferSize;
+
+        /**
+         * Request for post process, if true, decoded image will be post processed
+         * to enhance sharpness and color.
+         * @hide
+         * @internal
+         */
+        public boolean inPostProc;
+
+        /**
+         * Post process flag , 0 means applying post process on opaque images only ,
+         * 1 means apply to all.
+         * @hide
+         */
+        public int inPostProcFlag;
+
+        /**
          * If this is non-null, the decoder will try to decode into this
          * internal configuration. If it is null, or the request cannot be met,
          * the decoder will try to pick the best matching config based on the
          * system's screen depth, and characteristics of the original image such
          * as if it has per-pixel alpha (requiring a config that also does).
-         * 
+         *
          * Image are loaded with the {@link Bitmap.Config#ARGB_8888} config by
          * default.
          */
@@ -398,6 +425,7 @@ public class BitmapFactory {
         Bitmap bm = null;
         InputStream stream = null;
         try {
+            Log.d("BitmapFactory", "decodeFile() pathName = " + pathName);
             stream = new FileInputStream(pathName);
             bm = decodeStream(stream, null, opts);
         } catch (Exception e) {
@@ -540,6 +568,13 @@ public class BitmapFactory {
             Trace.traceEnd(Trace.TRACE_TAG_GRAPHICS);
         }
 
+        /// M: Add to test, when failed to get bitmap, try decode as drm format. need check the
+        /// data whether drm encrypt data to avoid dead loop because DcfDecoder will call this
+        /// method to decode clear data.
+
+        if (bm == null) {
+            bm = DcfDecoder.decodeDrmImageIfNeeded(data, opts);
+        }
         return bm;
     }
 
@@ -643,7 +678,13 @@ public class BitmapFactory {
         byte [] tempStorage = null;
         if (opts != null) tempStorage = opts.inTempStorage;
         if (tempStorage == null) tempStorage = new byte[DECODE_BUFFER_SIZE];
-        return nativeDecodeStream(is, tempStorage, outPadding, opts);
+        Bitmap bm = nativeDecodeStream(is, tempStorage, outPadding, opts);
+        /// M: Add to test, when failed to get bitmap, try decode as drm format.
+
+        if (bm == null) {
+            bm = DcfDecoder.decodeDrmImageIfNeeded(tempStorage, is, opts);
+        }
+        return bm;
     }
 
     /**
@@ -699,6 +740,11 @@ public class BitmapFactory {
             setDensityFromOptions(bm, opts);
         } finally {
             Trace.traceEnd(Trace.TRACE_TAG_GRAPHICS);
+        }
+        /// M: Add to test, when failed to get bitmap, try decode as drm format.
+
+        if (bm == null) {
+            bm = DcfDecoder.decodeDrmImageIfNeeded(fd, opts);
         }
         return bm;
     }

@@ -128,7 +128,8 @@ class MediaSessionStack {
      * @return true if the priority order was updated, false otherwise.
      */
     public boolean onPlaystateChange(MediaSessionRecord record, int oldState, int newState) {
-        if (shouldUpdatePriority(oldState, newState)) {
+        /// M: ALPS02845475. Reduce unneccessary session change.
+        if (shouldUpdatePriority(oldState, newState) && mSessions.get(0) != record) {
             mSessions.remove(record);
             mSessions.add(0, record);
             clearCache();

@@ -50,7 +50,8 @@ import java.util.Stack;
  */
 public class HeadsUpManager implements ViewTreeObserver.OnComputeInternalInsetsListener {
     private static final String TAG = "HeadsUpManager";
-    private static final boolean DEBUG = false;
+    /// M: Enable the debug for heads-up notification.
+    private static final boolean DEBUG = true;/**false*/;
     private static final String SETTING_HEADS_UP_SNOOZE_LENGTH_MS = "heads_up_snooze_length_ms";
     private static final int TAG_CLICKED_NOTIFICATION = R.id.is_clicked_heads_up_tag;
 

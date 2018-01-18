@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -59,7 +64,7 @@ public final class PageAdapter extends Adapter<ViewHolder> {
 
     private static final int MAX_PREVIEW_PAGES_BATCH = 50;
 
-    private static final boolean DEBUG = false;
+    private static final boolean DEBUG = true;
 
     private static final PageRange[] ALL_PAGES_ARRAY = new PageRange[] {
             PageRange.ALL_PAGES
@@ -175,6 +180,12 @@ public final class PageAdapter extends Adapter<ViewHolder> {
     }
 
     public void open(ParcelFileDescriptor source, final Runnable callback) {
+        ///M: Whatif client has already been destroyed and I`m not notified yet. @{
+        if (isOpened() || STATE_DESTROYED == mState) {
+        ///M: @}
+            Log.w(LOG_TAG, "Already opened with state: " + mState);
+            return;
+        }
         throwIfNotClosed();
         mState = STATE_OPENED;
         if (DEBUG) {
@@ -633,6 +644,13 @@ public final class PageAdapter extends Adapter<ViewHolder> {
         }
         remainingPagesToRequest -= PageRangeUtils.getNormalizedPageCount(
                 boundPagesInDocument, mDocumentPageCount);
+
+        ///M: FIXME! To avoid timing exception. @{
+        if (mRequestedPages != null && mRequestedPages.length < 1) {
+            Log.e(LOG_TAG, "Requested Page is less than 1");
+            mRequestedPages = null;
+        }
+        ///M: @}
 
         final boolean requestFromStart = mRequestedPages == null
                 || pageInDocument > mRequestedPages[mRequestedPages.length - 1].getEnd();

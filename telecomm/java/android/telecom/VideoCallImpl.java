@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -58,6 +63,8 @@ public class VideoCallImpl extends VideoCall {
         @Override
         public void receiveSessionModifyRequest(VideoProfile videoProfile) {
             if (mHandler == null) {
+                /// M: add log for debugging.
+                logv("receiveSessionModifyRequest");
                 return;
             }
             mHandler.obtainMessage(MessageHandler.MSG_RECEIVE_SESSION_MODIFY_REQUEST,
@@ -69,6 +76,8 @@ public class VideoCallImpl extends VideoCall {
         public void receiveSessionModifyResponse(int status, VideoProfile requestProfile,
                 VideoProfile responseProfile) {
             if (mHandler == null) {
+                /// M: add log for debugging.
+                logv("receiveSessionModifyResponse");
                 return;
             }
             SomeArgs args = SomeArgs.obtain();
@@ -82,6 +91,8 @@ public class VideoCallImpl extends VideoCall {
         @Override
         public void handleCallSessionEvent(int event) {
             if (mHandler == null) {
+                /// M: add log for debugging.
+                logv("handleCallSessionEvent");
                 return;
             }
             mHandler.obtainMessage(MessageHandler.MSG_HANDLE_CALL_SESSION_EVENT, event)
@@ -91,6 +102,8 @@ public class VideoCallImpl extends VideoCall {
         @Override
         public void changePeerDimensions(int width, int height) {
             if (mHandler == null) {
+                /// M: add log for debugging.
+                logv("changePeerDimensions");
                 return;
             }
             SomeArgs args = SomeArgs.obtain();
@@ -99,9 +112,28 @@ public class VideoCallImpl extends VideoCall {
             mHandler.obtainMessage(MessageHandler.MSG_CHANGE_PEER_DIMENSIONS, args).sendToTarget();
         }
 
+        /* M: ViLTE part start */
+        /* Different from AOSP, additional parameter "rotation" is added. */
+        @Override
+        public void changePeerDimensionsWithAngle(int width, int height, int rotation) {
+            if (mHandler == null) {
+                logv("changePeerDimensionsWithAngle");
+                return;
+            }
+            SomeArgs args = SomeArgs.obtain();
+            args.arg1 = width;
+            args.arg2 = height;
+            args.arg3 = rotation;
+            mHandler.obtainMessage(MessageHandler.MSG_CHANGE_PEER_DIMENSIONS_WITH_ANGLE, args)
+                    .sendToTarget();
+        }
+        /* M: ViLTE part end */
+
         @Override
         public void changeVideoQuality(int videoQuality) {
             if (mHandler == null) {
+                /// M: add log for debugging.
+                logv("changeVideoQuality");
                 return;
             }
             mHandler.obtainMessage(MessageHandler.MSG_CHANGE_VIDEO_QUALITY, videoQuality, 0)
@@ -111,6 +143,8 @@ public class VideoCallImpl extends VideoCall {
         @Override
         public void changeCallDataUsage(long dataUsage) {
             if (mHandler == null) {
+                /// M: add log for debugging.
+                logv("changeCallDataUsage");
                 return;
             }
             mHandler.obtainMessage(MessageHandler.MSG_CHANGE_CALL_DATA_USAGE, dataUsage)
@@ -120,6 +154,8 @@ public class VideoCallImpl extends VideoCall {
         @Override
         public void changeCameraCapabilities(VideoProfile.CameraCapabilities cameraCapabilities) {
             if (mHandler == null) {
+                /// M: add log for debugging.
+                logv("changeCameraCapabilities");
                 return;
             }
             mHandler.obtainMessage(MessageHandler.MSG_CHANGE_CAMERA_CAPABILITIES,
@@ -136,6 +172,10 @@ public class VideoCallImpl extends VideoCall {
         private static final int MSG_CHANGE_CALL_DATA_USAGE = 5;
         private static final int MSG_CHANGE_CAMERA_CAPABILITIES = 6;
         private static final int MSG_CHANGE_VIDEO_QUALITY = 7;
+        /* M: ViLTE part start */
+        private static final int MSG_MTK_BASE = 100;
+        private static final int MSG_CHANGE_PEER_DIMENSIONS_WITH_ANGLE = MSG_MTK_BASE;
+        /* M: ViLTE part end */
 
         public MessageHandler(Looper looper) {
             super(looper);
@@ -178,6 +218,20 @@ public class VideoCallImpl extends VideoCall {
                         args.recycle();
                     }
                     break;
+                /* M: ViLTE part start */
+                /* Different from AOSP, additional parameter "rotation" is added. */
+                case MSG_CHANGE_PEER_DIMENSIONS_WITH_ANGLE:
+                    args = (SomeArgs) msg.obj;
+                    try {
+                        int width = (int) args.arg1;
+                        int height = (int) args.arg2;
+                        int rotation = (int) args.arg3;
+                        mCallback.onPeerDimensionsWithAngleChanged(width, height, rotation);
+                    } finally {
+                        args.recycle();
+                    }
+                    break;
+                /* M: ViLTE part end */
                 case MSG_CHANGE_CALL_DATA_USAGE:
                     mCallback.onCallDataUsageChanged((long) msg.obj);
                     break;
@@ -203,14 +257,20 @@ public class VideoCallImpl extends VideoCall {
 
         mBinder = new VideoCallListenerBinder();
         mVideoProvider.addVideoCallback(mBinder);
+        /// M: add log for debugging.
+        logv("[VideoCallImpl]mBinder=" + mBinder);
     }
 
     public void destroy() {
+        /// M: add log for debugging.
+        logv("[destroy]");
         unregisterCallback(mCallback);
     }
 
     /** {@inheritDoc} */
     public void registerCallback(VideoCall.Callback callback) {
+        /// M: add log for debugging.
+        logv("[registerCallback]");
         registerCallback(callback, null);
     }
 
@@ -226,6 +286,8 @@ public class VideoCallImpl extends VideoCall {
 
     /** {@inheritDoc} */
     public void unregisterCallback(VideoCall.Callback callback) {
+        /// M: add log for debugging.
+        logv("[unregisterCallback]");
         if (callback != mCallback) {
             return;
         }
@@ -239,6 +301,8 @@ public class VideoCallImpl extends VideoCall {
 
     /** {@inheritDoc} */
     public void setCamera(String cameraId) {
+        /// M: add log for debugging.
+        logv("[setCamera]cameraId = " + cameraId);
         try {
             mVideoProvider.setCamera(cameraId);
         } catch (RemoteException e) {
@@ -247,6 +311,8 @@ public class VideoCallImpl extends VideoCall {
 
     /** {@inheritDoc} */
     public void setPreviewSurface(Surface surface) {
+        /// M: add log for debugging.
+        logv("[setPreviewSurface]preview = " + surface);
         try {
             mVideoProvider.setPreviewSurface(surface);
         } catch (RemoteException e) {
@@ -255,6 +321,8 @@ public class VideoCallImpl extends VideoCall {
 
     /** {@inheritDoc} */
     public void setDisplaySurface(Surface surface) {
+        /// M: add log for debugging.
+        logv("[setDisplaySurface]display = " + surface);
         try {
             mVideoProvider.setDisplaySurface(surface);
         } catch (RemoteException e) {
@@ -263,6 +331,8 @@ public class VideoCallImpl extends VideoCall {
 
     /** {@inheritDoc} */
     public void setDeviceOrientation(int rotation) {
+        /// M: add log for debugging.
+        logv("[setDeviceOrientation]rotation = " + rotation);
         try {
             mVideoProvider.setDeviceOrientation(rotation);
         } catch (RemoteException e) {
@@ -271,6 +341,8 @@ public class VideoCallImpl extends VideoCall {
 
     /** {@inheritDoc} */
     public void setZoom(float value) {
+        /// M: add log for debugging.
+        logv("[setZoom]value = " + value);
         try {
             mVideoProvider.setZoom(value);
         } catch (RemoteException e) {
@@ -293,6 +365,9 @@ public class VideoCallImpl extends VideoCall {
         try {
             VideoProfile originalProfile = new VideoProfile(mVideoState, mVideoQuality);
 
+            /// M: add log for debugging.
+            logv("[sendSessionModifyRequest]current: " + originalProfile
+                    + ", requesting: " + requestProfile);
             mVideoProvider.sendSessionModifyRequest(originalProfile, requestProfile);
         } catch (RemoteException e) {
         }
@@ -300,6 +375,8 @@ public class VideoCallImpl extends VideoCall {
 
     /** {@inheritDoc} */
     public void sendSessionModifyResponse(VideoProfile responseProfile) {
+        /// M: add log for debugging.
+        logv("[sendSessionModifyResponse]response: " + responseProfile);
         try {
             mVideoProvider.sendSessionModifyResponse(responseProfile);
         } catch (RemoteException e) {
@@ -308,6 +385,8 @@ public class VideoCallImpl extends VideoCall {
 
     /** {@inheritDoc} */
     public void requestCameraCapabilities() {
+        /// M: add log for debugging.
+        logv("[requestCameraCapabilities]");
         try {
             mVideoProvider.requestCameraCapabilities();
         } catch (RemoteException e) {
@@ -316,6 +395,8 @@ public class VideoCallImpl extends VideoCall {
 
     /** {@inheritDoc} */
     public void requestCallDataUsage() {
+        /// M: add log for debugging.
+        logv("[requestCallDataUsage]");
         try {
             mVideoProvider.requestCallDataUsage();
         } catch (RemoteException e) {
@@ -324,6 +405,8 @@ public class VideoCallImpl extends VideoCall {
 
     /** {@inheritDoc} */
     public void setPauseImage(Uri uri) {
+        /// M: add log for debugging.
+        logv("[setPauseImage]uri: " + uri);
         try {
             mVideoProvider.setPauseImage(uri);
         } catch (RemoteException e) {
@@ -337,4 +420,21 @@ public class VideoCallImpl extends VideoCall {
     public void setVideoState(int videoState) {
         mVideoState = videoState;
     }
+
+    /* M: ViLTE part start */
+    /** {@inheritDoc} */
+    public void setUIMode(int mode) {
+        logv("[setUIMode]mode: " + mode);
+        try {
+            mVideoProvider.setUIMode(mode);
+        } catch (RemoteException e) {
+        }
+    }
+    /* M: ViLTE part end */
+
+    /// M: log utility function. @{
+    private void logv(String msg) {
+        Log.v(this, msg + ", " + this);
+    }
+    /// @}
 }

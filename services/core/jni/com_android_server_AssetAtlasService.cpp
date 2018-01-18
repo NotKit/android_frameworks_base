@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -213,4 +218,4 @@ int register_android_server_AssetAtlasService(JNIEnv* env) {
     return jniRegisterNativeMethods(env, kClassPathName, gMethods, NELEM(gMethods));
 }
 
-};
+}; // namespace android

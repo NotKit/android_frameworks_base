@@ -40,6 +40,8 @@ import android.content.pm.PackageInfo;
 import android.content.pm.ManifestDigest;
 import android.content.pm.PackageCleanItem;
 import android.content.pm.ParceledListSlice;
+/// M: CTA requirement - Permission request records
+import android.content.pm.PermissionRecords;
 import android.content.pm.ProviderInfo;
 import android.content.pm.PermissionGroupInfo;
 import android.content.pm.PermissionInfo;
@@ -532,6 +534,10 @@ interface IPackageManager {
     boolean isOnlyCoreApps();
     boolean isUpgrade();
 
+    /// M: [ALPS00091751] Add api for check apk signature @{
+    int checkAPKSignatures(String pkg);
+    /// @}
+
     void setPermissionEnforced(String permission, boolean enforced);
     boolean isPermissionEnforced(String permission);
 
@@ -573,4 +579,10 @@ interface IPackageManager {
     boolean isPackageDeviceAdminOnAnyUser(String packageName);
 
     List<String> getPreviousCodePaths(in String packageName);
+
+    /// M: CTA requirement - Permission request records @{
+    List<String> getPermRecordPkgs();
+    List<String> getPermRecordPerms(String packageName);
+    PermissionRecords getPermRecords(String packageName, String permName);
+    ///@}
 }

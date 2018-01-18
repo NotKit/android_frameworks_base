@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2012 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -45,6 +50,7 @@ import android.os.Message;
 import android.os.Process;
 import android.os.RemoteException;
 import android.os.SystemClock;
+import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.util.EventLog;
 import android.util.Slog;
@@ -52,6 +58,11 @@ import android.util.TimeUtils;
 import com.android.server.DeviceIdleController;
 
 import static com.android.server.am.ActivityManagerDebugConfig.*;
+
+import com.mediatek.am.AMEventHookData;
+/// M: ANR debug mechanism for broadcast monitor
+import com.mediatek.anrmanager.ANRManager;
+import com.mediatek.server.am.AMEventHook;
 
 /**
  * BROADCASTS
@@ -158,6 +169,27 @@ public final class BroadcastQueue {
 
     final BroadcastHandler mHandler;
 
+    /// M: ANR debug mechanism for broadcast monitor
+    final AnrBroadcastQueue mAnrBroadcastQueue;
+
+    /// M: ANR debug mechanism for broadcast monitor @{
+    class AnrBroadcastQueue implements ANRManager.IAnrBroadcastQueue {
+        @Override
+        public int getOrderedBroadcastsPid() {
+            int pid = -1;
+            synchronized(mService) {
+                if (mOrderedBroadcasts.size() > 0) {
+                    BroadcastRecord br = mOrderedBroadcasts.get(0);
+                    if (br != null && br.curApp != null) {
+                        pid = br.curApp.pid;
+                    }
+                }
+            }
+            return pid;
+        }
+    }
+    /// M: ANR debug mechanism for broadcast monitor @}
+
     private final class BroadcastHandler extends Handler {
         public BroadcastHandler(Looper looper) {
             super(looper, null, true);
@@ -209,6 +241,9 @@ public final class BroadcastQueue {
         mQueueName = name;
         mTimeoutPeriod = timeoutPeriod;
         mDelayBehindServices = allowDelayBehindServices;
+
+        /// M: ANR debug mechanism for broadcast monitor
+        mAnrBroadcastQueue = new AnrBroadcastQueue();
     }
 
     public boolean isPendingBroadcastProcessLocked(int pid) {
@@ -281,6 +316,17 @@ public final class BroadcastQueue {
                     + ": " + r);
             mService.notifyPackageUse(r.intent.getComponent().getPackageName(),
                                       PackageManager.NOTIFY_PACKAGE_USE_BROADCAST_RECEIVER);
+
+            /// M: broadcast log enhancement @{
+            if (!ActivityManagerService.IS_USER_BUILD || DEBUG_BROADCAST) {
+                Slog.d(TAG_BROADCAST, "BDC-Delivering broadcast: " + r.intent
+                    + ", queue=" + mQueueName
+                    + ", ordered=" + r.ordered
+                    + ", app=" + app
+                    + ", receiver=" + r.receiver);
+            }
+            /// @}
+
             app.thread.scheduleReceiver(new Intent(r.intent), r.curReceiver,
                     mService.compatibilityInfoForPackageLocked(r.curReceiver.applicationInfo),
                     r.resultCode, r.resultData, r.resultExtras, r.ordered, r.userId,
@@ -310,11 +356,30 @@ public final class BroadcastQueue {
             }
             try {
                 mPendingBroadcast = null;
+
+                /// M: AMEventHook event @{
+                if ("1".equals(SystemProperties.get("persist.runningbooster.support")) ||
+                        "1".equals(SystemProperties.get("ro.mtk_aws_support"))) {
+                    AMEventHookData.ReadyToStartStaticReceiver eventData = null;
+
+                    eventData = AMEventHookData.ReadyToStartStaticReceiver.createInstance();
+                    eventData.set(app.info.packageName,
+                            br.callerPackage, br.callingUid);
+                    mService.getAMEventHook().hook(AMEventHook.Event.AM_ReadyToStartStaticReceiver,
+                        eventData);
+                }
+                /// M: AMEventHook event @}
+
                 processCurBroadcastLocked(br, app);
                 didSomething = true;
             } catch (Exception e) {
+                /// M: broadcast log enhancement @{
                 Slog.w(TAG, "Exception in new application when starting receiver "
-                        + br.curComponent.flattenToShortString(), e);
+                        + (br.curComponent != null
+                        ? br.curComponent.flattenToShortString() : "(null)")
+                        , e);
+                /// @}
+
                 logBroadcastReceiverDiscardLocked(br);
                 finishReceiverLocked(br, br.resultCode, br.resultData,
                         br.resultExtras, br.resultAbort, false);
@@ -434,6 +499,17 @@ public final class BroadcastQueue {
                 // on.  If there are background services currently starting, then we will go into a
                 // special state where we hold off on continuing this broadcast until they are done.
                 if (mService.mServices.hasBackgroundServices(r.userId)) {
+                    /// M: broadcast log enhancement @{
+                    ActiveServices.ServiceMap smap = mService.mServices.mServiceMap.get(r.userId);
+                    if (smap != null) {
+                        Slog.d(TAG_BROADCAST, "BDC-mStartingBackground size = "
+                            + smap.mStartingBackground.size()
+                            + " mStartingBackground = "
+                            + smap.mStartingBackground + " mMaxStartingBackground = "
+                            + mService.mServices.mMaxStartingBackground);
+                    }
+                    /// @}
+
                     Slog.i(TAG, "Delay finish: " + r.curComponent.flattenToShortString());
                     r.state = BroadcastRecord.WAITING_SERVICES;
                     return false;
@@ -617,6 +693,19 @@ public final class BroadcastQueue {
 
         if (skip) {
             r.delivery[index] = BroadcastRecord.DELIVERY_SKIPPED;
+
+            /// M: broadcast log enhancement @{
+            if (!ActivityManagerService.IS_USER_BUILD || DEBUG_BROADCAST) {
+                Slog.d(TAG_BROADCAST, "BDC-Skip broadcast: " + r.intent
+                    + ", queue=" + mQueueName
+                    + ", ordered=" + ordered
+                    + ", filter=" + filter
+                    + ", broadcastRecord=" + r
+                    + ", receiver=" + r.receiver
+                    + ", #" + index);
+            }
+            /// @}
+
             return;
         }
 
@@ -624,10 +713,24 @@ public final class BroadcastQueue {
         // the broadcast and if the calling app is in the foreground and the broadcast is
         // explicit we launch the review UI passing it a pending intent to send the skipped
         // broadcast.
-        if (Build.PERMISSIONS_REVIEW_REQUIRED) {
+        /// M: CTA requirement - permission control
+        if (Build.isPermissionReviewRequired()) {
             if (!requestStartTargetPermissionsReviewIfNeededLocked(r, filter.packageName,
                     filter.owningUserId)) {
                 r.delivery[index] = BroadcastRecord.DELIVERY_SKIPPED;
+
+                /// M: broadcast log enhancement @{
+                if (!ActivityManagerService.IS_USER_BUILD || DEBUG_BROADCAST) {
+                    Slog.d(TAG_BROADCAST, "BDC-Skip by permissions, broadcast: " + r.intent
+                        + ", queue=" + mQueueName
+                        + ", ordered=" + ordered
+                        + ", filter=" + filter
+                        + ", broadcastRecord=" + r
+                        + ", receiver=" + r.receiver
+                        + ", #" + index);
+                }
+                /// @}
+
                 return;
             }
         }
@@ -656,6 +759,19 @@ public final class BroadcastQueue {
         try {
             if (DEBUG_BROADCAST_LIGHT) Slog.i(TAG_BROADCAST,
                     "Delivering to " + filter + " : " + r);
+
+            /// M: broadcast log enhancement @{
+            if (!ActivityManagerService.IS_USER_BUILD || DEBUG_BROADCAST) {
+                Slog.d(TAG_BROADCAST, "BDC-Delivering broadcast: " + r.intent
+                    + ", queue=" + mQueueName
+                    + ", ordered=" + ordered
+                    + ", filter=" + filter
+                    + ", broadcastRecord=" + r
+                    + ", receiver=" + r.receiver
+                    + ", #" + index);
+            }
+            /// @}
+
             if (filter.receiverList.app != null && filter.receiverList.app.inFullBackup) {
                 // Skip delivery if full backup in progress
                 // If it's an ordered broadcast, we need to continue to the next receiver.
@@ -663,6 +779,18 @@ public final class BroadcastQueue {
                     skipReceiverLocked(r);
                 }
             } else {
+                /// M: AMEventHook event @{
+                if ("1".equals(SystemProperties.get("persist.runningbooster.support")) ||
+                        "1".equals(SystemProperties.get("ro.mtk_aws_support"))) {
+                    AMEventHookData.ReadyToStartDynamicReceiver eventData = null;
+
+                    eventData = AMEventHookData.ReadyToStartDynamicReceiver.createInstance();
+                    eventData.set(filter.packageName, r.callerPackage, r.callingUid);
+                    mService.getAMEventHook().hook(AMEventHook.Event.AM_ReadyToStartDynamicReceiver,
+                        eventData);
+                }
+                /// M: AMEventHook event @}
+
                 performReceiveLocked(filter.receiverList.app, filter.receiverList.receiver,
                         new Intent(r.intent), r.resultCode, r.resultData,
                         r.resultExtras, r.ordered, r.initialSticky, r.userId);
@@ -712,10 +840,12 @@ public final class BroadcastQueue {
             intent.putExtra(Intent.EXTRA_PACKAGE_NAME, receivingPackageName);
             intent.putExtra(Intent.EXTRA_INTENT, new IntentSender(target));
 
-            if (DEBUG_PERMISSIONS_REVIEW) {
+            /// M: Permission review log enhancement @{
+            if (DEBUG_PERMISSIONS_REVIEW || !ActivityManagerService.IS_USER_BUILD) {
                 Slog.i(TAG, "u" + receivingUserId + " Launching permission review for package "
                         + receivingPackageName);
             }
+            /// M: Permission review log enhancement @}
 
             mHandler.post(new Runnable() {
                 @Override
@@ -777,8 +907,14 @@ public final class BroadcastQueue {
                 r.dispatchTime = SystemClock.uptimeMillis();
                 r.dispatchClockTime = System.currentTimeMillis();
                 final int N = r.receivers.size();
-                if (DEBUG_BROADCAST_LIGHT) Slog.v(TAG_BROADCAST, "Processing parallel broadcast ["
-                        + mQueueName + "] " + r);
+
+                /// M: broadcast log enhancement @{
+                if (!ActivityManagerService.IS_USER_BUILD || DEBUG_BROADCAST_LIGHT) {
+                    Slog.v(TAG_BROADCAST, "BDC-Processing parallel broadcast ["
+                        + mQueueName + "] " + r + ", " + N + " receivers");
+                }
+                /// @}
+
                 for (int i=0; i<N; i++) {
                     Object target = r.receivers.get(i);
                     if (DEBUG_BROADCAST)  Slog.v(TAG_BROADCAST,
@@ -848,7 +984,9 @@ public final class BroadcastQueue {
                 if (mService.mProcessesReady && r.dispatchTime > 0) {
                     long now = SystemClock.uptimeMillis();
                     if ((numReceivers > 0) &&
-                            (now > r.dispatchTime + (2*mTimeoutPeriod*numReceivers))) {
+                            (now > r.dispatchTime + (2*mTimeoutPeriod*numReceivers)) &&
+                            /// M: ANR debug mechanism for defer ANR
+                            !mService.mANRManager.isAnrDeferrable()) {
                         Slog.w(TAG, "Hung broadcast ["
                                 + mQueueName + "] discarded after timeout failure:"
                                 + " now=" + now
@@ -878,9 +1016,28 @@ public final class BroadcastQueue {
                     // result if requested...
                     if (r.resultTo != null) {
                         try {
-                            if (DEBUG_BROADCAST) Slog.i(TAG_BROADCAST,
-                                    "Finishing broadcast [" + mQueueName + "] "
-                                    + r.intent.getAction() + " app=" + r.callerApp);
+                            if (!ActivityManagerService.IS_USER_BUILD || DEBUG_BROADCAST) {
+                                Slog.i(TAG_BROADCAST,
+                                    "BDC-Finishing broadcast [" + mQueueName + "] "
+                                    + r.intent.getAction() + " app=" + r.callerApp
+                                    + " receiver=" + r.resultTo);
+                            }
+
+                            /// M: AMEventHook event @{
+                            if ("1".equals(SystemProperties.get("persist.runningbooster.support"))
+                                    || "1".equals(SystemProperties.get("ro.mtk_aws_support"))) {
+                                AMEventHookData.ReadyToStartDynamicReceiver eventData = null;
+
+                                eventData =
+                                    AMEventHookData.ReadyToStartDynamicReceiver.createInstance();
+                                // Send result broadcast to caller package receiver
+                                eventData.set(r.callerPackage, r.callerPackage, r.callingUid);
+                                mService.getAMEventHook().hook(
+                                    AMEventHook.Event.AM_ReadyToStartDynamicReceiver,
+                                    eventData);
+                            }
+                            /// M: AMEventHook event @}
+
                             performReceiveLocked(r.callerApp, r.resultTo,
                                 new Intent(r.intent), r.resultCode,
                                 r.resultData, r.resultExtras, false, false, r.userId);
@@ -926,8 +1083,13 @@ public final class BroadcastQueue {
             if (recIdx == 0) {
                 r.dispatchTime = r.receiverTime;
                 r.dispatchClockTime = System.currentTimeMillis();
-                if (DEBUG_BROADCAST_LIGHT) Slog.v(TAG_BROADCAST, "Processing ordered broadcast ["
-                        + mQueueName + "] " + r);
+
+                /// M: broadcast log enhancement @{
+                if (!ActivityManagerService.IS_USER_BUILD || DEBUG_BROADCAST_LIGHT) {
+                    Slog.v(TAG_BROADCAST, "BDC-Processing ordered broadcast ["
+                        + mQueueName + "] " + r + ", " + r.receivers.size() + " receivers");
+                }
+                /// @}
             }
             if (! mPendingBroadcastTimeoutMessage) {
                 long timeoutTime = r.receiverTime + mTimeoutPeriod;
@@ -974,6 +1136,12 @@ public final class BroadcastQueue {
             ComponentName component = new ComponentName(
                     info.activityInfo.applicationInfo.packageName,
                     info.activityInfo.name);
+
+            /// M: broadcast log enhancement @{
+            if (ActivityManagerService.IS_ENG_BUILD || DEBUG_BROADCAST) {
+                Slog.d(TAG_BROADCAST, r + ", #" + recIdx + " " + info.activityInfo);
+            }
+            /// @}
 
             boolean skip = false;
             if (brOptions != null &&
@@ -1130,7 +1298,8 @@ public final class BroadcastQueue {
             // the broadcast and if the calling app is in the foreground and the broadcast is
             // explicit we launch the review UI passing it a pending intent to send the skipped
             // broadcast.
-            if (Build.PERMISSIONS_REVIEW_REQUIRED && !skip) {
+            /// M: CTA requirement - permission control
+            if (Build.isPermissionReviewRequired() && !skip) {
                 if (!requestStartTargetPermissionsReviewIfNeededLocked(r,
                         info.activityInfo.packageName, UserHandle.getUserId(
                                 info.activityInfo.applicationInfo.uid))) {
@@ -1214,11 +1383,38 @@ public final class BroadcastQueue {
                         + r.curComponent.getPackageName() + ": " + e);
             }
 
+            /// M: [process suppression] @{
+            if ("1".equals(SystemProperties.get("persist.runningbooster.support")) ||
+                    "1".equals(SystemProperties.get("ro.mtk_aws_support"))) {
+                AMEventHookData.PackageStoppedStatusChanged eventData1 =
+                        AMEventHookData.PackageStoppedStatusChanged.createInstance();
+                eventData1.set(r.curComponent.getPackageName(), mService.SUPPRESS_ACTION_UNSTOP,
+                        "processNextBroadcast");
+                mService.getAMEventHook().hook(AMEventHook.Event.AM_PackageStoppedStatusChanged,
+                        eventData1);
+            }
+            /// M: [process suppression] @}
+
             // Is this receiver's application already running?
             if (app != null && app.thread != null) {
                 try {
                     app.addPackage(info.activityInfo.packageName,
                             info.activityInfo.applicationInfo.versionCode, mService.mProcessStats);
+
+                    /// M: AMEventHook event @{
+                    if ("1".equals(SystemProperties.get("persist.runningbooster.support")) ||
+                            "1".equals(SystemProperties.get("ro.mtk_aws_support"))) {
+                        AMEventHookData.ReadyToStartStaticReceiver eventData = null;
+
+                        eventData = AMEventHookData.ReadyToStartStaticReceiver.createInstance();
+                        eventData.set(info.activityInfo.packageName,
+                                r.callerPackage, r.callingUid);
+                        mService.getAMEventHook().hook(
+                            AMEventHook.Event.AM_ReadyToStartStaticReceiver,
+                            eventData);
+                    }
+                    /// M: AMEventHook event @}
+
                     processCurBroadcastLocked(r, app);
                     return;
                 } catch (RemoteException e) {
@@ -1279,6 +1475,14 @@ public final class BroadcastQueue {
             Message msg = mHandler.obtainMessage(BROADCAST_TIMEOUT_MSG, this);
             mHandler.sendMessageAtTime(msg, timeoutTime);
             mPendingBroadcastTimeoutMessage = true;
+
+            /// M: ANR debug mechanism for broadcast monitor @{
+            if (ANRManager.ENABLE_ALL_ANR_MECHANISM == ANRManager.enableANRDebuggingMechanism()) {
+                Message msg2 = mService.mAnrHandler.obtainMessage(
+                    ANRManager.START_MONITOR_BROADCAST_TIMEOUT_MSG, mAnrBroadcastQueue);
+                mService.mAnrHandler.sendMessageAtTime(msg2, timeoutTime - mTimeoutPeriod / 2);
+            }
+            /// M: ANR debug mechanism for broadcast monitor @}
         }
     }
 
@@ -1286,12 +1490,26 @@ public final class BroadcastQueue {
         if (mPendingBroadcastTimeoutMessage) {
             mHandler.removeMessages(BROADCAST_TIMEOUT_MSG, this);
             mPendingBroadcastTimeoutMessage = false;
+
+            /// M: ANR debug mechanism for broadcast monitor @{
+            if (ANRManager.ENABLE_ALL_ANR_MECHANISM == ANRManager.enableANRDebuggingMechanism()) {
+                mService.mAnrHandler.removeMessages(ANRManager.START_MONITOR_BROADCAST_TIMEOUT_MSG,
+                        mAnrBroadcastQueue);
+            }
+            /// M: ANR debug mechanism for broadcast monitor @}
         }
     }
 
     final void broadcastTimeoutLocked(boolean fromMsg) {
         if (fromMsg) {
             mPendingBroadcastTimeoutMessage = false;
+
+            /// M: ANR debug mechanism for broadcast monitor @{
+            if (ANRManager.ENABLE_ALL_ANR_MECHANISM == ANRManager.enableANRDebuggingMechanism()) {
+                mService.mAnrHandler.removeMessages(ANRManager.START_MONITOR_BROADCAST_TIMEOUT_MSG,
+                        mAnrBroadcastQueue);
+            }
+            /// M: ANR debug mechanism for broadcast monitor @}
         }
 
         if (mOrderedBroadcasts.size() == 0) {
@@ -1301,6 +1519,12 @@ public final class BroadcastQueue {
         long now = SystemClock.uptimeMillis();
         BroadcastRecord r = mOrderedBroadcasts.get(0);
         if (fromMsg) {
+            /// M: ANR debug mechanism for defer ANR @{
+            if (mService.mProcessesReady && mService.mANRManager.isAnrDeferrable()) {
+                Slog.d(TAG, "Skip BROADCAST_TIMEOUT ANR: " + r);
+                mService.mDidDexOpt = true;
+            }
+            /// M: ANR debug mechanism for defer ANR @}
             if (mService.mDidDexOpt) {
                 // Delay timeouts until dexopt finishes.
                 mService.mDidDexOpt = false;
@@ -1408,6 +1632,17 @@ public final class BroadcastQueue {
             return;
         }
         r.finishTime = SystemClock.uptimeMillis();
+
+        /// M: broadcast log enhancement @{
+        if (ActivityManagerService.IS_ENG_BUILD || DEBUG_BROADCAST) {
+            Slog.d(TAG_BROADCAST, (r.ordered ? "Ordered" : "Non-ordered")
+                + " [" + mQueueName + "] " + r
+                + ", " + (r.receivers != null ? r.receivers.size() : "null") + " receivers"
+                + ", Total: " + (r.finishTime - r.enqueueTime)
+                + ", Waiting: " + (r.dispatchTime - r.enqueueTime)
+                + ", Processing: " + (r.finishTime - r.dispatchTime));
+        }
+        /// @}
 
         mBroadcastHistory[mHistoryNext] = r;
         mHistoryNext = ringAdvance(mHistoryNext, 1, MAX_BROADCAST_HISTORY);

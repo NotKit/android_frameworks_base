@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -42,6 +47,15 @@ public class WifiP2pDevice implements Parcelable {
      * The device MAC address uniquely identifies a Wi-Fi p2p device
      */
     public String deviceAddress = "";
+
+    /** M: interface address @{ */
+    /**
+     * The interface MAC address.
+     * Some device's device addres is difference to interface address
+     * @hide
+     */
+    public String interfaceAddress = "00:00:00:00:00:00";
+    /** @} */
 
     /**
      * Primary device type identifies the type of device. For example, an application
@@ -111,6 +125,15 @@ public class WifiP2pDevice implements Parcelable {
     /** @hide */
     public WifiP2pWfdInfo wfdInfo;
 
+    /**
+     * device IP
+     * M: ALPS01303168: for wfd sink
+     *
+     * @hide
+     * @internal
+     */
+    public String deviceIP;
+
     /** Detailed device string pattern with WFD info
      * Example:
      *  P2P-DEVICE-FOUND 00:18:6b:de:a3:6e p2p_dev_addr=00:18:6b:de:a3:6e
@@ -144,7 +167,10 @@ public class WifiP2pDevice implements Parcelable {
      *  AP-STA-DISCONNECTED 42:fc:89:a8:96:09 p2p_dev_addr=fa:7b:7a:42:02:13
      */
     private static final Pattern threeTokenPattern = Pattern.compile(
-        "(?:[0-9a-f]{2}:){5}[0-9a-f]{2} p2p_dev_addr=((?:[0-9a-f]{2}:){5}[0-9a-f]{2})"
+        /** M: interface address @{ */
+        //"(?:[0-9a-f]{2}:){5}[0-9a-f]{2} p2p_dev_addr=((?:[0-9a-f]{2}:){5}[0-9a-f]{2})"
+        "((?:[0-9a-f]{2}:){5}[0-9a-f]{2}) p2p_dev_addr=((?:[0-9a-f]{2}:){5}[0-9a-f]{2})"
+        /** @} */
     );
 
 
@@ -193,14 +219,24 @@ public class WifiP2pDevice implements Parcelable {
                 if (!match.find()) {
                     throw new IllegalArgumentException("Malformed supplicant event");
                 }
-                deviceAddress = match.group(1);
+                /** M: interface address @{ */
+                interfaceAddress = match.group(1);
+                deviceAddress = match.group(2);
+                /** @} */
                 return;
             default:
-                match = detailedDevicePattern.matcher(string);
+                ///M: ALPS01471205  @{
+                //match = detailedDevicePattern.matcher(string);
+                String modifiedString = string.replaceAll("\n", "_");
+                match = detailedDevicePattern.matcher(modifiedString);
+                ///@}
+
                 if (!match.find()) {
                     throw new IllegalArgumentException("Malformed supplicant event");
                 }
-
+                /** M: interface address @{ */
+                interfaceAddress = match.group(1);
+                /** @} */
                 deviceAddress = match.group(3);
                 primaryDeviceType = match.group(4);
                 deviceName = match.group(5);
@@ -219,6 +255,8 @@ public class WifiP2pDevice implements Parcelable {
         if (tokens[0].startsWith("P2P-DEVICE-FOUND")) {
             status = AVAILABLE;
         }
+
+        deviceIP = null;
     }
 
     /** Returns true if WPS push button configuration is supported */
@@ -285,12 +323,14 @@ public class WifiP2pDevice implements Parcelable {
             throw new IllegalArgumentException("deviceAddress does not match");
         }
         deviceName = device.deviceName;
+        interfaceAddress = device.interfaceAddress;
         primaryDeviceType = device.primaryDeviceType;
         secondaryDeviceType = device.secondaryDeviceType;
         wpsConfigMethodsSupported = device.wpsConfigMethodsSupported;
         deviceCapability = device.deviceCapability;
         groupCapability = device.groupCapability;
         wfdInfo = device.wfdInfo;
+        deviceIP = device.deviceIP;
     }
 
     @Override
@@ -309,6 +349,7 @@ public class WifiP2pDevice implements Parcelable {
         StringBuffer sbuf = new StringBuffer();
         sbuf.append("Device: ").append(deviceName);
         sbuf.append("\n deviceAddress: ").append(deviceAddress);
+        sbuf.append("\n interfaceAddress: ").append(interfaceAddress);
         sbuf.append("\n primary type: ").append(primaryDeviceType);
         sbuf.append("\n secondary type: ").append(secondaryDeviceType);
         sbuf.append("\n wps: ").append(wpsConfigMethodsSupported);
@@ -316,6 +357,7 @@ public class WifiP2pDevice implements Parcelable {
         sbuf.append("\n devcapab: ").append(deviceCapability);
         sbuf.append("\n status: ").append(status);
         sbuf.append("\n wfdInfo: ").append(wfdInfo);
+        sbuf.append("\n deviceIP: ").append(deviceIP);
         return sbuf.toString();
     }
 
@@ -329,6 +371,7 @@ public class WifiP2pDevice implements Parcelable {
         if (source != null) {
             deviceName = source.deviceName;
             deviceAddress = source.deviceAddress;
+            interfaceAddress = source.interfaceAddress;
             primaryDeviceType = source.primaryDeviceType;
             secondaryDeviceType = source.secondaryDeviceType;
             wpsConfigMethodsSupported = source.wpsConfigMethodsSupported;
@@ -336,6 +379,7 @@ public class WifiP2pDevice implements Parcelable {
             groupCapability = source.groupCapability;
             status = source.status;
             wfdInfo = new WifiP2pWfdInfo(source.wfdInfo);
+            deviceIP = source.deviceIP;
         }
     }
 
@@ -343,6 +387,7 @@ public class WifiP2pDevice implements Parcelable {
     public void writeToParcel(Parcel dest, int flags) {
         dest.writeString(deviceName);
         dest.writeString(deviceAddress);
+        dest.writeString(interfaceAddress);
         dest.writeString(primaryDeviceType);
         dest.writeString(secondaryDeviceType);
         dest.writeInt(wpsConfigMethodsSupported);
@@ -355,6 +400,7 @@ public class WifiP2pDevice implements Parcelable {
         } else {
             dest.writeInt(0);
         }
+        dest.writeString(deviceIP);
     }
 
     /** Implement the Parcelable interface */
@@ -364,6 +410,7 @@ public class WifiP2pDevice implements Parcelable {
                 WifiP2pDevice device = new WifiP2pDevice();
                 device.deviceName = in.readString();
                 device.deviceAddress = in.readString();
+                device.interfaceAddress = in.readString();
                 device.primaryDeviceType = in.readString();
                 device.secondaryDeviceType = in.readString();
                 device.wpsConfigMethodsSupported = in.readInt();
@@ -373,6 +420,7 @@ public class WifiP2pDevice implements Parcelable {
                 if (in.readInt() == 1) {
                     device.wfdInfo = WifiP2pWfdInfo.CREATOR.createFromParcel(in);
                 }
+                device.deviceIP = in.readString();
                 return device;
             }
 
@@ -382,7 +430,8 @@ public class WifiP2pDevice implements Parcelable {
         };
 
     //supported formats: 0x1abc, 0X1abc, 1abc
-    private int parseHex(String hexString) {
+    /** @hide */
+    public static int parseHex(String hexString) {
         int num = 0;
         if (hexString.startsWith("0x") || hexString.startsWith("0X")) {
             hexString = hexString.substring(2);

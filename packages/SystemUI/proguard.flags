@@ -36,3 +36,7 @@
 
 -keep class ** extends android.support.v14.preference.PreferenceFragment
 -keep class com.android.systemui.tuner.*
+
+#plugin
+-keep class com.mediatek.systemui.ext.** { *; }
+-keep class com.mediatek.systemui.statusbar.extcb.** { *; }

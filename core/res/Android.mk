@@ -39,6 +39,10 @@ framework_GENERATED_SOURCE_DIR := $(call intermediates-dir-for,JAVA_LIBRARIES,fr
 framework_RenderScript_STAMP_FILE := $(framework_GENERATED_SOURCE_DIR)/RenderScript.stamp
 #LOCAL_RESOURCE_DIR := $(framework_GENERATED_SOURCE_DIR)/renderscript/res $(LOCAL_PATH)/res
 
+ifeq ($(strip $(MTK_WEARABLE_PLATFORM)),yes)
+LOCAL_ASSET_DIR := $(wildcard device/mediatek/$(MTK_PROJECT)/overlay/$(LOCAL_PATH)/assets) $(LOCAL_PATH)/assets
+endif
+
 include $(BUILD_PACKAGE)
 
 # Make sure the system .rs files get compiled before building the package-export.apk.

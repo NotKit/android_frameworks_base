@@ -68,6 +68,7 @@ class SRTTrack extends WebVttTrack {
     private static final int KEY_LOCAL_SETTING = 102; // TimedText.KEY_START_TIME
 
     private static final String TAG = "SRTTrack";
+    private static final boolean DEBUG = Log.isLoggable(TAG, Log.DEBUG);
     private final Handler mEventHandler;
 
     SRTTrack(WebVttRenderingWidget renderingWidget, MediaFormat format) {
@@ -124,7 +125,15 @@ class SRTTrack extends WebVttTrack {
                 TextTrackCue cue = new TextTrackCue();
                 String[] startEnd = header.split("-->");
                 cue.mStartTimeMs = parseMs(startEnd[0]);
-                cue.mEndTimeMs = parseMs(startEnd[1]);
+                ///M: enhance parse endTime for case (00:00:13,769 --> 00:00:16,124  X1:179 X2:536 Y1:496 Y2:522)
+                String[] endTime = startEnd[1].trim().split(" ");
+                if (DEBUG) Log.d(TAG, "endTime: " + endTime[0]);
+                cue.mEndTimeMs = parseMs(endTime[0]);
+                ///M @}
+
+                ///M: keep cue in cuelist for seek forward case @{
+                cue.mRunID = runID;
+                ///M @}
 
                 String s;
                 List<String> paragraph = new ArrayList<String>();
@@ -165,6 +174,14 @@ class SRTTrack extends WebVttTrack {
             return;
         }
 
+        ///M: notify null content to AP when it is at endTime@{
+        if (activeCues.isEmpty()) {
+            if (DEBUG) Log.d(TAG, "activeCues is Empty");
+            Message msg = mEventHandler.obtainMessage(MEDIA_TIMED_TEXT, 0, 0, null);
+            mEventHandler.sendMessage(msg);
+        }
+        /// @}
+
         for (Cue cue : activeCues) {
             TextTrackCue ttc = (TextTrackCue) cue;
 
@@ -193,8 +210,17 @@ class SRTTrack extends WebVttTrack {
     private static long parseMs(String in) {
         long hours = Long.parseLong(in.split(":")[0].trim());
         long minutes = Long.parseLong(in.split(":")[1].trim());
-        long seconds = Long.parseLong(in.split(":")[2].split(",")[0].trim());
-        long millies = Long.parseLong(in.split(":")[2].split(",")[1].trim());
+        ///M: handle different case for srt@{
+        long seconds = 0;
+        long millies = 0;
+        if (in.split(":").length == 3) { //for case 00:00:13,769
+            seconds = Long.parseLong(in.split(":")[2].split(",")[0].trim());
+            millies = Long.parseLong(in.split(":")[2].split(",")[1].trim());
+        } else if (in.split(":").length == 4) { //for case 00:00:13:769
+            seconds = Long.parseLong(in.split(":")[2].trim());
+            millies = Long.parseLong(in.split(":")[3].trim());
+        }
+        /// @}
 
         return hours * 60 * 60 * 1000 + minutes * 60 * 1000 + seconds * 1000 + millies;
 

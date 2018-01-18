@@ -339,6 +339,7 @@ public class MtpDatabase implements AutoCloseable {
 
         // make sure the object does not exist
         if (path != null) {
+            Log.d(TAG, "beginSendObject: path = " + path);
             Cursor c = null;
             try {
                 c = mMediaProvider.query(mObjectsUri, ID_PROJECTION, PATH_WHERE,
@@ -715,8 +716,12 @@ public class MtpDatabase implements AutoCloseable {
 
     private MtpPropertyList getObjectPropertyList(int handle, int format, int property,
                         int groupCode, int depth) {
+        Log.d(TAG, "getObjectPropertyList: handle = 0x" + Long.toHexString(handle) +
+                ", property = 0x" + Long.toHexString(property));
+
         // FIXME - implement group support
         if (groupCode != 0) {
+            Log.i(TAG, "getObjectPropertyList RESPONSE_SPECIFICATION_BY_GROUP_UNSUPPORTED");
             return new MtpPropertyList(0, MtpConstants.RESPONSE_SPECIFICATION_BY_GROUP_UNSUPPORTED);
         }
 
@@ -845,11 +850,14 @@ public class MtpDatabase implements AutoCloseable {
     }
 
     private int getDeviceProperty(int property, long[] outIntValue, char[] outStringValue) {
+        Log.d(TAG, "getDeviceProperty  property = 0x" + Integer.toHexString(property));
+
         switch (property) {
             case MtpConstants.DEVICE_PROPERTY_SYNCHRONIZATION_PARTNER:
             case MtpConstants.DEVICE_PROPERTY_DEVICE_FRIENDLY_NAME:
                 // writable string properties kept in shared preferences
-                String value = mDeviceProperties.getString(Integer.toString(property), "");
+                //String value = mDeviceProperties.getString(Integer.toString(property), "");
+                String value = "Gemini";
                 int length = value.length();
                 if (length > 255) {
                     length = 255;
@@ -893,6 +901,7 @@ public class MtpDatabase implements AutoCloseable {
     private boolean getObjectInfo(int handle, int[] outStorageFormatParent,
                         char[] outName, long[] outCreatedModified) {
         Cursor c = null;
+        Log.d(TAG, "getObjectInfo");
         try {
             c = mMediaProvider.query(mObjectsUri, OBJECT_INFO_PROJECTION,
                             ID_WHERE, new String[] {  Integer.toString(handle) }, null, null);
@@ -931,6 +940,8 @@ public class MtpDatabase implements AutoCloseable {
     }
 
     private int getObjectFilePath(int handle, char[] outFilePath, long[] outFileLengthFormat) {
+        Log.d(TAG, "getObjectFilePath handle = " + Integer.toHexString(handle));
+
         if (handle == 0) {
             // special case root directory
             mMediaStoragePath.getChars(0, mMediaStoragePath.length(), outFilePath, 0);
@@ -951,8 +962,11 @@ public class MtpDatabase implements AutoCloseable {
                 // So to be safe, use the actual file size here.
                 outFileLengthFormat[0] = new File(path).length();
                 outFileLengthFormat[1] = c.getLong(2);
+                Log.d(TAG, "getObjectFilePath RESPONSE_OK: path = " + path);
+
                 return MtpConstants.RESPONSE_OK;
             } else {
+                Log.e(TAG, "getObjectFilePath RESPONSE_INVALID_OBJECT_HANDLE, handle = " + handle);
                 return MtpConstants.RESPONSE_INVALID_OBJECT_HANDLE;
             }
         } catch (RemoteException e) {
@@ -990,6 +1004,8 @@ public class MtpDatabase implements AutoCloseable {
         String path = null;
         int format = 0;
 
+        Log.d(TAG, "deleteFile: handle = 0x" + Integer.toHexString(handle));
+
         Cursor c = null;
         try {
             c = mMediaProvider.query(mObjectsUri, PATH_FORMAT_PROJECTION,
@@ -1006,6 +1022,9 @@ public class MtpDatabase implements AutoCloseable {
             if (path == null || format == 0) {
                 return MtpConstants.RESPONSE_GENERAL_ERROR;
             }
+
+            Log.d(TAG, "deleteFile: handle = 0x" + Integer.toHexString(handle) +
+                    ", path = " + path + ", format = 0x" + Integer.toHexString(format));
 
             // do not allow deleting any of the special subdirectories
             if (isStorageSubDirectory(path)) {
@@ -1095,10 +1114,12 @@ public class MtpDatabase implements AutoCloseable {
     }
 
     private void sessionStarted() {
+        Log.d(TAG, "sessionStarted");
         mDatabaseModified = false;
     }
 
     private void sessionEnded() {
+        Log.d(TAG, "sessionEnded, mDatabaseModified = " + mDatabaseModified);
         if (mDatabaseModified) {
             mContext.sendBroadcast(new Intent(MediaStore.ACTION_MTP_SESSION_END));
             mDatabaseModified = false;

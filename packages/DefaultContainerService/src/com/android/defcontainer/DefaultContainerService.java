@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -57,6 +62,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+
 
 /**
  * Service that offers to inspect and copy files that may reside on removable
@@ -269,6 +275,8 @@ public class DefaultContainerService extends IntentService {
 
     @Override
     protected void onHandleIntent(Intent intent) {
+        /// M: [ALPS01428323][Critical][Certification][KK][75/77 Only][CTS Verifier 4.4_r1] CTS disconnected after running  android.animation. (1/1) @{
+        try {
         if (PackageManager.ACTION_CLEAN_EXTERNAL_STORAGE.equals(intent.getAction())) {
             final IPackageManager pm = IPackageManager.Stub.asInterface(
                     ServiceManager.getService("package"));
@@ -285,6 +293,10 @@ public class DefaultContainerService extends IntentService {
             } catch (RemoteException e) {
             }
         }
+        } catch (NullPointerException npe) {
+            Slog.e(TAG, "Oops, NullPointerException caught.");
+        }
+        /// @}
     }
 
     void eraseFiles(File[] paths) {

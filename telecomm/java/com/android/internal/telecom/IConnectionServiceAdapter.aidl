@@ -16,11 +16,13 @@
 
 package com.android.internal.telecom;
 
+import android.os.Bundle;
 import android.app.PendingIntent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.telecom.ConnectionRequest;
 import android.telecom.DisconnectCause;
+import android.telecom.PhoneAccountHandle;
 import android.telecom.ParcelableConnection;
 import android.telecom.ParcelableConference;
 import android.telecom.StatusHints;
@@ -94,4 +96,11 @@ oneway interface IConnectionServiceAdapter {
     void removeExtras(String callId, in List<String> keys);
 
     void onConnectionEvent(String callId, String event, in Bundle extras);
+
+    /// M: For volte @{
+    void handleCreateConferenceComplete(
+            String conferenceId,
+            in ConnectionRequest request,
+            in ParcelableConference conference);
+    /// @}
 }

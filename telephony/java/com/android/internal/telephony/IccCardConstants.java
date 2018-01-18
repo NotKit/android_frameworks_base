@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2012 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -57,6 +62,29 @@ public class IccCardConstants {
     /* PERM_DISABLED means ICC is permanently disabled due to puk fails */
     public static final String INTENT_VALUE_ABSENT_ON_PERM_DISABLED = "PERM_DISABLED";
 
+    // Added by M begin
+    /**
+     * NETWORK_SUBSET means ICC is locked on NETWORK SUBSET PERSONALIZATION.
+     * @internal
+     */
+    public static final String INTENT_VALUE_LOCKED_NETWORK_SUBSET = "NETWORK_SUBSET";
+    /**
+     * CORPORATE means ICC is locked on CORPORATE PERSONALIZATION.
+     * @internal
+     */
+    public static final String INTENT_VALUE_LOCKED_CORPORATE = "CORPORATE";
+    /**
+     * SERVICE_PROVIDER means ICC is locked on SERVICE_PROVIDER PERSONALIZATION.
+     * @internal
+     */
+    public static final String INTENT_VALUE_LOCKED_SERVICE_PROVIDER = "SERVICE_PROVIDER";
+    /**
+     * SIM means ICC is locked on SIM PERSONALIZATION.
+     * @internal
+     */
+    public static final String INTENT_VALUE_LOCKED_SIM = "SIM";
+    // Added by M end
+
     /**
      * This is combination of IccCardStatus.CardState and IccCardApplicationStatus.AppState
      * for external apps (like PhoneApp) to use
@@ -107,4 +135,87 @@ public class IccCardConstants {
             }
         }
     }
+    // MTK-START
+    /**
+     * This card type is report by CDMA(VIA) modem.
+     * for CT requset to detect card type then give a warning
+     * @deprecated - use IccCardType instead
+     */
+    @Deprecated public enum CardType {
+        UIM_CARD(1),             //ICC structure, non CT UIM card
+        SIM_CARD(2),             //ICC structure, non CT SIM card
+        UIM_SIM_CARD(3),         //ICC structure, non CT dual mode card
+        UNKNOW_CARD(4),          //card is present, but can't detect type
+        CT_3G_UIM_CARD(5),       //ICC structure, CT 3G UIM card
+        CT_UIM_SIM_CARD(6),      //ICC structure, CT 3G dual mode card
+        PIN_LOCK_CARD(7),        //this card need PIN
+        CT_4G_UICC_CARD(8),      //UICC structure, CT 4G dual mode UICC card
+        NOT_CT_UICC_CARD(9),     //UICC structure, Non CT 4G dual mode UICC card
+        LOCKED_CARD(18),         //card is locked
+        CARD_NOT_INSERTED(255);  //card is not inserted
+
+        private int mValue;
+
+        public int getValue() {
+            return mValue;
+        }
+
+        /**
+         * Get CardType from integer.
+         * ASSERT: Please DON'T directly use CardType.values(), otherwise JE will occur
+         * @param cardTypeInt for cardType index.
+         * @return CardType.
+         */
+        public static IccCardConstants.CardType getCardTypeFromInt(int cardTypeInt) {
+            CardType cardType = CARD_NOT_INSERTED;
+            CardType[] cardTypes = CardType.values();
+            for (int i = 0; i < cardTypes.length; i++) {
+                if (cardTypes[i].getValue() == cardTypeInt) {
+                    cardType = cardTypes[i];
+                    break;
+                }
+            }
+            return cardType;
+        }
+
+        /**
+         * Check if it is 4G card.
+         * @return true if it is 4G card
+         */
+        public boolean is4GCard() {
+            return ((this == CT_4G_UICC_CARD) || (this == NOT_CT_UICC_CARD));
+        }
+
+        /**
+         * Check if it is 3G card.
+         * @return true if it is 3G card
+         */
+        public boolean is3GCard() {
+            return ((this == UIM_CARD) || (this == CT_UIM_SIM_CARD)
+                    || (this == CT_3G_UIM_CARD) || (this == CT_UIM_SIM_CARD));
+        }
+
+        /**
+         * Check if it is dual mode card.
+         * @return true if it is dual mode card
+         */
+        public boolean isDualModeCard() {
+            return ((this == UIM_SIM_CARD) || (this == CT_UIM_SIM_CARD)
+                    || (this == CT_4G_UICC_CARD) || (this == NOT_CT_UICC_CARD));
+        }
+
+        /**
+         * Check if it is OP09 card.
+         * @return true if it is OP09 card
+         */
+        public boolean isOPO9Card() {
+            return ((this == CT_3G_UIM_CARD) || (this == CT_UIM_SIM_CARD)
+                    || (this == CT_4G_UICC_CARD));
+        }
+
+        private CardType(int value) {
+            mValue = value;
+        }
+    }
+    // MTK-END
 }

@@ -46,6 +46,9 @@ import android.view.IInputFilter;
 import android.view.AppTransitionAnimationSpec;
 import android.view.WindowContentFrameStats;
 
+/// M: BMW restore Window
+import com.mediatek.multiwindow.IFreeformStackListener;
+
 /**
  * System private interface to the window manager.
  *
@@ -437,4 +440,10 @@ interface IWindowManager
      * Remove the input consumer for wallpaper events.
      */
     void removeWallpaperInputConsumer();
+
+    /**
+     * M: BMW
+     * Registers a listener that will be called when the app get focus
+     */
+    void registerFreeformStackListener(IFreeformStackListener listener);
 }

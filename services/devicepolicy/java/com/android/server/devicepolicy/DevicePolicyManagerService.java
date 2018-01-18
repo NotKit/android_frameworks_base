@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -68,6 +73,7 @@ import android.content.pm.PackageManager;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.content.pm.PackageManagerInternal;
 import android.content.pm.ParceledListSlice;
+import android.content.pm.PermissionInfo;
 import android.content.pm.ResolveInfo;
 import android.content.pm.ServiceInfo;
 import android.content.pm.UserInfo;
@@ -118,6 +124,7 @@ import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.ArrayMap;
 import android.util.ArraySet;
+import android.util.EventLog;
 import android.util.Log;
 import android.util.Pair;
 import android.util.Slog;
@@ -484,6 +491,8 @@ public class DevicePolicyManagerService extends IDevicePolicyManager.Stub {
                                 UserHandle.ALL);
             }
             if (Intent.ACTION_BOOT_COMPLETED.equals(action)
+                    /// M: [ALPS01254902] Add IPO Boot Intent for CTS CA Cert Notification on Boot test
+                    || ACTION_BOOT_IPO.equals(action)
                     || ACTION_EXPIRED_PASSWORD_NOTIFICATION.equals(action)) {
                 if (VERBOSE_LOG) {
                     Slog.v(LOG_TAG, "Sending password expiration notifications for action "
@@ -1621,6 +1630,8 @@ public class DevicePolicyManagerService extends IDevicePolicyManager.Stub {
         }
         IntentFilter filter = new IntentFilter();
         filter.addAction(Intent.ACTION_BOOT_COMPLETED);
+        /// M: [ALPS01254902] Add IPO Boot Intent for CTS CA Cert Notification on Boot test
+        filter.addAction(ACTION_BOOT_IPO);
         filter.addAction(ACTION_EXPIRED_PASSWORD_NOTIFICATION);
         filter.addAction(Intent.ACTION_USER_ADDED);
         filter.addAction(Intent.ACTION_USER_REMOVED);
@@ -2430,7 +2441,15 @@ public class DevicePolicyManagerService extends IDevicePolicyManager.Stub {
                         if (dai != null) {
                             ActiveAdmin ap = new ActiveAdmin(dai, /* parent */ false);
                             ap.readFromXml(parser);
-                            policy.mAdminMap.put(ap.info.getComponent(), ap);
+                            /// M: [ALPS01316360] update for detail check the ActiveAdmins are Repeated @{
+                            if (policy.mAdminMap.get(ap.info.getComponent()) != null) {
+                                Slog.e(LOG_TAG, "This ActiveAdmin:" + ap.info.getComponent() +
+                                        " already exist on user " + userHandle + ", ignore it. callstack: " +
+                                        Log.getStackTraceString(new Throwable()));
+                            } else {
+                                policy.mAdminMap.put(ap.info.getComponent(), ap);
+                            }
+                            /// @}
                         }
                     } catch (RuntimeException e) {
                         Slog.w(LOG_TAG, "Failed loading admin " + name, e);
@@ -2547,6 +2566,7 @@ public class DevicePolicyManagerService extends IDevicePolicyManager.Stub {
         switch (quality) {
             case DevicePolicyManager.PASSWORD_QUALITY_UNSPECIFIED:
             case DevicePolicyManager.PASSWORD_QUALITY_BIOMETRIC_WEAK:
+            case DevicePolicyManager.PASSWORD_QUALITY_VOICE_WEAK: /// M: VoiceUnlock
             case DevicePolicyManager.PASSWORD_QUALITY_SOMETHING:
             case DevicePolicyManager.PASSWORD_QUALITY_NUMERIC:
             case DevicePolicyManager.PASSWORD_QUALITY_NUMERIC_COMPLEX:
@@ -4588,6 +4608,8 @@ public class DevicePolicyManagerService extends IDevicePolicyManager.Stub {
             @Override
             protected Void doInBackground(Void... unused) {
                 try {
+                    Slog.d(LOG_TAG, "sendPrivateKeyAliasResponse alias = " + alias
+                            + ", keyChainAliasResponse = " + keyChainAliasResponse);
                     keyChainAliasResponse.alias(alias);
                 } catch (Exception e) {
                     // Catch everything (not just RemoteException): caller could throw a
@@ -8490,6 +8512,10 @@ public class DevicePolicyManagerService extends IDevicePolicyManager.Stub {
                         < android.os.Build.VERSION_CODES.M) {
                     return false;
                 }
+                if (!isRuntimePermission(permission)) {
+                    EventLog.writeEvent(0x534e4554, "62623498", user.getIdentifier(), "");
+                    return false;
+                }
                 final PackageManager packageManager = mContext.getPackageManager();
                 switch (grantState) {
                     case DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED: {
@@ -8515,10 +8541,19 @@ public class DevicePolicyManagerService extends IDevicePolicyManager.Stub {
                 return true;
             } catch (SecurityException se) {
                 return false;
+            } catch (NameNotFoundException e) {
+                return false;
             } finally {
                 mInjector.binderRestoreCallingIdentity(ident);
             }
         }
+    }
+
+    public boolean isRuntimePermission(String permissionName) throws NameNotFoundException {
+        final PackageManager packageManager = mContext.getPackageManager();
+        PermissionInfo permissionInfo = packageManager.getPermissionInfo(permissionName, 0);
+        return (permissionInfo.protectionLevel & PermissionInfo.PROTECTION_MASK_BASE)
+                == PermissionInfo.PROTECTION_DANGEROUS;
     }
 
     @Override
@@ -9225,6 +9260,9 @@ public class DevicePolicyManagerService extends IDevicePolicyManager.Stub {
         // restrictions.
         pushUserRestrictions(userHandle);
     }
+
+    /// M: [ALPS01254902] Add IPO Boot Intent for CTS CA Cert Notification on Boot test
+    protected static final String ACTION_BOOT_IPO = "android.intent.action.ACTION_BOOT_IPO";
 
     @Override
     public void setDeviceProvisioningConfigApplied() {

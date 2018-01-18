@@ -30,6 +30,8 @@
 #include "renderthread/RenderTask.h"
 #include "renderthread/RenderThread.h"
 
+#include "mediatek/MTKDisplayListRecorder.h"
+
 #if HWUI_NEW_OPS
 #include "BakedOpDispatcher.h"
 #include "BakedOpRenderer.h"
@@ -70,7 +72,7 @@ enum SwapBehavior {
 // This per-renderer class manages the bridge between the global EGL context
 // and the render surface.
 // TODO: Rename to Renderer or some other per-window, top-level manager
-class CanvasContext : public IFrameCallback {
+class CanvasContext : public IFrameCallback, public DisplayListRecorderHost {
 public:
     CanvasContext(RenderThread& thread, bool translucent, RenderNode* rootRenderNode,
             IContextFactory* contextFactory);

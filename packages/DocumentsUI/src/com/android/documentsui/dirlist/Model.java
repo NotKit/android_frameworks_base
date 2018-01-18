@@ -28,15 +28,18 @@ import android.database.MergeCursor;
 import android.os.Bundle;
 import android.provider.DocumentsContract;
 import android.provider.DocumentsContract.Document;
+import android.provider.MediaStore;
 import android.support.annotation.Nullable;
 import android.support.annotation.VisibleForTesting;
 import android.util.Log;
 
+import com.android.documentsui.DocumentsFeatureOption;
 import com.android.documentsui.DirectoryResult;
 import com.android.documentsui.RootCursorWrapper;
 import com.android.documentsui.Shared;
 import com.android.documentsui.dirlist.MultiSelectManager.Selection;
 import com.android.documentsui.model.DocumentInfo;
+import static com.android.documentsui.model.DocumentInfo.getCursorInt;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -44,17 +47,29 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/// M: Add to support drm
+import com.mediatek.omadrm.OmaDrmStore;
+
+
 /**
  * The data model for the current loaded directory.
  */
 @VisibleForTesting
 public class Model {
     private static final String TAG = "Model";
+    private final Object mLock = new Object();
 
     private boolean mIsLoading;
     private List<UpdateListener> mUpdateListeners = new ArrayList<>();
     @Nullable private Cursor mCursor;
     private int mCursorCount;
+
+    /// M: add to support drm, only show these drm files match given drm level.
+    /// mCount is the index at which useful cursor item will be present
+    private int mCount = 0;
+    private int mDrmLevel = -1;
+
+
     /** Maps Model ID to cursor positions, for looking up items by Model ID. */
     private Map<String, Integer> mPositions = new HashMap<>();
     /**
@@ -97,6 +112,7 @@ public class Model {
         }
 
         if (result.exception != null) {
+            mCursor = result.cursor;
             Log.e(TAG, "Error while loading directory contents", result.exception);
             notifyUpdateListeners(result.exception);
             return;
@@ -127,7 +143,9 @@ public class Model {
 
     @VisibleForTesting
     int getItemCount() {
-        return mCursorCount;
+        /// M: add to support drm, we filter some drm with given drm level,
+        /// so we need return real cursor count.
+        return mCount;
     }
 
     /**
@@ -135,6 +153,10 @@ public class Model {
      * according to the current sort order.
      */
     private void updateModelData() {
+    if (DEBUG) Log.v(TAG, "Model updateModelData mCursorCount = " + mCursorCount);
+            /// M: No need to update when there is no data
+            if (mCursorCount <= 0)
+                return;
         int[] positions = new int[mCursorCount];
         mIds = new String[mCursorCount];
         boolean[] isDirs = new boolean[mCursorCount];
@@ -151,58 +173,109 @@ public class Model {
                 break;
         }
 
+        /// M: Add to support drm. we only show match given drm level in intent extra,
+        /// if don't limit drm level, we will show all drm files to user. {@
+        int needShowDrmMethod = 0;
+        if (DocumentsFeatureOption.IS_SUPPORT_DRM) {
+            switch (mDrmLevel) {
+                case OmaDrmStore.DrmIntentExtra.LEVEL_FL:
+                    needShowDrmMethod = OmaDrmStore.Method.FL;
+                    break;
+                case OmaDrmStore.DrmIntentExtra.LEVEL_SD:
+                    needShowDrmMethod = OmaDrmStore.Method.SD;
+                    break;
+                case OmaDrmStore.DrmIntentExtra.LEVEL_ALL:
+                    needShowDrmMethod = OmaDrmStore.Method.FL |
+                      OmaDrmStore.Method.CD
+                            | OmaDrmStore.Method.SD | OmaDrmStore.Method.FLSD;
+                    break;
+                default:
+                    needShowDrmMethod = OmaDrmStore.Method.FL |
+                      OmaDrmStore.Method.CD
+                            | OmaDrmStore.Method.SD | OmaDrmStore.Method.FLSD;
+                    break;
+            }
+        }
+        /// @}
+
+
         String mimeType;
 
         mCursor.moveToPosition(-1);
+        /// M: Always set mCount as zero before start to count valid
+        mCount = 0;
         for (int pos = 0; pos < mCursorCount; ++pos) {
             if (!mCursor.moveToNext()) {
                 Log.e(TAG, "Fail to move cursor to next pos: " + pos);
                 return;
             }
-            positions[pos] = pos;
+
+            /// M: If it's no need show drmMethod, ignore it and make it hidden. {@
+            if (DocumentsFeatureOption.IS_SUPPORT_DRM) {
+                boolean isDrm = getCursorInt(mCursor, MediaStore.MediaColumns.IS_DRM) > 0;
+                int drmMethod = getCursorInt(mCursor, MediaStore.MediaColumns.DRM_METHOD);
+                /// M: If IS_DRM is true but drm_method is invalid(-1)
+                /// with given need show drm level(mDrmLevel>0),
+                /// this may happen when drm file has been deleted,
+                /// we don't need show these drm files.
+                if (isDrm && ((mDrmLevel > 0 && drmMethod < 0) ||
+                              (needShowDrmMethod & drmMethod) == 0)) {
+                    continue;
+                }
+            }
+            positions[mCount] = mCursor.getPosition();
+            /// @}
+
+            /// M: Mark Google code here as all the "pos" shall not be used
+            //positions[pos] = pos;
 
             // Generates a Model ID for a cursor entry that refers to a document. The Model ID is a
             // unique string that can be used to identify the document referred to by the cursor.
             // If the cursor is a merged cursor over multiple authorities, then prefix the ids
             // with the authority to avoid collisions.
             if (mCursor instanceof MergeCursor) {
-                mIds[pos] = getCursorString(mCursor, RootCursorWrapper.COLUMN_AUTHORITY) + "|" +
+                mIds[mCount] = getCursorString(mCursor, RootCursorWrapper.COLUMN_AUTHORITY) + "|" +
                         getCursorString(mCursor, Document.COLUMN_DOCUMENT_ID);
             } else {
-                mIds[pos] = getCursorString(mCursor, Document.COLUMN_DOCUMENT_ID);
+                mIds[mCount] = getCursorString(mCursor, Document.COLUMN_DOCUMENT_ID);
             }
 
             mimeType = getCursorString(mCursor, Document.COLUMN_MIME_TYPE);
-            isDirs[pos] = Document.MIME_TYPE_DIR.equals(mimeType);
+            isDirs[mCount] = Document.MIME_TYPE_DIR.equals(mimeType);
 
             switch(mSortOrder) {
                 case SORT_ORDER_DISPLAY_NAME:
                     final String displayName = getCursorString(
                             mCursor, Document.COLUMN_DISPLAY_NAME);
-                    displayNames[pos] = displayName;
+                    displayNames[mCount] = displayName;
                     break;
                 case SORT_ORDER_LAST_MODIFIED:
-                    longValues[pos] = getLastModified(mCursor);
+                    longValues[mCount] = getLastModified(mCursor);
                     break;
                 case SORT_ORDER_SIZE:
-                    longValues[pos] = getCursorLong(mCursor, Document.COLUMN_SIZE);
+                    longValues[mCount] = getCursorLong(mCursor, Document.COLUMN_SIZE);
                     break;
             }
+            mCount++;
+            if (DEBUG) Log.v(TAG, "Model updateModelData increase mCount = " + mCount);
         }
 
         switch (mSortOrder) {
             case SORT_ORDER_DISPLAY_NAME:
-                binarySort(displayNames, isDirs, positions, mIds);
+                /// M: Change sort to use mCount
+                binarySort(displayNames, isDirs, positions, mIds, mCount);
                 break;
             case SORT_ORDER_LAST_MODIFIED:
             case SORT_ORDER_SIZE:
-                binarySort(longValues, isDirs, positions, mIds);
+                /// M: Change sort to use mCount
+                binarySort(longValues, isDirs, positions, mIds, mCount);
                 break;
         }
 
         // Populate the positions.
+        /// M: Only work for useful mCount and not complete mCursorCount here
         mPositions.clear();
-        for (int i = 0; i < mCursorCount; ++i) {
+        for (int i = 0; i < mCount; ++i) {
             mPositions.put(mIds[i], positions[i]);
         }
     }
@@ -217,8 +290,9 @@ public class Model {
      * @param positions Cursor positions to be sorted.
      * @param ids Model IDs to be sorted.
      */
-    private static void binarySort(String[] sortKey, boolean[] isDirs, int[] positions, String[] ids) {
-        final int count = positions.length;
+    private static void binarySort(String[] sortKey, boolean[] isDirs, int[] positions,
+                                   String[] ids, int count) {
+        //final int count = positions.length;
         for (int start = 1; start < count; start++) {
             final int pivotPosition = positions[start];
             final String pivotValue = sortKey[start];
@@ -290,8 +364,8 @@ public class Model {
      * @param ids Model IDs to be sorted.
      */
     private static void binarySort(
-            long[] sortKey, boolean[] isDirs, int[] positions, String[] ids) {
-        final int count = positions.length;
+            long[] sortKey, boolean[] isDirs, int[] positions, String[] ids, int count) {
+        //final int count = positions.length;
         for (int start = 1; start < count; start++) {
             final int pivotPosition = positions[start];
             final long pivotValue = sortKey[start];
@@ -377,13 +451,15 @@ public class Model {
             if (DEBUG) Log.d(TAG, "Unabled to find cursor position for modelId: " + modelId);
             return null;
         }
+        synchronized (mLock) {
+            if (DEBUG) Log.d(TAG, "getItem modelId: " + modelId + "pos " + pos);
 
-        if (!mCursor.moveToPosition(pos)) {
+        if (mCursor != null && !mCursor.moveToPosition(pos)) {
             if (DEBUG) Log.d(TAG,
                     "Unabled to move cursor to position " + pos + " for modelId: " + modelId);
             return null;
         }
-
+        }
         return mCursor;
     }
 
@@ -399,6 +475,9 @@ public class Model {
         final int size = (items != null) ? items.size() : 0;
 
         final List<DocumentInfo> docs =  new ArrayList<>(size);
+        synchronized (mLock) {
+
+            if (DEBUG) Log.d(TAG, "getDocuments items.size: " + size);
         for (String modelId: items.getAll()) {
             final Cursor cursor = getItem(modelId);
             if (cursor == null) {
@@ -407,6 +486,7 @@ public class Model {
                 continue;
             }
             docs.add(DocumentInfo.fromDirectoryCursor(cursor));
+        }
         }
         return docs;
     }

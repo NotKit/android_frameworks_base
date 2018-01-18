@@ -83,13 +83,20 @@ import com.android.systemui.recents.RecentsImpl;
 import com.android.systemui.recents.model.Task;
 import com.android.systemui.recents.tv.RecentsTvImpl;
 import com.android.systemui.recents.model.ThumbnailData;
+/// M: BMW
+import com.mediatek.multiwindow.MultiWindowManager;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Random;
+
+/// M: Slim thumbnail's size for GMO
+import com.mediatek.systemui.statusbar.util.FeatureOptions;
 
 /**
  * Acts as a shim around the real system services that we need to access data from, and provides
@@ -103,6 +110,11 @@ public class SystemServicesProxy {
         sBitmapOptions = new BitmapFactory.Options();
         sBitmapOptions.inMutable = true;
         sBitmapOptions.inPreferredConfig = Bitmap.Config.RGB_565;
+        // M: Slim thumbnail's size for GMO @{
+        if (FeatureOptions.LOW_RAM_SUPPORT) {
+            sBitmapOptions.inSampleSize = 2;
+        }
+        // @}
     }
 
     final static List<String> sRecentsBlacklist;
@@ -217,6 +229,11 @@ public class SystemServicesProxy {
                 mPm.hasSystemFeature(PackageManager.FEATURE_FREEFORM_WINDOW_MANAGEMENT) ||
                         Settings.Global.getInt(context.getContentResolver(),
                                 DEVELOPMENT_ENABLE_FREEFORM_WINDOWS_SUPPORT, 0) != 0;
+        /// M: BMW @{
+        if (MultiWindowManager.isSupported()) {
+            mHasFreeformWorkspaceSupport = true;
+        }
+        /// @}
         mIsSafeMode = mPm.isSafeMode();
 
         // Get the dummy thumbnail width/heights
@@ -359,6 +376,18 @@ public class SystemServicesProxy {
             boolean isExcluded = (t.baseIntent.getFlags() & Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
                     == Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS;
             isExcluded |= quietProfileIds.contains(t.userId);
+
+            // M: Add Debug Log
+            if (FeatureOptions.isEngLoad()) {
+               Task.TaskKey taskKey = new Task.TaskKey(t.persistentId, t.stackId, t.baseIntent,
+               t.userId, t.firstActiveTime, t.lastActiveTime);
+                Log.d(TAG, "getRecentTasks:TASK = " + taskKey.toString()
+                      + "/isExcluded = " + isExcluded
+                      + "/includeFrontMostExcludedTask = " + includeFrontMostExcludedTask
+                      + "/isFirstValidTask = " + isFirstValidTask
+                      + "/t.id = " + t.id);
+            }
+
             if (isExcluded && (!isFirstValidTask || !includeFrontMostExcludedTask)) {
                 iter.remove();
             }
@@ -375,6 +404,7 @@ public class SystemServicesProxy {
     public ActivityManager.RunningTaskInfo getRunningTask() {
         List<ActivityManager.RunningTaskInfo> tasks = mAm.getRunningTasks(1);
         if (tasks != null && !tasks.isEmpty()) {
+            Log.d(TAG, "getTopMostTask: tasks: " + tasks.get(0).id);
             return tasks.get(0);
         }
         return null;
@@ -614,7 +644,20 @@ public class SystemServicesProxy {
         if (thumbnail == null && descriptor != null) {
             thumbnail = BitmapFactory.decodeFileDescriptor(descriptor.getFileDescriptor(),
                     null, sBitmapOptions);
+        // M: Slim thumbnail's size for GMO @{
+        } else if (thumbnail != null && FeatureOptions.LOW_RAM_SUPPORT) {
+            ByteArrayOutputStream tbOutput = new ByteArrayOutputStream();
+            thumbnail.compress(Bitmap.CompressFormat.JPEG,100,tbOutput);
+            ByteArrayInputStream tbInput = new ByteArrayInputStream(tbOutput.toByteArray());
+            thumbnail = BitmapFactory.decodeStream(tbInput,null,sBitmapOptions);
+            try {
+                if (tbOutput != null) tbOutput.close();
+                if (tbInput != null) tbInput.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
+        // @}
         if (descriptor != null) {
             try {
                 descriptor.close();
@@ -1167,4 +1210,17 @@ public class SystemServicesProxy {
             }
         }
     }
+
+    /// M: BMW @{
+    public void restoreWindow() {
+    Log.d(TAG, "restoreWindow");
+    if (mIam != null) {
+        try {
+            mIam.restoreWindow();
+         } catch (Exception e) {
+            Log.e(TAG, "restoreWindow", e);
+         }
+    }
+    }
+    /// @}
 }

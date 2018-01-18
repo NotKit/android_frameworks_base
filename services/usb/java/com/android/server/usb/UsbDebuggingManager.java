@@ -151,7 +151,7 @@ public class UsbDebuggingManager {
                     closeSocketLocked();
                 }
             }
-        }
+    }
 
         private void closeSocketLocked() {
             if (DEBUG) Slog.d(TAG, "Closing socket");

@@ -854,17 +854,19 @@ public class VolumeDialogController {
 
         @Override
         public void onRemoteVolumeChanged(Token token, int flags) {
-            final int stream = mRemoteStreams.get(token);
-            final boolean showUI = (flags & AudioManager.FLAG_SHOW_UI) != 0;
-            boolean changed = updateActiveStreamW(stream);
-            if (showUI) {
-                changed |= checkRoutedToBluetoothW(AudioManager.STREAM_MUSIC);
-            }
-            if (changed) {
-                mCallbacks.onStateChanged(mState);
-            }
-            if (showUI) {
-                mCallbacks.onShowRequested(Events.SHOW_REASON_REMOTE_VOLUME_CHANGED);
+            if(null != mRemoteStreams.get(token)){
+                final int stream = mRemoteStreams.get(token);
+                final boolean showUI = (flags & AudioManager.FLAG_SHOW_UI) != 0;
+                boolean changed = updateActiveStreamW(stream);
+                if (showUI) {
+                    changed |= checkRoutedToBluetoothW(AudioManager.STREAM_MUSIC);
+                }
+                if (changed) {
+                    mCallbacks.onStateChanged(mState);
+                }
+                if (showUI) {
+                    mCallbacks.onShowRequested(Events.SHOW_REASON_REMOTE_VOLUME_CHANGED);
+                }
             }
         }
 

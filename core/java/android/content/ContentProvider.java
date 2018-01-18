@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -53,6 +58,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
+
 
 /**
  * Content providers are one of the primary building blocks of Android applications, providing
@@ -190,6 +196,8 @@ public abstract class ContentProvider implements ComponentCallbacks2 {
      * @hide
      */
     class Transport extends ContentProviderNative {
+        String mQueryPermission = null;
+        String mModifyPermission = null;
         AppOpsManager mAppOpsManager = null;
         int mReadOp = AppOpsManager.OP_NONE;
         int mWriteOp = AppOpsManager.OP_NONE;
@@ -831,6 +839,16 @@ public abstract class ContentProvider implements ComponentCallbacks2 {
             mTransport.mReadOp = readOp;
             mTransport.mWriteOp = writeOp;
         }
+    }
+
+    /** @hide */
+    public final String getQueryPermission() {
+         return mTransport.mQueryPermission;
+    }
+
+    /** @hide */
+    public final String getModifyPermission() {
+         return mTransport.mModifyPermission;
     }
 
     /** @hide */

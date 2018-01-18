@@ -1,3 +1,8 @@
+/*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
 //
 // Copyright 2006 The Android Open Source Project
 //
@@ -15,6 +20,8 @@
 #include <dirent.h>
 #include <errno.h>
 
+#define UNUSED(x) (void)(x)
+
 static const char* kAssetDir = "assets";
 static const char* kResourceDir = "res";
 static const char* kValuesDir = "values";
@@ -23,6 +30,20 @@ static const char* kInvalidChars = "/\\:";
 static const size_t kMaxAssetFileName = 100;
 
 static const String8 kResString(kResourceDir);
+
+/// M: ALPS01947812, Check file is image @{
+#ifdef MTK_GMO_ROM_OPTIMIZE
+static const char* IMAGE_TYPES[] = {".bmp", ".gif", ".jpg", ".jpeg", ".ktx", ".png", ".webp"};
+
+static bool isImage(const String8& ext) {
+    for (size_t i = 0; i < (sizeof(IMAGE_TYPES) / sizeof(char*)); i++) {
+        if (ext == IMAGE_TYPES[i])
+            return true;
+    }
+    return false;
+}
+#endif
+///@}
 
 /*
  * Names of asset files must meet the following criteria:
@@ -640,9 +661,32 @@ void AaptDir::removeDir(const String8& name)
 }
 
 status_t AaptDir::addLeafFile(const String8& leafName, const sp<AaptFile>& file,
-        const bool overwrite)
+        const bool overwrite, const bool isAssetsDir)
 {
     sp<AaptGroup> group;
+
+    /// M: ALPS01947812, Add the other image types to png group for ROM size optimization @{
+#ifdef MTK_GMO_ROM_OPTIMIZE
+    /// M: ALPS02039648, assets folder sholud not change file group @{
+    if (!isAssetsDir) {
+        String8 ext(leafName.getPathExtension());
+        ext.toLower();
+        if (isImage(ext) && ext != ".png") {
+            String8 newName(leafName.getBasePath() + ".png");
+            if (mFiles.indexOfKey(newName) >= 0) {
+                group = mFiles.valueFor(newName);
+            } else {
+                group = new AaptGroup(newName, mPath.appendPathCopy(newName));
+                mFiles.add(newName, group);
+            }
+            return group->addFile(file, overwrite);
+        }
+    }
+#else
+    UNUSED(isAssetsDir);
+#endif
+    /// @}
+
     if (mFiles.indexOfKey(leafName) >= 0) {
         group = mFiles.valueFor(leafName);
     } else {
@@ -655,7 +699,8 @@ status_t AaptDir::addLeafFile(const String8& leafName, const sp<AaptFile>& file,
 
 ssize_t AaptDir::slurpFullTree(Bundle* bundle, const String8& srcDir,
                             const AaptGroupEntry& kind, const String8& resType,
-                            sp<FilePathStore>& fullResPaths, const bool overwrite)
+                            sp<FilePathStore>& fullResPaths, const bool overwrite,
+                            const bool isAssetsDir)
 {
     Vector<String8> fileNames;
     {
@@ -713,8 +758,10 @@ ssize_t AaptDir::slurpFullTree(Bundle* bundle, const String8& srcDir,
                 subdir = new AaptDir(fileNames[i], mPath.appendPathCopy(fileNames[i]));
                 notAdded = true;
             }
+            /// M: ALPS02039648, assets folder sholud not change file group @{
             ssize_t res = subdir->slurpFullTree(bundle, pathName, kind,
-                                                resType, fullResPaths, overwrite);
+                                                resType, fullResPaths, overwrite, isAssetsDir);
+            /// @}
             if (res < NO_ERROR) {
                 return res;
             }
@@ -724,7 +771,9 @@ ssize_t AaptDir::slurpFullTree(Bundle* bundle, const String8& srcDir,
             count += res;
         } else if (type == kFileTypeRegular) {
             sp<AaptFile> file = new AaptFile(pathName, kind, resType);
-            status_t err = addLeafFile(fileNames[i], file, overwrite);
+            /// M: ALPS02039648, assets folder sholud not change file group @{
+            status_t err = addLeafFile(fileNames[i], file, overwrite, isAssetsDir);
+            /// @}
             if (err != NO_ERROR) {
                 return err;
             }
@@ -1007,7 +1056,8 @@ ssize_t AaptAssets::slurpFromArgs(Bundle* bundle)
         sp<AaptDir> assetAaptDir = makeDir(String8(kAssetDir));
         AaptGroupEntry group;
         count = assetAaptDir->slurpFullTree(bundle, assetRoot, group,
-                                            String8(), mFullAssetPaths, true);
+                                            String8(), mFullAssetPaths, true,
+                                            true);  /// M: assets folder sholud not change file group
         if (count < 0) {
             totalCount = count;
             goto bail;
@@ -1118,9 +1168,9 @@ ssize_t AaptAssets::slurpFullTree(Bundle* bundle, const String8& srcDir,
                                     const AaptGroupEntry& kind,
                                     const String8& resType,
                                     sp<FilePathStore>& fullResPaths,
-                                    const bool overwrite)
+                                    const bool overwrite, const bool isAssetsDir)
 {
-    ssize_t res = AaptDir::slurpFullTree(bundle, srcDir, kind, resType, fullResPaths, overwrite);
+    ssize_t res = AaptDir::slurpFullTree(bundle, srcDir, kind, resType, fullResPaths, overwrite, isAssetsDir);
     if (res > 0) {
         mGroupEntries.add(kind);
     }
@@ -1452,16 +1502,48 @@ status_t AaptAssets::filter(Bundle* bundle)
                     }
 
                     if (bestDensity != config.density) {
+                        /// M: ALPS01922842, ALPS01936057, Add mdpi on smartbook projects @{
+#ifdef MTK_SMARTBOOK_SUPPORT
+                        if (ResTable_config::DENSITY_MEDIUM == config.density)
+                            continue;
+#endif
+                        /// @}
                         if (bundle->getVerbose()) {
                             printf("Pruning unneeded resource: %s\n",
                                     file->getPrintableSource().string());
                         }
-                        grp->removeFile(k);
-                        k--;
+                            grp->removeFile(k);
+                            k--;
                     }
                 }
             }
         }
+
+        /// M: ALPS01947812, Restore image to original file extension @{
+#ifdef MTK_GMO_ROM_OPTIMIZE
+        for (size_t j = 0; j < NG; j++) {
+            sp<AaptGroup> grp = dir->getFiles().valueAt(j);
+            for (size_t k = 0; k<grp->getFiles().size(); k++) {
+                sp<AaptFile> file = grp->getFiles().valueAt(k);
+                String8 ext(file->getSourceFile().getPathExtension());
+                ext.toLower();
+
+                if (isImage(ext) && ext != ".png" && grp->getLeaf().getPathExtension() == ".png") {
+                    String8 newName(grp->getLeaf().getBasePath() + file->getSourceFile().getPathExtension());
+                    if (k == 0 && grp->getFiles().size() == 1) {
+                        grp->setLeaf(newName);
+                        grp->setPath(dir->getPath().appendPathCopy(newName));
+                    } else {
+                        sp<AaptGroup> group = new AaptGroup(newName, mPath.appendPathCopy(newName));
+                        group->addFile(file);
+                        dir->addFile(newName, group);
+                        grp->removeFile(k--);
+                    }
+                }
+            }
+        }
+#endif
+        /// @}
     }
 
     return NO_ERROR;

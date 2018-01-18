@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -53,6 +58,11 @@ public class DrmInfoEvent extends DrmEvent {
      * The rights have been removed.
      */
     public static final int TYPE_RIGHTS_REMOVED = 6;
+    /**
+     * @hide
+     * M: CTA file call back lisenter flag
+     */
+    public static final int TYPE_CTA5_CALLBACK = 10001;
 
     // Add more type constants here...
 
@@ -100,7 +110,10 @@ public class DrmInfoEvent extends DrmEvent {
             type > TYPE_RIGHTS_REMOVED) {
 
             if (type != TYPE_ALL_RIGHTS_REMOVED &&
-                type != TYPE_DRM_INFO_PROCESSED) {
+                type != TYPE_DRM_INFO_PROCESSED &&
+                /// M: add cta5 call back @{
+                type != TYPE_CTA5_CALLBACK) {
+                /// @}
                 final String msg = "Unsupported type: " + type;
                 throw new IllegalArgumentException(msg);
             }

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -97,6 +102,10 @@ final class BroadcastRecord extends Binder {
     ComponentName curComponent; // the receiver class that is currently running.
     ActivityInfo curReceiver;   // info about the receiver that is currently running.
 
+    /// M: broadcast log enhancement @{
+    long enqueueTime;
+    /// @}
+
     void dump(PrintWriter pw, String prefix, SimpleDateFormat sdf) {
         final long now = SystemClock.uptimeMillis();
 
@@ -140,6 +149,15 @@ final class BroadcastRecord extends Binder {
             pw.print(" receiverTime="); TimeUtils.formatDuration(receiverTime, now, pw);
         }
         pw.println("");
+
+        /// M: broadcast log enhancement @{
+        pw.print(prefix);
+        pw.print("Total: "); TimeUtils.formatDuration(finishTime, enqueueTime, pw);
+        pw.print(" Waiting: "); TimeUtils.formatDuration(dispatchTime, enqueueTime, pw);
+        pw.print(" Processing: "); TimeUtils.formatDuration(finishTime, dispatchTime, pw);
+        pw.println("");
+        /// @}
+
         if (anrCount != 0) {
             pw.print(prefix); pw.print("anrCount="); pw.println(anrCount);
         }

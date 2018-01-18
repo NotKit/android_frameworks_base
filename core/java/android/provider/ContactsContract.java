@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2009 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -39,6 +44,7 @@ import android.database.CursorWrapper;
 import android.database.DatabaseUtils;
 import android.graphics.Rect;
 import android.net.Uri;
+import android.os.Bundle;
 import android.os.RemoteException;
 import android.text.TextUtils;
 import android.util.DisplayMetrics;
@@ -1003,6 +1009,80 @@ public final class ContactsContract {
          */
         public static final String CONTACT_LAST_UPDATED_TIMESTAMP =
                 "contact_last_updated_timestamp";
+
+
+        // The following lines are provided and maintained by Mediatek inc.
+
+        /**
+         * An opaque value that indicate contact store location.
+         * "-1", indicates phone contacts
+         * others, indicate sim id of a sim contact
+         *
+         * @hide
+         */
+
+        public static final String INDICATE_PHONE_SIM = "indicate_phone_or_sim_contact";
+
+        /**
+         * For a SIM/USIM contact, this value is its index in the relative SIM
+         * card.
+         *
+         * @hide
+         */
+        public static final String INDEX_IN_SIM = "index_in_sim";
+
+        /**
+         * Whether the contact should always be sent to voicemail for VT. If
+         * missing, defaults to false.
+         * <P>
+         * Type: INTEGER (0 for false, 1 for true)
+         * </P>
+         *
+         * @hide
+         */
+        public static final String SEND_TO_VOICEMAIL_VT = "send_to_voicemail_vt";
+
+        /**
+         * Whether the contact should always be sent to voicemail for SIP. If
+         * missing, defaults to false.
+         * <P>
+         * Type: INTEGER (0 for false, 1 for true)
+         * </P>
+         *
+         * @hide
+         */
+        public static final String SEND_TO_VOICEMAIL_SIP = "send_to_voicemail_sip";
+
+        /**
+         * To filter the Contact for Widget
+         *
+         * @hide
+         */
+        public static final String FILTER = "filter";
+        /**
+         * To filter the Contact for Widget
+         *
+         * @hide
+         */
+        public static final int FILTER_NONE = 0;
+        /**
+         * To filter the Contact for Widget
+         *
+         * @hide
+         */
+        public static final int FILTER_WIDGET = 1;
+
+        /**
+         * For SIM contact's flag, SDN's contacts value is 1, ADN's contacts value is 0
+         * card.
+         *
+         * @hide
+         */
+        public static final String IS_SDN_CONTACT = "is_sdn_contact";
+
+        // The previous lines are provided and maintained by Mediatek inc.
+
+
     }
 
     /**
@@ -2370,6 +2450,49 @@ public final class ContactsContract {
          */
         public static final String DELETED = "deleted";
 
+        // The following lines are provided and maintained by Mediatek inc.
+
+        /**
+         * An opaque value that indicate contact store location.
+         * "-1", indicates phone contacts
+         * others, indicate sim id of a sim contact
+         *
+         * @hide
+         */
+        public static final String INDICATE_PHONE_SIM = "indicate_phone_or_sim_contact";
+
+        /**
+         * For a SIM/USIM contact, this value is its index in the relative SIM
+         * card.
+         *
+         * @hide
+         */
+        public static final String INDEX_IN_SIM = "index_in_sim";
+
+        /**
+         * Whether the contact should always be sent to voicemail for VT. If
+         * missing, defaults to false.
+         * <P>
+         * Type: INTEGER (0 for false, 1 for true)
+         * </P>
+         *
+         * @hide
+         */
+        public static final String SEND_TO_VOICEMAIL_VT = "send_to_voicemail_vt";
+
+        /**
+         * Whether the contact should always be sent to voicemail for SIP. If
+         * missing, defaults to false.
+         * <P>
+         * Type: INTEGER (0 for false, 1 for true)
+         * </P>
+         *
+         * @hide
+         */
+        public static final String SEND_TO_VOICEMAIL_SIP = "send_to_voicemail_sip";
+
+        // The previous lines are provided and maintained by Mediatek inc.
+
         /**
          * The "read-only" flag: "0" by default, "1" if the row cannot be modified or
          * deleted except by a sync adapter.  See {@link ContactsContract#CALLER_IS_SYNCADAPTER}.
@@ -2389,6 +2512,16 @@ public final class ContactsContract {
          * <P>Type: INTEGER (boolean)</P>
          */
         public static final String METADATA_DIRTY = "metadata_dirty";
+
+
+        /**
+         * M:
+         * For SIM contact's flag, SDN's contacts value is 1, ADN's contacts value is 0
+         * card.
+         *
+         * @hide
+         */
+        public static final String IS_SDN_CONTACT = "is_sdn_contact";
     }
 
     /**
@@ -2842,6 +2975,24 @@ public final class ContactsContract {
         public static final int AGGREGATION_MODE_DISABLED = 3;
 
         /**
+         * Indicate flag: Indicate it is a phone contact.
+         * @hide
+         * @internal
+         */
+        public static final int INDICATE_PHONE = -1;
+
+        /**
+         * time stamp that is updated whenever version changes.
+         * <P>
+         * Type: INTEGER
+         * </P>
+         *
+         * @hide
+         * @internal
+         */
+        public static final String TIMESTAMP = "timestamp";
+
+        /**
          * Build a {@link android.provider.ContactsContract.Contacts#CONTENT_LOOKUP_URI}
          * style {@link Uri} for the parent {@link android.provider.ContactsContract.Contacts}
          * entry of the given {@link RawContacts} entry.
@@ -3092,6 +3243,11 @@ public final class ContactsContract {
                     DatabaseUtils.cursorLongToContentValuesIfPresent(cursor, cv, Data.IS_PRIMARY);
                     DatabaseUtils.cursorLongToContentValuesIfPresent(cursor, cv,
                             Data.IS_SUPER_PRIMARY);
+
+                    /// M: Code add by Mediatek Inc. @{
+                    DatabaseUtils.cursorLongToContentValuesIfPresent(cursor, cv, Data.SIM_ASSOCIATION_ID);
+                    /// @}
+
                     DatabaseUtils.cursorLongToContentValuesIfPresent(cursor, cv, Data.DATA_VERSION);
                     DatabaseUtils.cursorStringToContentValuesIfPresent(cursor, cv,
                             CommonDataKinds.GroupMembership.GROUP_SOURCE_ID);
@@ -4213,6 +4369,24 @@ public final class ContactsContract {
          * current carrier. An allowed bitmask of {@link #CARRIER_PRESENCE}.
          */
         public static final int CARRIER_PRESENCE_VT_CAPABLE = 0x01;
+
+        /**
+         * M: Code add by Mediatek inc.
+         * @hide
+         */
+        public static final String SIM_ASSOCIATION_ID = "sim_id";
+        /**
+         * M: Code add by Mediatek inc.
+         * @hide
+         * @deprecated This variable is same as SIM_ASSOCIATION_ID.
+         */
+        @Deprecated
+        public static final String SIM_ID = "sim_id";
+        /**
+         * M: Code add by Mediatek inc.
+         * @hide
+         */
+        public static final String IS_ADDITIONAL_NUMBER = "is_additional_number";
     }
 
     /**
@@ -6107,7 +6281,116 @@ public final class ContactsContract {
                     return res.getText(labelRes);
                 }
             }
+
+            /**
+             * M: Add for AAS, call this API to get common or AAS label.
+             * Return AAS label if type is PHONE_TYPE_AAS.
+             *
+             * @hide
+             */
+            public static final CharSequence getTypeLabel(Context context, int type,
+                    CharSequence label) {
+                if (type == Aas.PHONE_TYPE_AAS && !TextUtils.isEmpty(label)) {
+                    return Aas.getLabel(context.getContentResolver(), label);
+                } else {
+                    return getTypeLabel(context.getResources(), type, label);
+                }
+            }
         }
+
+        /// M: [MAV] feature. @{
+        /**
+         * <p>
+         * A data kind representing a MAV photo uri related to the contact.
+         * </p>
+         * <p>
+         * You can use all columns defined for {@link ContactsContract.Data} as
+         * well as the following aliases.
+         * </p>
+         * <h2>Column aliases</h2>
+         * <table class="jd-sumtable">
+         * <tr>
+         * <th>Type</th>
+         * <th>Alias</th><th colspan='2'>Data column</th>
+         * </tr>
+         * <tr>
+         * <td>String</td>
+         * <td>{@link #URL}</td>
+         * <td>{@link #DATA1}</td>
+         * <td></td>
+         * </tr>
+         * </table>
+         */
+        /**
+         * M: used to support MAV phto feature.
+         *
+         * @hide
+         */
+        public static final class MAVPhotoUri implements DataColumnsWithJoins, CommonColumns {
+            /**
+             * This utility class cannot be instantiated
+             */
+            private MAVPhotoUri() {}
+
+            /** MIME type used when storing this in data table. */
+            public static final String CONTENT_ITEM_TYPE = "vnd.android.cursor.item/mav-photo_uri";
+
+            /**
+             * The MAV Photo URL string.
+             * <P>Type: TEXT</P>
+             */
+            public static final String URL = DATA;
+        }
+        /// @}
+
+        /// M: [VOLTE/IMS] Call feature. @{
+        /**
+         * <p>
+         * A data kind representing a IMS Call related to the contact.
+         * </p>
+         * <p>
+         * You can use all columns defined for {@link ContactsContract.Data} as
+         * well as the following aliases.
+         * </p>
+         * <h2>Column aliases</h2>
+         * <table class="jd-sumtable">
+         * <tr>
+         * <th>Type</th>
+         * <th>Alias</th><th colspan='2'>Data column</th>
+         * </tr>
+         * <tr>
+         * <td>String</td>
+         * <td>{@link #URL}</td>
+         * <td>{@link #DATA1}</td>
+         * <td></td>
+         * </tr>
+         * </table>
+         */
+        /**
+         * M: used to support VOLTE IMS Call feature.
+         *
+         * @hide
+         */
+        public static final class ImsCall implements DataColumnsWithJoins, CommonColumns {
+            /**
+             * This utility class cannot be instantiated
+             */
+            private ImsCall() {}
+
+            /**
+             * MIME type used when storing this in data table.
+             * @internal
+             */
+            public static final String CONTENT_ITEM_TYPE = "vnd.android.cursor.item/ims";
+
+            /**
+             * The ImsCall URL string.
+             * <P>Type: TEXT</P>
+             * @internal
+             */
+            public static final String URL = DATA;
+        }
+        /// @}
 
         /**
          * <p>
@@ -8129,6 +8412,16 @@ public final class ContactsContract {
                 Uri.withAppendedPath(AUTHORITY_URI, "provider_status");
 
         /**
+         * M:
+         * The content:// style URI for this table. Requests to this URI can be
+         * performed on the UI thread because they are always unblocking.
+         *
+         * @hide
+         */
+        public static final Uri SIM_CONTACT_CONTENT_URI = Uri.withAppendedPath(
+                AUTHORITY_URI, "provider_sim_contact_status");
+
+        /**
          * The MIME-type of {@link #CONTENT_URI} providing a directory of
          * settings.
          */
@@ -8258,6 +8551,28 @@ public final class ContactsContract {
          * </p>
          */
         public static final String USAGE_TYPE_SHORT_TEXT = "short_text";
+
+        /**
+         * M:
+         * An integer representing the current sim contact status of the provider.
+         * @hide
+         */
+        public static final String SIM_CONTACT_STATUS = "sim_contact_status";
+
+        /**
+         * M:
+         * Default sim contact status of the provider.
+         * @hide
+         */
+        public static final int SIM_CONTACT_STATUS_NORMAL = 0;
+
+        /**
+         * M:
+         * The status used when the provider is in the process of SIM contacts loading.  Contacts
+         * are temporarily unaccessible.
+         * @hide
+         */
+        public static final int SIM_CONTACT_STATUS_LOADING = 1;
     }
 
     /**
@@ -9101,6 +9416,24 @@ public final class ContactsContract {
             public static final String PHONE = "phone";
 
             /**
+             * M:
+             * The extra field for the sip address flag.
+             * <P>Type: boolean</P>
+             * @hide
+             * @internal
+             */
+           public static final String SIP_ADDRESS = "sip_address";
+
+           /**
+            * M:
+            * The extra field for the ims address flag.
+            * <P>Type: String</P>
+            * @hide
+            * @internal
+            */
+           public static final String IMS_ADDRESS = "ims_address";
+
+            /**
              * The extra field for the contact phone number type.
              * <P>Type: Either an integer value from
              * {@link CommonDataKinds.Phone},
@@ -9499,4 +9832,166 @@ public final class ContactsContract {
         public static final String CONTENT_ITEM_TYPE =
                 "vnd.android.cursor.item/contact_metadata_sync_state";
     }
+
+
+        /// M: Code added by Mediatek inc. @{
+
+    /**
+     * Columns for dialer search displayed information
+     *
+     * @hide
+     */
+    protected interface DialerSearchColumns {
+        public static final String NAME_LOOKUP_ID = "_id";
+        public static final String CALL_LOG_ID = "call_log_id";
+        public static final String CONTACT_ID = "contact_id";
+        public static final String NAME = "name";
+        public static final String PHOTO_ID = "photo_id";
+        public static final String CALL_TYPE = "call_type";
+        public static final String PHONE_ACCOUNT_ID = "phone_account_id";
+        public static final String PHONE_ACCOUNT_COMPONENT_NAME = "phone_account_component_name";
+        public static final String CALL_NUMBER = "call_number";
+        public static final String CALL_PHONE_TYPE = "call_phone_type";
+        public static final String SEARCH_PHONE_NUMBER = "search_phone_number";
+        public static final String SEARCH_PHONE_TYPE = "search_phone_type";
+        public static final String SEARCH_PHONE_LABEL = "search_phone_label";
+        public static final String FIRST_PHONE_NUMBER = "first_phone_number";
+        public static final String FIRST_PHONE_TYPE = "first_phone_type";
+        public static final String CALL_DATE = "call_date";
+        public static final String NORMALIZED_NAME = "normalized_name";
+        public static final String NAME_TYPE = "name_type";
+        public static final String NUMBER_COUNT = "number_count";
+        public static final String CONTACT_NAME_LOOKUP = "contact_name_lookup";
+        public static final String CONTACT_STARRED = "contact_starred";
+        public static final String INDICATE_PHONE_SIM = "indicate_phone_sim";
+        public static final String SORT_KEY_PRIMARY = "sort_key";
+        public static final String SEARCH_PHONE_DATA_ID = "search_phone_data_id";
+        public static final String SEARCH_DATA_OFFSETS = "search_data_offsets";
+        public static final String NUMBER_PRESENTATION = "number_presentation";
+    }
+
+    /**
+     * View dialer Search columns
+     * @hide
+     */
+    protected interface ViewDialerSearchColumns {
+        public static final String NAME_LOOKUP_ID = "_id";
+        public static final String CONTACT_ID = "vds_contact_id";
+        public static final String RAW_CONTACT_ID = "vds_raw_contact_id";
+        public static final String NAME = "vds_name";
+        public static final String NUMBER_COUNT = "vds_number_count";
+        public static final String CALL_LOG_ID = "vds_call_log_id";
+        public static final String CALL_TYPE = "vds_call_type";
+        public static final String CALL_DATE = "vds_call_date"; // To check whether CALL_DATE can be removed
+        public static final String CALL_GEOCODED_LOCATION = "vds_geocoded_location";
+        public static final String SIM_ID = "vds_sim_id";
+        public static final String VTCALL = "vds_vtcall";
+        public static final String SEARCH_PHONE_NUMBER = "vds_phone_number";
+        public static final String SEARCH_PHONE_TYPE = "vds_phone_type";
+        public static final String CONTACT_NAME_LOOKUP = "vds_lookup";
+        public static final String PHOTO_ID = "vds_photo_id";
+        public static final String CONTACT_STARRED = "vds_starred";
+        public static final String INDICATE_PHONE_SIM = "vds_indicate_phone_sim";
+        public static final String IS_SDN_CONTACT = "vds_is_sdn_contact";
+        public static final String SORT_KEY_PRIMARY = "vds_sort_key";
+        public static final String SORT_KEY_ALTERNATIVE = "vds_sort_key_alternative";
+        public static final String SEARCH_DATA_OFFSETS = "search_data_offsets";
+        public static final String NAME_ALTERNATIVE = "vds_name_alternative";
+        public static final String SEARCH_DATA_OFFSETS_ALTERNATIVE = "search_data_offsets_alternative";
+        public static final String NAME_ID = "vds_name_id";
+        public static final String NUMBER_ID = "vds_number_id";
+        public static final String DS_DATA1 = "vds_data1";
+        public static final String DS_DATA2 = "vds_data2";
+        public static final String DS_DATA3 = "vds_data3";
+        // substitute phone_account_id,phone_account_component_name for KK sim_id
+        public static final String PHONE_ACCOUNT_ID = "vds_phone_account_id";
+        public static final String PHONE_ACCOUNT_COMPONENT_NAME = "vds_phone_account_component_name";
+        // add presentation field for read number presentation from dialer
+        public static final String NUMBER_PRESENTATION = "vds_number_presentation";
+        // add search_phone_label field for read number label information from dialer
+        public static final String SEARCH_PHONE_LABEL = "vds_search_phone_label";
+    }
+
+    /**
+     * Columns for dialer search displayed information
+     *
+     * @hide
+     */
+    public static final class DialerSearch implements BaseColumns, ViewDialerSearchColumns {
+
+
+        /**
+         * The index for highlight number.
+         * @hide
+         * @internal
+         */
+        public static final String MATCHED_DATA_OFFSET = "matched_data_offset"; //For results
+
+        /**
+         * The index for highlight name.
+         * @hide
+         * @internal
+         */
+        public static final String MATCHED_NAME_OFFSET = "matched_name_offset";
+        private DialerSearch() {
+        }
+    }
+
+    /**
+     * Class definded for AAS (Additional number Alpha String)
+     * @hide
+     */
+    public static final class Aas {
+
+        /**
+         * @internal
+         */
+        public static final int PHONE_TYPE_AAS = 101;
+
+        /**
+         * The method to get AAS.
+         * @internal
+         */
+        public static final String AAS_METHOD = "get_aas";
+
+        /**
+         * The key to retrieve from the returned Bundle to obtain the AAS label.
+         * @internal
+         */
+        public static final String KEY_AAS = "aas";
+
+        /**
+         * The symbol to separate sub id and index when build AAS indicator.
+         * @internal
+         */
+        public static final String ENCODE_SYMBOL = "-";
+
+        /**
+         * The function to build AAS indicator.
+         * ex. subId is 1 and index is 2 then the indicator will be "1-2".
+         * @internal
+         */
+        public static final String buildIndicator(int subId, int indexInSim) {
+            return new StringBuffer().append(subId).append(ENCODE_SYMBOL).append(indexInSim)
+                    .toString();
+        }
+
+        /**
+         * The function to get AAS, return empty string if not exsit.
+         *
+         * @param indicator it contains sub id and aas index info.
+         * @return return aas label
+         * @internal
+         */
+        public static CharSequence getLabel(ContentResolver resolver, CharSequence indicator) {
+            Bundle response = resolver.call(ContactsContract.AUTHORITY_URI, AAS_METHOD,
+                    indicator.toString(), null);
+            if (response != null) {
+                return response.getCharSequence(KEY_AAS, "");
+            }
+            return "";
+        }
+    }
+
+    /// @}
 }

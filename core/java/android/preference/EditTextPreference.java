@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -58,7 +63,10 @@ public class EditTextPreference extends DialogPreference {
         
         // Give it an ID so it can be saved/restored
         mEditText.setId(com.android.internal.R.id.edit);
-        
+
+        // M: support RTL on the edit text.
+        mEditText.setTextDirection(View.TEXT_DIRECTION_LOCALE);
+
         /*
          * The preference framework and view framework both have an 'enabled'
          * attribute. Most likely, the 'enabled' specified in this XML is for

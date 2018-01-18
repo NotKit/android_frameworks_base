@@ -71,6 +71,9 @@ public class UiObject {
 
     private final Configurator mConfig = Configurator.getInstance();
 
+    /// M: find {@link AccessibilityNodeInfo} again if a watcher matched
+    private static boolean sRetryWhileWatcherMatched = false;
+
     /**
      * Constructs a UiObject to represent a view that matches the specified
      * selector criteria.
@@ -91,6 +94,16 @@ public class UiObject {
     public final UiSelector getSelector() {
         Tracer.trace();
         return new UiSelector(mSelector);
+    }
+
+    /**
+     * M: A watcher switch can make find {@link AccessibilityNodeInfo} again
+     * if a watcher matched.
+     * @param enable true if retry while watcher matched
+     * @hide
+     */
+    public static void setRetryWhileWatcherMatched(boolean enable) {
+        sRetryWhileWatcherMatched = enable;
     }
 
     /**
@@ -174,6 +187,16 @@ public class UiObject {
             } else {
                 // does nothing if we're reentering another runWatchers()
                 UiDevice.getInstance().runWatchers();
+                /// M: if any watcher condition is matched, give a chance to find
+                // the accessibility node again without check the timeout.@{
+                if (sRetryWhileWatcherMatched && UiDevice.getInstance().hasAnyWatcherTriggered()) {
+                    node = getQueryController().findAccessibilityNodeInfo(getSelector());
+                    UiDevice.getInstance().resetWatcherTriggers();
+                    if (node != null) {
+                        break;
+                    }
+                }
+                /// @}
             }
             currentMills = SystemClock.uptimeMillis() - startMills;
             if(timeout > 0) {

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -1635,6 +1640,32 @@ public class Paint {
         getFontMetrics(fm);
         return fm;
     }
+    /// M: new FontMetrics method for complex text support.@{
+    /**
+     * Get FontMetrics for a complete string properly.
+     *
+     * @hide
+     */
+    public float getStringFontMetrics(FontMetrics metrics, String string) {
+        return getStringFontMetrics(mNativePaint, mNativeTypeface, metrics, string);
+    }
+    /**
+     * Get FontMetrics for a complete string properly.
+     *
+     * @hide
+     */
+    public native float getStringFontMetrics(long nativePaint, long nativeTypeface,
+        FontMetrics metrics, String string);
+
+    /**
+     * @hide
+     */
+    public FontMetrics getStringFontMetrics(String string) {
+        FontMetrics fm = new FontMetrics();
+        getStringFontMetrics(mNativePaint, mNativeTypeface, fm, string);
+        return fm;
+    }
+    /// M: new FontMetrics method for complex text support. }@
 
     /**
      * Convenience method for callers that want to have FontMetrics values as
@@ -1676,6 +1707,33 @@ public class Paint {
         getFontMetricsInt(fm);
         return fm;
     }
+
+    /// M: new FontMetrics method for complex text support.@{
+    /**
+     * Get FontMetricsInt for a complete string properly.
+     *
+     * @hide
+     */
+    public int getStringFontMetricsInt(FontMetricsInt fmi, String string) {
+        return getStringFontMetricsInt(mNativePaint, mNativeTypeface, fmi, string);
+    }
+    /**
+     * Get FontMetricsInt for a complete string properly.
+     *
+     * @hide
+     */
+    public native int getStringFontMetricsInt(long nativePaint, long nativeTypeface,
+        FontMetricsInt fmi, String string);
+
+    /**
+     * @hide
+     */
+    public FontMetricsInt getStringFontMetricsInt(String string) {
+        FontMetricsInt fm = new FontMetricsInt();
+        getStringFontMetricsInt(mNativePaint, mNativeTypeface,fm, string);
+        return fm;
+    }
+    /// M: new FontMetrics method for complex text support. }@
 
     /**
      * Return the recommend line spacing based on the current typeface and

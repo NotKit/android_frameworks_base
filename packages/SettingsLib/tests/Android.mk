@@ -23,6 +23,8 @@ LOCAL_JAVA_LIBRARIES := android.test.runner telephony-common
 
 LOCAL_PACKAGE_NAME := SettingsLibTests
 
+LOCAL_CERTIFICATE := platform
+
 LOCAL_STATIC_JAVA_LIBRARIES := mockito-target
 
 include frameworks/base/packages/SettingsLib/common.mk

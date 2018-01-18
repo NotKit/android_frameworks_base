@@ -300,6 +300,7 @@ public final class NsdManager {
 
         @Override
         public void handleMessage(Message message) {
+            Log.i(TAG, "ServiceHandler handleMessage what=" + message.what);
             switch (message.what) {
                 case AsyncChannel.CMD_CHANNEL_HALF_CONNECTED:
                     mAsyncChannel.sendMessage(AsyncChannel.CMD_CHANNEL_FULL_CONNECTION);
@@ -599,6 +600,7 @@ public final class NsdManager {
      * Cannot be in use for an active service resolution.
      */
     public void resolveService(NsdServiceInfo serviceInfo, ResolveListener listener) {
+        Log.d(TAG, "resolveService");
         if (TextUtils.isEmpty(serviceInfo.getServiceName()) ||
                 TextUtils.isEmpty(serviceInfo.getServiceType())) {
             throw new IllegalArgumentException("Service name or type cannot be empty");

@@ -25,6 +25,7 @@ import android.app.StatusBarManager;
 import android.content.Context;
 import android.content.pm.ResolveInfo;
 import android.content.res.Configuration;
+import android.os.SystemProperties;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -311,7 +312,8 @@ public class NotificationPanelView extends PanelView implements
 
         // Update Clock Pivot
         mKeyguardStatusView.setPivotX(getWidth() / 2);
-        mKeyguardStatusView.setPivotY((FONT_HEIGHT - CAP_HEIGHT) / 2048f * mClockView.getTextSize());
+        mKeyguardStatusView.setPivotY((FONT_HEIGHT - CAP_HEIGHT) / 2048f
+                * mClockView.getTextSize());
 
         // Calculate quick setting heights.
         int oldMaxHeight = mQsMaxExpansionHeight;
@@ -2233,7 +2235,10 @@ public class NotificationPanelView extends PanelView implements
      * @param x the x-coordinate the touch event
      */
     protected void updateVerticalPanelPosition(float x) {
-        if (mNotificationStackScroller.getWidth() * 1.75f > getWidth()) {
+        // M: Fix the display wrong issue when the width = 0 unexpected.
+        // Step: set screen lock as none and reboot then
+        if (mNotificationStackScroller.getWidth() <= 0
+                || mNotificationStackScroller.getWidth() * 1.75f > getWidth()) {
             resetVerticalPanelPosition();
             return;
         }

@@ -687,7 +687,7 @@
     <string name="lockscreen_missing_sim_message" product="default" msgid="2186920585695169078">"手機未插入 SIM 卡。"</string>
     <string name="lockscreen_missing_sim_instructions" msgid="5372787138023272615">"插入 SIM 卡。"</string>
     <string name="lockscreen_missing_sim_instructions_long" msgid="3526573099019319472">"找不到或無法讀取 SIM 卡。請插入 SIM 卡。"</string>
-    <string name="lockscreen_permanent_disabled_sim_message_short" msgid="5096149665138916184">"SIM 卡無法使用。"</string>
+    <string name="lockscreen_permanent_disabled_sim_message_short" msgid="5096149665138916184">"SIM 卡無法使用"</string>
     <string name="lockscreen_permanent_disabled_sim_instructions" msgid="910904643433151371">"您的 SIM 卡已遭永久停用。\n請與您的無線網路服務供應商聯絡，以取得其他 SIM 卡。"</string>
     <string name="lockscreen_transport_prev_description" msgid="6300840251218161534">"上一首曲目"</string>
     <string name="lockscreen_transport_next_description" msgid="573285210424377338">"下一首曲目"</string>

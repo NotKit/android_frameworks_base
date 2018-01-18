@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,12 +31,16 @@ import android.content.Context;
 import android.content.res.TypedArray;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
+import android.os.Build;
+import android.os.SystemProperties;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewDebug;
 import android.view.ViewGroup;
 import android.view.ViewHierarchyEncoder;
+import android.view.ViewParent;
 import android.widget.RemoteViews.RemoteView;
 
 import java.util.ArrayList;
@@ -55,6 +64,14 @@ import java.util.ArrayList;
  */
 @RemoteView
 public class FrameLayout extends ViewGroup {
+    /// M: Log tag.
+    private static final String DEBUG_LOG_TAG = "Layout";
+    /// M: System property used to enable or disable log debugging.
+    private static final String DEBUG_LAYOUT_PROPERTY = "debug.layout.log";
+    /// M: Flag for indicating enable or disable log debugging.
+    private static boolean sDebugLayout = false;
+    private static final boolean DBG = "eng".equals(Build.TYPE);
+
     private static final int DEFAULT_CHILD_GRAVITY = Gravity.TOP | Gravity.START;
 
     @ViewDebug.ExportedProperty(category = "measurement")
@@ -76,6 +93,7 @@ public class FrameLayout extends ViewGroup {
 
     public FrameLayout(@NonNull Context context) {
         super(context);
+        initFrameLayout();
     }
 
     public FrameLayout(@NonNull Context context, @Nullable AttributeSet attrs) {
@@ -90,6 +108,7 @@ public class FrameLayout extends ViewGroup {
     public FrameLayout(@NonNull Context context, @Nullable AttributeSet attrs,
             @AttrRes int defStyleAttr, @StyleRes int defStyleRes) {
         super(context, attrs, defStyleAttr, defStyleRes);
+        initFrameLayout();
 
         final TypedArray a = context.obtainStyledAttributes(
                 attrs, R.styleable.FrameLayout, defStyleAttr, defStyleRes);
@@ -168,6 +187,7 @@ public class FrameLayout extends ViewGroup {
 
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+
         int count = getChildCount();
 
         final boolean measureMatchParentChildren =
@@ -179,9 +199,18 @@ public class FrameLayout extends ViewGroup {
         int maxWidth = 0;
         int childState = 0;
 
+        if (DBG && sDebugLayout) {
+            Log.d(DEBUG_LOG_TAG, "[FrameLayout] + Pass.1, this=" + this);
+        }
+
         for (int i = 0; i < count; i++) {
             final View child = getChildAt(i);
             if (mMeasureAllChildren || child.getVisibility() != GONE) {
+                if (DBG && sDebugLayout) {
+                    Log.d(DEBUG_LOG_TAG, "[FrameLayout] + Child in Pass1: " + i
+                            + ", child=" + child + ", this=" + this);
+                }
+
                 measureChildWithMargins(child, widthMeasureSpec, 0, heightMeasureSpec, 0);
                 final LayoutParams lp = (LayoutParams) child.getLayoutParams();
                 maxWidth = Math.max(maxWidth,
@@ -195,7 +224,14 @@ public class FrameLayout extends ViewGroup {
                         mMatchParentChildren.add(child);
                     }
                 }
+
+                if (DBG && sDebugLayout) {
+                    Log.d(DEBUG_LOG_TAG, "[FrameLayout] - Child in Pass1: " + i
+                            + ", child=" + child + ", this=" + this + "maxWidth=" +  maxWidth
+                            + ", maxHeight=" + maxHeight);
+                }
             }
+
         }
 
         // Account for padding too
@@ -213,15 +249,29 @@ public class FrameLayout extends ViewGroup {
             maxWidth = Math.max(maxWidth, drawable.getMinimumWidth());
         }
 
+        if (DBG && sDebugLayout) {
+            Log.d(DEBUG_LOG_TAG, "[FrameLayout] - Pass.1, this=" + this + ", maxWidth=" + maxWidth
+                    + ", maxHeight=" + maxHeight);
+        }
         setMeasuredDimension(resolveSizeAndState(maxWidth, widthMeasureSpec, childState),
                 resolveSizeAndState(maxHeight, heightMeasureSpec,
                         childState << MEASURED_HEIGHT_STATE_SHIFT));
 
         count = mMatchParentChildren.size();
         if (count > 1) {
+            if (DBG && sDebugLayout) {
+                Log.d(DEBUG_LOG_TAG, "[FrameLayout] + Pass.2 (Re-measure for MATCH_PARENT), this="
+                        + this);
+            }
+
             for (int i = 0; i < count; i++) {
                 final View child = mMatchParentChildren.get(i);
                 final MarginLayoutParams lp = (MarginLayoutParams) child.getLayoutParams();
+
+                if (DBG && sDebugLayout) {
+                    Log.d(DEBUG_LOG_TAG, "[FrameLayout] + Child in Pass2: " + i
+                            + ", child=" + child + ", this=" + this);
+                }
 
                 final int childWidthMeasureSpec;
                 if (lp.width == LayoutParams.MATCH_PARENT) {
@@ -252,8 +302,18 @@ public class FrameLayout extends ViewGroup {
                 }
 
                 child.measure(childWidthMeasureSpec, childHeightMeasureSpec);
+
+                if (DBG && sDebugLayout) {
+                    Log.d(DEBUG_LOG_TAG, "[FrameLayout] - Child in Pass2: " + i
+                            + ", child=" + child + ", this=" + this);
+                }
+            }
+
+            if (DBG && sDebugLayout) {
+                Log.d(DEBUG_LOG_TAG, "[FrameLayout] - Pass.2, this=" + this);
             }
         }
+
     }
 
     @Override
@@ -483,5 +543,39 @@ public class FrameLayout extends ViewGroup {
 
             this.gravity = source.gravity;
         }
+
+        /**
+         * M: Output parameters of LayoutParams for debugging usage.
+         *
+         * @param output The ouptput string
+         * @return debug information
+         * @hide
+         */
+        public String debug(String output) {
+            return output + "FrameLayout.LayoutParams={ width=" + sizeToString(width)
+                    + ", height=" + sizeToString(height) + ", leftMargin=" + leftMargin
+                    + ", rightMargin=" + rightMargin + ", topMargin=" + topMargin
+                    + ", bottomMargin=" + bottomMargin
+                    + ((gravity != -1) ? (", gravity=" + Integer.toHexString(gravity)) : "")
+                    + " }";
+        }
+    }
+
+    /*
+     * M: Initialize layout debugging.
+     */
+    private void initFrameLayout() {
+        sDebugLayout = SystemProperties.getBoolean(DEBUG_LAYOUT_PROPERTY, false);
+    }
+
+    private int getCurrentLevel() {
+        int level = 0;
+        ViewParent parent = getParent();
+        while (parent != null && parent instanceof View) {
+            level++;
+            View v = (View) parent;
+            parent = v.getParent();
+        }
+        return level;
     }
 }

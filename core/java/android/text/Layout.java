@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -101,6 +106,8 @@ public abstract class Layout {
 
     private static final ParagraphStyle[] NO_PARA_SPANS =
         ArrayUtils.emptyArray(ParagraphStyle.class);
+
+    static final String TAG = "Layout";
 
     /**
      * Return how wide a layout must be in order to display the
@@ -245,7 +252,13 @@ public abstract class Layout {
 
         drawBackground(canvas, highlight, highlightPaint, cursorOffsetVertical,
                 firstLine, lastLine);
+        if (TextUtils.DEBUG_LOG) {
+            TextUtils.printDebugLog(TAG, "[draw] " + "start");
+        }
         drawText(canvas, firstLine, lastLine);
+        if (TextUtils.DEBUG_LOG) {
+            TextUtils.printDebugLog(TAG, "[draw] " + "end");
+        }
     }
 
     /**
@@ -399,6 +412,9 @@ public abstract class Layout {
                 tl.draw(canvas, x, ltop, lbaseline, lbottom);
             }
             paint.setHyphenEdit(0);
+            if (TextUtils.DEBUG_LOG) {
+                TextUtils.printDebugLog(TAG, "[drawText] " + x + "," + buf.toString());
+            }
         }
 
         TextLine.recycle(tl);
@@ -2032,6 +2048,15 @@ public abstract class Layout {
             TextUtils.copySpansFrom(mSpanned, start, end, Object.class, ss, 0);
             return ss;
         }
+    }
+
+
+    /**
+     * M: Returns whether the single line Text is RtoL or not.
+     * @hide
+     */
+    public boolean isSingleLineRtoL() {
+        return false;
     }
 
     private CharSequence mText;

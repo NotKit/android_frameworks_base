@@ -74,6 +74,21 @@ import com.android.systemui.statusbar.policy.ZenModeController;
 import com.android.systemui.tuner.TunerService;
 import com.android.systemui.tuner.TunerService.Tunable;
 
+/// M: add plugin in quicksetting @{
+import com.mediatek.systemui.ext.IQuickSettingsPlugin;
+/// add plugin in quicksetting @}
+
+/// M: Add extra tiles in quicksetting @{
+import com.mediatek.systemui.PluginManager;
+import com.mediatek.systemui.qs.tiles.HotKnotTile;
+import com.mediatek.systemui.qs.tiles.ext.ApnSettingsTile;
+import com.mediatek.systemui.qs.tiles.ext.DualSimSettingsTile;
+import com.mediatek.systemui.qs.tiles.ext.MobileDataTile;
+import com.mediatek.systemui.qs.tiles.ext.SimDataConnectionTile;
+import com.mediatek.systemui.statusbar.policy.HotKnotController;
+import com.mediatek.systemui.statusbar.util.SIMHelper;
+// /@}
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -116,6 +131,11 @@ public class QSTileHost implements QSTile.Host, Tunable {
     private View mHeader;
     private int mCurrentUser;
 
+    /// M: Add extra tiles in quicksetting @{
+    // add HotKnot in quicksetting
+    private final HotKnotController mHotKnot;
+    // /@}
+
     public QSTileHost(Context context, PhoneStatusBar statusBar,
             BluetoothController bluetooth, LocationController location,
             RotationLockController rotation, NetworkController network,
@@ -124,7 +144,11 @@ public class QSTileHost implements QSTile.Host, Tunable {
             UserSwitcherController userSwitcher, UserInfoController userInfo,
             KeyguardMonitor keyguard, SecurityController security,
             BatteryController battery, StatusBarIconController iconController,
-            NextAlarmController nextAlarmController) {
+            NextAlarmController nextAlarmController,
+            // M: Add extra tiles in quicksetting @{
+            // add HotKnot in quicksetting
+            HotKnotController hotknot) {
+            // /@}
         mContext = context;
         mStatusBar = statusBar;
         mBluetooth = bluetooth;
@@ -143,6 +167,11 @@ public class QSTileHost implements QSTile.Host, Tunable {
         mIconController = iconController;
         mNextAlarmController = nextAlarmController;
         mProfileController = new ManagedProfileController(this);
+
+        /// M: Add extra tiles in quicksetting @{
+        // add HotKnot in quicksetting
+        mHotKnot = hotknot;
+        // /@}
 
         final HandlerThread ht = new HandlerThread(QSTileHost.class.getSimpleName(),
                 Process.THREAD_PRIORITY_BACKGROUND);
@@ -309,6 +338,13 @@ public class QSTileHost implements QSTile.Host, Tunable {
         return mProfileController;
     }
 
+    /// M: Add extra tiles in quicksetting @{
+    // add HotKnot in quicksetting
+    @Override
+    public HotKnotController getHotKnotController() {
+        return mHotKnot;
+    }
+
     @Override
     public void onTuningChanged(String key, String newValue) {
         if (!TILES_SETTING.equals(key)) {
@@ -417,6 +453,8 @@ public class QSTileHost implements QSTile.Host, Tunable {
     }
 
     public QSTile<?> createTile(String tileSpec) {
+        IQuickSettingsPlugin quickSettingsPlugin = PluginManager
+                .getQuickSettingsPlugin(mContext);
         if (tileSpec.equals("wifi")) return new WifiTile(this);
         else if (tileSpec.equals("bt")) return new BluetoothTile(this);
         else if (tileSpec.equals("cell")) return new CellularTile(this);
@@ -433,6 +471,34 @@ public class QSTileHost implements QSTile.Host, Tunable {
         else if (tileSpec.equals("battery")) return new BatteryTile(this);
         else if (tileSpec.equals("saver")) return new DataSaverTile(this);
         else if (tileSpec.equals("night")) return new NightDisplayTile(this);
+
+        /// M: Add extra tiles in quicksetting @{
+        else if (tileSpec.equals("hotknot") && SIMHelper.isMtkHotKnotSupport())
+            return new HotKnotTile(this);
+        // /@}
+        /// M: add DataConnection in quicksetting @{
+        else if (tileSpec.equals("dataconnection") && !SIMHelper.isWifiOnlyDevice())
+            return new MobileDataTile(this);
+        /// M: add DataConnection in quicksetting @}
+        /// M: Customize the quick settings tiles for operator. @{
+        else if (tileSpec.equals("simdataconnection") && !SIMHelper.isWifiOnlyDevice() &&
+                quickSettingsPlugin.customizeAddQSTile(new SimDataConnectionTile(this)) != null) {
+            return (SimDataConnectionTile) quickSettingsPlugin.customizeAddQSTile(
+                    new SimDataConnectionTile(this));
+        } else if (tileSpec.equals("dulsimsettings") && !SIMHelper.isWifiOnlyDevice() &&
+                quickSettingsPlugin.customizeAddQSTile(new DualSimSettingsTile(this)) != null) {
+            return (DualSimSettingsTile) quickSettingsPlugin.customizeAddQSTile(
+                    new DualSimSettingsTile(this));
+        } else if (tileSpec.equals("apnsettings") && !SIMHelper.isWifiOnlyDevice() &&
+                quickSettingsPlugin.customizeAddQSTile(new ApnSettingsTile(this)) != null) {
+            return (ApnSettingsTile) quickSettingsPlugin.customizeAddQSTile(
+                    new ApnSettingsTile(this));
+        } else if (quickSettingsPlugin.doOperatorSupportTile(tileSpec)) {
+            // WifiCalling
+            return (QSTile<?>) quickSettingsPlugin.createTile(this, tileSpec);
+        }
+        /// @}
+
         // Intent tiles.
         else if (tileSpec.startsWith(IntentTile.PREFIX)) return IntentTile.create(this,tileSpec);
         else if (tileSpec.startsWith(CustomTile.PREFIX)) return CustomTile.create(this,tileSpec);
@@ -444,7 +510,15 @@ public class QSTileHost implements QSTile.Host, Tunable {
 
     protected List<String> loadTileSpecs(Context context, String tileList) {
         final Resources res = context.getResources();
-        final String defaultTileList = res.getString(R.string.quick_settings_tiles_default);
+        String defaultTileList = res.getString(R.string.quick_settings_tiles_default);
+        /// M: Customize the quick settings tile order for operator. @{
+        IQuickSettingsPlugin quickSettingsPlugin = PluginManager.getQuickSettingsPlugin(mContext);
+        defaultTileList = quickSettingsPlugin.addOpTileSpecs(defaultTileList);
+        // @}
+        defaultTileList = quickSettingsPlugin.customizeQuickSettingsTileOrder(defaultTileList);
+        /// M: Customize the quick settings tile order for operator. @}
+        Log.d(TAG, "loadTileSpecs() default tile list: " + defaultTileList);
+
         if (tileList == null) {
             tileList = res.getString(R.string.quick_settings_tiles);
             if (DEBUG) Log.d(TAG, "Loaded tile specs from config: " + tileList);

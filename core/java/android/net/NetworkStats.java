@@ -649,6 +649,13 @@ public class NetworkStats implements Parcelable {
                 entry.txBytes = left.txBytes[i];
                 entry.txPackets = left.txPackets[i];
                 entry.operations = left.operations[i];
+                //M: ALPS02660741 add exception here to find out why negtive
+                if (entry.isNegative()) {
+                    Slog.e(TAG, "negative entry found in advance:" + entry);
+                    Slog.e(TAG, "dump left:" + left.toString());
+                    Slog.e(TAG, "dump right:" + right.toString());
+                    throw new IllegalArgumentException("tried recording negative data in advance");
+                }
             } else {
                 // existing row, subtract remote value
                 entry.rxBytes = left.rxBytes[i] - right.rxBytes[j];

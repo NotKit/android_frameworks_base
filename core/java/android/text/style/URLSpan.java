@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -38,7 +43,7 @@ public class URLSpan extends ClickableSpan implements ParcelableSpan {
     public URLSpan(Parcel src) {
         mURL = src.readString();
     }
-    
+
     public int getSpanTypeId() {
         return getSpanTypeIdInternal();
     }
@@ -47,7 +52,7 @@ public class URLSpan extends ClickableSpan implements ParcelableSpan {
     public int getSpanTypeIdInternal() {
         return TextUtils.URL_SPAN;
     }
-    
+
     public int describeContents() {
         return 0;
     }
@@ -75,6 +80,8 @@ public class URLSpan extends ClickableSpan implements ParcelableSpan {
             context.startActivity(intent);
         } catch (ActivityNotFoundException e) {
             Log.w("URLSpan", "Actvity was not found for intent, " + intent.toString());
+            Intent chooserIntent = Intent.createChooser(intent, null);
+            context.startActivity(chooserIntent);
         }
     }
 }

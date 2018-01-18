@@ -51,6 +51,7 @@ import com.android.systemui.statusbar.policy.UserInfoController;
 import com.android.systemui.statusbar.policy.UserSwitcherController;
 import com.android.systemui.statusbar.policy.ZenModeController;
 
+import com.mediatek.systemui.statusbar.policy.HotKnotController;
 /**
  * Class factory to provide customizable SystemUI components.
  */
@@ -110,10 +111,11 @@ public class SystemUIFactory {
             UserSwitcherController userSwitcher, UserInfoController userInfo,
             KeyguardMonitor keyguard, SecurityController security,
             BatteryController battery, StatusBarIconController iconController,
-            NextAlarmController nextAlarmController) {
+            NextAlarmController nextAlarmController,
+            HotKnotController hotKnotController) {
         return new QSTileHost(context, statusBar, bluetooth, location, rotation, network, zen,
                 hotspot, cast, flashlight, userSwitcher, userInfo, keyguard, security, battery,
-                iconController, nextAlarmController);
+                iconController, nextAlarmController, hotKnotController);
     }
 
     public <T> T createInstance(Class<T> classType) {

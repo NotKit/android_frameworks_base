@@ -54,7 +54,8 @@ class DhcpDeclinePacket extends DhcpPacket {
      */
     void finishPacket(ByteBuffer buffer) {
         addTlv(buffer, DHCP_MESSAGE_TYPE, DHCP_MESSAGE_TYPE_DECLINE);
-        addTlv(buffer, DHCP_CLIENT_IDENTIFIER, getClientId());
+        //M: disable DHCP_CLIENT_IDENTIFIER due to IOT issue
+        // addTlv(buffer, DHCP_CLIENT_IDENTIFIER, getClientId());
         // RFC 2131 says we MUST NOT include our common client TLVs or the parameter request list.
         addTlvEnd(buffer);
     }

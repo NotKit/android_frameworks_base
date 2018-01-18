@@ -69,9 +69,11 @@ public class PrintServicesLoader extends Loader<List<PrintServiceInfo>> {
      * Read the print services and queue it to be delivered on the main thread.
      */
     private void queueNewResult() {
-        Message m = mHandler.obtainMessage(0);
-        m.obj = mPrintManager.getPrintServices(mSelectionFlags);
-        mHandler.sendMessage(m);
+        if (mHandler != null){
+            Message m = mHandler.obtainMessage(0);
+            m.obj = mPrintManager.getPrintServices(mSelectionFlags);
+            mHandler.sendMessage(m);
+        }
     }
 
     @Override

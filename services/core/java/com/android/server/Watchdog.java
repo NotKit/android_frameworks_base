@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2008 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -43,6 +48,8 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
 
+import com.mediatek.aee.ExceptionLog;
+
 /** This class calls its monitor every minute. Killing this process if they don't return **/
 public class Watchdog extends Thread {
     static final String TAG = "Watchdog";
@@ -61,6 +68,7 @@ public class Watchdog extends Thread {
     static final int WAITING = 1;
     static final int WAITED_HALF = 2;
     static final int OVERDUE = 3;
+    static final int TIME_SF_WAIT = 20000;
 
     // Which native processes to dump into dropbox's stack traces
     public static final String[] NATIVE_STACKS_OF_INTEREST = new String[] {
@@ -77,6 +85,7 @@ public class Watchdog extends Thread {
     };
 
     static Watchdog sWatchdog;
+    ExceptionLog exceptionHWT;
 
     /* This handler will be used to post message back onto the main thread */
     final ArrayList<HandlerChecker> mHandlerCheckers = new ArrayList<>();
@@ -87,6 +96,25 @@ public class Watchdog extends Thread {
     int mPhonePid;
     IActivityController mController;
     boolean mAllowRestart = true;
+    public long GetSFStatus() {
+        if (exceptionHWT != null) {
+         return exceptionHWT.SFMatterJava(0, 0);
+        } else {
+        return 0;
+    }
+    }
+
+    public static int GetSFReboot() {
+        return SystemProperties.getInt("service.sf.reboot", 0);
+    }
+
+    public static void SetSFReboot() {
+        int OldTime = SystemProperties.getInt("service.sf.reboot", 0);
+        OldTime = OldTime + 1;
+        if (OldTime > 9) OldTime = 9;
+        SystemProperties.set("service.sf.reboot", String.valueOf(OldTime));
+    }
+
 
     /**
      * Used for checking status of handle threads and scheduling monitor callbacks.
@@ -245,9 +273,12 @@ public class Watchdog extends Thread {
         // And the display thread.
         mHandlerCheckers.add(new HandlerChecker(DisplayThread.getHandler(),
                 "display thread", DEFAULT_TIMEOUT));
-
         // Initialize monitor for Binder threads.
         addMonitor(new BinderThreadMonitor());
+        if (SystemProperties.get("ro.have_aee_feature").equals("1")) {
+            exceptionHWT = new ExceptionLog();
+        }
+
     }
 
     public void init(Context context, ActivityManagerService activity) {
@@ -257,6 +288,10 @@ public class Watchdog extends Thread {
         context.registerReceiver(new RebootRequestReceiver(),
                 new IntentFilter(Intent.ACTION_REBOOT),
                 android.Manifest.permission.REBOOT, null);
+
+        if(exceptionHWT!= null){
+                exceptionHWT.WDTMatterJava(0);
+        }
     }
 
     public void processStarted(String name, int pid) {
@@ -348,13 +383,25 @@ public class Watchdog extends Thread {
     @Override
     public void run() {
         boolean waitedHalf = false;
+        boolean mSFHang = false;
         while (true) {
             final ArrayList<HandlerChecker> blockedCheckers;
-            final String subject;
+            String subject;
+            mSFHang = false;
+            if (exceptionHWT != null && waitedHalf == false ) {
+                exceptionHWT.WDTMatterJava(300);
+            }
             final boolean allowRestart;
             int debuggerWasConnected = 0;
+
+            Slog.w(TAG, "SWT Watchdog before synchronized:" + SystemClock.uptimeMillis());
+
             synchronized (this) {
+
+                Slog.w(TAG, "SWT Watchdog after synchronized:" + SystemClock.uptimeMillis());
+
                 long timeout = CHECK_INTERVAL;
+                long SFHangTime;
                 // Make sure we (re)spin the checkers that have become idle within
                 // this wait-and-check interval
                 for (int i=0; i<mHandlerCheckers.size(); i++) {
@@ -386,27 +433,41 @@ public class Watchdog extends Thread {
                     timeout = CHECK_INTERVAL - (SystemClock.uptimeMillis() - start);
                 }
 
-                final int waitState = evaluateCheckerCompletionLocked();
-                if (waitState == COMPLETED) {
-                    // The monitors have returned; reset
-                    waitedHalf = false;
-                    continue;
-                } else if (waitState == WAITING) {
-                    // still waiting but within their configured intervals; back off and recheck
-                    continue;
-                } else if (waitState == WAITED_HALF) {
-                    if (!waitedHalf) {
-                        // We've waited half the deadlock-detection interval.  Pull a stack
-                        // trace and wait another half.
+                //MTK enhance
+                SFHangTime = GetSFStatus();
+                Slog.w(TAG, "**Get SF Time **" + SFHangTime);
+                if (SFHangTime > TIME_SF_WAIT * 2) {
+                    Slog.v(TAG, "**SF hang Time **" + SFHangTime);
+                    mSFHang = true;
+
+                } //@@
+                else {
+                    final int waitState = evaluateCheckerCompletionLocked();
+                    if (waitState == COMPLETED) {
+                        // The monitors have returned; reset
+                        waitedHalf = false;
+                        //CputimeEnable(new String("0"));
+                        continue;
+                    } else if (waitState == WAITING) {
+                        // still waiting but within their configured intervals; back off and recheck
+                       // CputimeEnable(new String("0"));
+                        continue;
+                    } else if (waitState == WAITED_HALF) {
+                        if (!waitedHalf) {
+                            // We've waited half the deadlock-detection interval.  Pull a stack
+                            // trace and wait another half.
+                        if (exceptionHWT != null) {
+                            exceptionHWT.WDTMatterJava(360);
+                        }
                         ArrayList<Integer> pids = new ArrayList<Integer>();
                         pids.add(Process.myPid());
                         ActivityManagerService.dumpStackTraces(true, pids, null, null,
                                 NATIVE_STACKS_OF_INTEREST);
-                        waitedHalf = true;
+                            waitedHalf = true;
+                        }
+                        continue;
                     }
-                    continue;
                 }
-
                 // something is overdue!
                 blockedCheckers = getBlockedCheckersLocked();
                 subject = describeCheckersLocked(blockedCheckers);
@@ -416,8 +477,15 @@ public class Watchdog extends Thread {
             // If we got here, that means that the system is most likely hung.
             // First collect stack traces from all threads of the system process.
             // Then kill this process so that the system will restart.
+            Slog.e(TAG, "**SWT happen **" + subject);
+            if (mSFHang && subject.isEmpty()) {
+                subject = "surfaceflinger  hang.";
+            }
             EventLog.writeEvent(EventLogTags.WATCHDOG, subject);
 
+            if (exceptionHWT != null) {
+                 exceptionHWT.WDTMatterJava(420);
+            }
             ArrayList<Integer> pids = new ArrayList<Integer>();
             pids.add(Process.myPid());
             if (mPhonePid > 0) pids.add(mPhonePid);
@@ -439,6 +507,9 @@ public class Watchdog extends Thread {
             doSysRq('w');
             doSysRq('l');
 
+            /// M: WDT debug enhancement
+            /// need to wait the AEE dumps all info, then kill system server @{
+            /*
             // Try to add the error to the dropbox, but assuming that the ActivityManager
             // itself may be deadlocked.  (which has happened, causing this statement to
             // deadlock and the watchdog as a whole to be ineffective)
@@ -446,22 +517,26 @@ public class Watchdog extends Thread {
                     public void run() {
                         mActivity.addErrorToDropBox(
                                 "watchdog", null, "system_server", null, null,
-                                subject, null, stack, null);
+                                name, null, stack, null);
                     }
                 };
             dropboxThread.start();
             try {
                 dropboxThread.join(2000);  // wait up to 2 seconds for it to return.
             } catch (InterruptedException ignored) {}
+            */
+            Slog.v(TAG, "** save all info before killnig system server **");
+            mActivity.addErrorToDropBox("watchdog", null, "system_server", null, null, subject, null, null, null);
 
             IActivityController controller;
             synchronized (this) {
                 controller = mController;
             }
-            if (controller != null) {
+            if ((mSFHang == false) && (controller != null)) {
                 Slog.i(TAG, "Reporting stuck state to activity controller");
                 try {
                     Binder.setDumpDisabled("Service dumps disabled due to hung system process.");
+                    Slog.i(TAG, "Binder.setDumpDisabled");
                     // 1 = keep waiting, -1 = kill system
                     int res = controller.systemNotResponding(subject);
                     if (res >= 0) {
@@ -469,6 +544,7 @@ public class Watchdog extends Thread {
                         waitedHalf = false;
                         continue;
                     }
+                    Slog.i(TAG, "Activity controller requested to reboot");
                 } catch (RemoteException e) {
                 }
             }
@@ -493,7 +569,25 @@ public class Watchdog extends Thread {
                         Slog.w(TAG, "    at " + element);
                     }
                 }
+                /// @}
+
                 Slog.w(TAG, "*** GOODBYE!");
+                // MTK enhance
+                if (mSFHang)
+                {
+                    Slog.w(TAG, "SF hang!");
+                    if (GetSFReboot() > 3)
+                    {
+                        Slog.w(TAG, "SF hang reboot time larger than 3 time, reboot device!");
+                        rebootSystem("Maybe SF driver hang,reboot device.");
+                    }
+                    else
+                    {
+                        SetSFReboot();
+                    }
+                }
+                //@
+
                 Process.killProcess(Process.myPid());
                 System.exit(10);
             }

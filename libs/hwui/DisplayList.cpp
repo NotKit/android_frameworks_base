@@ -37,6 +37,7 @@ DisplayList::DisplayList()
         , stdAllocator(allocator)
         , chunks(stdAllocator)
         , ops(stdAllocator)
+        , allOps(stdAllocator)
         , children(stdAllocator)
         , bitmapResources(stdAllocator)
         , pathResources(stdAllocator)
@@ -50,10 +51,17 @@ DisplayList::DisplayList()
 }
 
 DisplayList::~DisplayList() {
-    cleanupResources();
+    TIME_LOG("~DisplayList.cleanupResources", cleanupResources());
 }
 
 void DisplayList::cleanupResources() {
+    /// M: Dump clean up resource sizes for checking whether it will cause timeout.
+    if (patchResources.size() >= 10 || pathResources.size() >= 10 || functors.size() >= 10) {
+        ALOGD("Displaylist clean up resources with patch size %u, path size %u, functor size %u",
+                (unsigned int)patchResources.size(), (unsigned int)pathResources.size(),
+                (unsigned int)functors.size());
+    }
+
     if (CC_UNLIKELY(patchResources.size())) {
         ResourceCache& resourceCache = ResourceCache::getInstance();
         resourceCache.lock();

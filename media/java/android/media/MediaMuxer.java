@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -242,8 +247,12 @@ final public class MediaMuxer {
      */
     public void stop() {
         if (mState == MUXER_STATE_STARTED) {
-            nativeStop(mNativeObject);
+        ///M:MediaMuxer should set state before nativestop,
+        ///due to nativeStop would occurs JE and state would not be set
+        ///M:Then, release() would call stop() and JE also.
+        ///Therefor, mediamuxer would not release(), and it cause memory leak
             mState = MUXER_STATE_STOPPED;
+            nativeStop(mNativeObject);
         } else {
             throw new IllegalStateException("Can't stop due to wrong state.");
         }

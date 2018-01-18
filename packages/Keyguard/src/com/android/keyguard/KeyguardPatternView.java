@@ -21,6 +21,7 @@ import android.os.AsyncTask;
 import android.os.CountDownTimer;
 import android.os.SystemClock;
 import android.text.TextUtils;
+import android.media.AudioSystem;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.MotionEvent;
@@ -197,7 +198,15 @@ public class KeyguardPatternView extends LinearLayout implements KeyguardSecurit
     }
 
     private void displayDefaultSecurityMessage() {
-        mSecurityMessageDisplay.setMessage(R.string.kg_pattern_instructions, false);
+        if (mKeyguardUpdateMonitor.getMaxBiometricUnlockAttemptsReached()) {
+            if (mLockPatternUtils.usingVoiceWeak(mKeyguardUpdateMonitor.getCurrentUser())) {
+                mSecurityMessageDisplay.setMessage(R.string.voiceunlock_multiple_failures, true);
+                /// M: [ALPS01748966] supress voice unlock view
+                mKeyguardUpdateMonitor.setAlternateUnlockEnabled(false);
+            }
+        } else {
+            mSecurityMessageDisplay.setMessage(R.string.kg_pattern_instructions, false);
+        }
     }
 
     @Override
@@ -339,6 +348,13 @@ public class KeyguardPatternView extends LinearLayout implements KeyguardSecurit
     @Override
     public void onResume(int reason) {
         reset();
+       ///M: add for voice unlock
+        ///   display prompt message when voice unlock is disabled because of
+        ///   media is playing in background.
+        final boolean mediaPlaying = AudioSystem.isStreamActive(AudioSystem.STREAM_MUSIC, 0);
+        if (mLockPatternUtils.usingVoiceWeak() && mediaPlaying) {
+            mSecurityMessageDisplay.setMessage(R.string.voice_unlock_media_playing, true);
+        }
     }
 
     @Override

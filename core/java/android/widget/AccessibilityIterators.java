@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2012 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -153,8 +158,12 @@ final class AccessibilityIterators {
                     - mView.getTotalPaddingBottom();
             final int nextPageStartY = currentLineTop + pageHeight;
             final int lastLineTop = mLayout.getLineTop(mLayout.getLineCount() - 1);
-            final int currentPageEndLine = (nextPageStartY < lastLineTop)
+            /// M: To protect the get line edge index @{
+            int tmpCurrentPageEndLine = (nextPageStartY < lastLineTop)
                     ? mLayout.getLineForVertical(nextPageStartY) - 1 : mLayout.getLineCount() - 1;
+
+            final int currentPageEndLine = tmpCurrentPageEndLine < 0 ? 0 : tmpCurrentPageEndLine;
+            /// @}
 
             final int end = getLineEdgeIndex(currentPageEndLine, DIRECTION_END) + 1;
 

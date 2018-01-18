@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,11 +21,12 @@
 
 package android.media;
 
-import android.content.ContentProviderClient;
-import android.content.ContentResolver;
+import android.app.ActivityManager;
 import android.content.ContentUris;
 import android.content.ContentValues;
 import android.content.Context;
+import android.content.ContentProviderClient;
+import android.content.ContentResolver;
 import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.database.SQLException;
@@ -28,10 +34,17 @@ import android.drm.DrmManagerClient;
 import android.graphics.BitmapFactory;
 import android.mtp.MtpConstants;
 import android.net.Uri;
+import android.net.TrafficStats;
 import android.os.Build;
 import android.os.Environment;
+import android.os.Handler;
 import android.os.RemoteException;
+import android.os.storage.StorageManager;
+import android.os.storage.StorageVolume;
 import android.os.SystemProperties;
+import android.os.storage.VolumeInfo;
+import android.os.storage.DiskInfo;
+import android.os.UserHandle;
 import android.provider.MediaStore;
 import android.provider.MediaStore.Audio;
 import android.provider.MediaStore.Audio.Playlists;
@@ -60,8 +73,11 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileDescriptor;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.RandomAccessFile;
+import java.io.UnsupportedEncodingException;
 import java.text.SimpleDateFormat;
 import java.text.ParseException;
 import java.util.ArrayList;
@@ -124,6 +140,10 @@ public class MediaScanner implements AutoCloseable {
     }
 
     private final static String TAG = "MediaScanner";
+    /**M: Add for control debug log.@{**/
+    private static final boolean LOGD = "eng".equals(Build.TYPE);
+    private static final boolean DEBUG = Log.isLoggable(TAG, Log.DEBUG) || LOGD;
+    /**@}**/
 
     private static final String[] FILES_PRESCAN_PROJECTION = new String[] {
             Files.FileColumns._ID, // 0
@@ -154,6 +174,9 @@ public class MediaScanner implements AutoCloseable {
     private static final String ALARMS_DIR = "/alarms/";
     private static final String MUSIC_DIR = "/music/";
     private static final String PODCAST_DIR = "/podcasts/";
+
+    private static final String EXTERNAL_PRIMARY_STORAGE_PATH_L = "/storage/sdcard0/";
+    private static final String EXTERNAL_SECONDARY_STORAGE_PATH_L = "/storage/sdcard1/";
 
     public static final String SCANNED_BUILD_PREFS_NAME = "MediaScanBuild";
     public static final String LAST_INTERNAL_SCAN_FINGERPRINT = "lastScanFingerprint";
@@ -324,12 +347,16 @@ public class MediaScanner implements AutoCloseable {
     private final Uri mVideoUri;
     private final Uri mImagesUri;
     private final Uri mThumbsUri;
+    private final Uri mVideoThumbsUri;
     private final Uri mPlaylistsUri;
     private final Uri mFilesUri;
     private final Uri mFilesUriNoNotify;
     private final boolean mProcessPlaylists;
     private final boolean mProcessGenres;
     private int mMtpObjectHandle;
+
+    private final String mExternalStoragePath;
+    private final boolean mExternalIsEmulated;
 
     private final AtomicBoolean mClosed = new AtomicBoolean();
     private final CloseGuard mCloseGuard = CloseGuard.get();
@@ -340,6 +367,10 @@ public class MediaScanner implements AutoCloseable {
     // used when scanning the image database so we know whether we have to prune
     // old thumbnail files
     private int mOriginalCount;
+    /// M: old video thumbnail files
+    private int mOriginalVideoCount;
+    /** Whether the database had any entries in it before the scan started */
+    private boolean mWasEmptyPriorToScan = false;
     /** Whether the scanner has set a default sound for the ringer ringtone. */
     private boolean mDefaultRingtoneSet;
     /** Whether the scanner has set a default sound for the notification ringtone. */
@@ -394,6 +425,14 @@ public class MediaScanner implements AutoCloseable {
     private MediaInserter mMediaInserter;
 
     private DrmManagerClient mDrmManagerClient = null;
+    /// M: Add 3 flags to identify if alarm, notification and ringtone is set or not. @{
+    private static final String ALARM_SET = "alarm_set";
+    private static final String NOTIFICATION_SET = "notification_set";
+    private static final String RINGTONE_SET = "ringtone_set";
+    /// @}
+    /// M: limit bmp and gif file size, don't decode images if big over limit to avoid memory issue
+    private long mLimitBmpFileSize = Long.MAX_VALUE;
+    private long mLimitGifFileSize = Long.MAX_VALUE;
 
     public MediaScanner(Context c, String volumeName) {
         native_setup();
@@ -420,6 +459,7 @@ public class MediaScanner implements AutoCloseable {
         mVideoUri = Video.Media.getContentUri(volumeName);
         mImagesUri = Images.Media.getContentUri(volumeName);
         mThumbsUri = Images.Thumbnails.getContentUri(volumeName);
+        mVideoThumbsUri = Video.Thumbnails.getContentUri(volumeName);
         mFilesUri = Files.getContentUri(volumeName);
         mFilesUriNoNotify = mFilesUri.buildUpon().appendQueryParameter("nonotify", "1").build();
 
@@ -448,6 +488,19 @@ public class MediaScanner implements AutoCloseable {
         }
 
         mCloseGuard.open("close");
+        mExternalStoragePath = Environment.getExternalStorageDirectory().getAbsolutePath();
+        mExternalIsEmulated = Environment.isExternalStorageEmulated();
+        //mClient.testGenreNameConverter();
+
+        /// M: set bmp and gif decode limit size same as Gallery
+        final ActivityManager am = (ActivityManager) c.getSystemService(Context.ACTIVITY_SERVICE);
+        if (am.isLowRamDevice()) {
+            mLimitBmpFileSize = 6 * TrafficStats.MB_IN_BYTES;
+            mLimitGifFileSize = 10 * TrafficStats.MB_IN_BYTES;
+        } else {
+            mLimitBmpFileSize = 52 * TrafficStats.MB_IN_BYTES;
+            mLimitGifFileSize = 20 * TrafficStats.MB_IN_BYTES;
+        }
     }
 
     private void setDefaultRingtoneFileNames() {
@@ -457,6 +510,12 @@ public class MediaScanner implements AutoCloseable {
                 + Settings.System.NOTIFICATION_SOUND);
         mDefaultAlarmAlertFilename = SystemProperties.get(DEFAULT_RINGTONE_PROPERTY_PREFIX
                 + Settings.System.ALARM_ALERT);
+        /// M: Adds log to debug setting ringtones.
+        if (DEBUG) {
+            Log.v(TAG, "setDefaultRingtoneFileNames: ringtone=" + mDefaultRingtoneFilename
+                + ",notification=" + mDefaultNotificationFilename
+                + ",alarm=" + mDefaultAlarmAlertFilename);
+        }
     }
 
     private final MyMediaScannerClient mClient = new MyMediaScannerClient();
@@ -491,6 +550,21 @@ public class MediaScanner implements AutoCloseable {
         private boolean mNoMedia;   // flag to suppress file from appearing in media tables
         private int mWidth;
         private int mHeight;
+        /// M: add for mtk drm @{
+        private String mDrmContentUr;
+        private long mDrmOffset;
+        private long mDrmDataLen;
+        private String mDrmRightsIssuer;
+        private String mDrmContentName;
+        private String mDrmContentDescriptioin;
+        private String mDrmContentVendor;
+        private String mDrmIconUri;
+        private long mDrmMethod;
+        /// @}
+        /// M: add for slow motion
+        private String mSlowMotionSpeed;
+        /// M: Add for fancy gallery homepage(Video get it's rotation)
+        private int mOrientation;
 
         public MyMediaScannerClient() {
             mDateFormatter = new SimpleDateFormat("yyyyMMdd'T'HHmmss");
@@ -499,7 +573,9 @@ public class MediaScanner implements AutoCloseable {
 
         public FileEntry beginFile(String path, String mimeType, long lastModified,
                 long fileSize, boolean isDirectory, boolean noMedia) {
-            mMimeType = mimeType;
+            /// M: Directory or folder's mimeType must be null, because some special name folder(such as
+            /// test.mp3) may give a wrong mimeType by MediaFile.getMimeTypeForFile(path).
+            mMimeType = isDirectory ? null : mimeType;
             mFileType = 0;
             mFileSize = fileSize;
             mIsDrm = false;
@@ -515,12 +591,30 @@ public class MediaScanner implements AutoCloseable {
                     mFileType = MediaFile.getFileTypeForMimeType(mimeType);
                 }
 
+                /// M: OMA DRM v1: however, for those DCF file, normally when scanning it,
+                // the input mime type should be "application/vnd.oma.drm.content";
+                // however, there's case that the input mimetype is, for example, "image/*"
+                // in these cases it will not call processFile() but processImageFile() instead.
+                // for these cases, we change the {mFileType} back to ZERO,
+                // and let Media.getFileType(path) to determine the type,
+                // so that it can call processFile() as normal. @{
+                if (MediaFile.isImageFileType(mFileType)) {
+                    int lastDot = path.lastIndexOf(".");
+                    if (lastDot > 0 && path.substring(lastDot + 1).toUpperCase().equals("DCF")) {
+                        if (DEBUG) {
+                            Log.v(TAG, "detect a *.DCF file with input mime type:" + mimeType);
+                        }
+                        mFileType = 0; // work around: change to ZERO
+                    }
+                }
+                /// @}
+
                 // if mimeType was not specified, compute file type based on file extension.
                 if (mFileType == 0) {
                     MediaFile.MediaFileType mediaFileType = MediaFile.getFileType(path);
                     if (mediaFileType != null) {
                         mFileType = mediaFileType.fileType;
-                        if (mMimeType == null) {
+                        if (mMimeType == null || isValueslessMimeType(mMimeType)) {
                             mMimeType = mediaFileType.mimeType;
                         }
                     }
@@ -528,6 +622,20 @@ public class MediaScanner implements AutoCloseable {
 
                 if (isDrmEnabled() && MediaFile.isDrmFileType(mFileType)) {
                     mFileType = getFileTypeFromDrm(path);
+                }
+                /// M: Add to get original mimetype from file for cta
+                if (isDrmEnabled() && path.endsWith(".mudp")) {
+                    if (mDrmManagerClient == null) {
+                        mDrmManagerClient = new DrmManagerClient(mContext);
+                    }
+                    if (mDrmManagerClient.canHandle(path, null)) {
+                        mMimeType = mDrmManagerClient.getOriginalMimeType(path);
+                        mIsDrm = true;
+                        if (DEBUG) {
+                            Log.d(TAG, "get cta file " + path
+                                + " with original mimetype " + mMimeType);
+                        }
+                    }
                 }
             }
 
@@ -547,6 +655,10 @@ public class MediaScanner implements AutoCloseable {
 
             if (mProcessPlaylists && MediaFile.isPlayListFileType(mFileType)) {
                 mPlayLists.add(entry);
+                /// M: MediaScanner Performance turning {@
+                /// Store playlist path and insert them in postScanAll
+                mPlaylistFilePathList.add(path);
+                /// @}
                 // we don't process playlists in the main scan, so return null
                 return null;
             }
@@ -568,6 +680,21 @@ public class MediaScanner implements AutoCloseable {
             mCompilation = 0;
             mWidth = 0;
             mHeight = 0;
+            /// M: add for mtk drm @{
+            mDrmContentDescriptioin = null;
+            mDrmContentName = null;
+            mDrmContentUr = null;
+            mDrmContentVendor = null;
+            mDrmIconUri = null;
+            mDrmRightsIssuer = null;
+            mDrmDataLen = -1;
+            mDrmOffset = -1;
+            mDrmMethod = -1;
+            /// @}
+            /// M: add for slow motion
+            mSlowMotionSpeed = "(0,0)x0";
+            /// M: add for fancy gallery homepage
+            mOrientation = 0;
 
             return entry;
         }
@@ -575,15 +702,12 @@ public class MediaScanner implements AutoCloseable {
         @Override
         public void scanFile(String path, long lastModified, long fileSize,
                 boolean isDirectory, boolean noMedia) {
-            // This is the callback funtion from native codes.
-            // Log.v(TAG, "scanFile: "+path);
             doScanFile(path, null, lastModified, fileSize, isDirectory, false, noMedia);
         }
 
         public Uri doScanFile(String path, String mimeType, long lastModified,
                 long fileSize, boolean isDirectory, boolean scanAlways, boolean noMedia) {
             Uri result = null;
-//            long t1 = System.currentTimeMillis();
             try {
                 FileEntry entry = beginFile(path, mimeType, lastModified,
                         fileSize, isDirectory, noMedia);
@@ -606,15 +730,19 @@ public class MediaScanner implements AutoCloseable {
                                 doesPathHaveFilename(entry.mPath, mDefaultRingtoneFilename))
                         || (!mDefaultAlarmSet &&
                                 doesPathHaveFilename(entry.mPath, mDefaultAlarmAlertFilename)))) {
-                        Log.w(TAG, "forcing rescan of " + entry.mPath +
+                        if (DEBUG) {
+                            Log.w(TAG, "forcing rescan of " + entry.mPath +
                                 "since ringtone setting didn't finish");
+                        }
                         scanAlways = true;
                     } else if (isSystemSoundWithMetadata(entry.mPath)
                             && !Build.FINGERPRINT.equals(sLastInternalScanFingerprint)) {
                         // file is located on the system partition where the date cannot be trusted:
                         // rescan if the build fingerprint has changed since the last scan.
-                        Log.i(TAG, "forcing rescan of " + entry.mPath
+                        if (DEBUG) {
+                            Log.i(TAG, "forcing rescan of " + entry.mPath
                                 + " since build fingerprint changed");
+                        }
                         scanAlways = true;
                     }
                 }
@@ -636,6 +764,11 @@ public class MediaScanner implements AutoCloseable {
                         boolean isvideo = MediaFile.isVideoFileType(mFileType);
                         boolean isimage = MediaFile.isImageFileType(mFileType);
 
+                        /**
+                         * M: TODO google use new method to generate path, we need test it later.
+                         * because fork process can access external storage
+                         * path since ALPS00453547.@{
+                         */
                         if (isaudio || isvideo || isimage) {
                             path = Environment.maybeTranslateEmulatedPathToInternal(new File(path))
                                     .getAbsolutePath();
@@ -656,8 +789,6 @@ public class MediaScanner implements AutoCloseable {
             } catch (RemoteException e) {
                 Log.e(TAG, "RemoteException in MediaScanner.scanFile()", e);
             }
-//            long t2 = System.currentTimeMillis();
-//            Log.v(TAG, "scanFile: " + path + " took " + (t2-t1));
             return result;
         }
 
@@ -688,6 +819,9 @@ public class MediaScanner implements AutoCloseable {
         }
 
         public void handleStringTag(String name, String value) {
+            if (DEBUG) {
+                Log.v(TAG, "handleStringTag: name=" + name + ",value=" + value);
+            }
             if (name.equalsIgnoreCase("title") || name.startsWith("title;")) {
                 // Don't trim() here, to preserve the special \001 character
                 // used to force sorting. The media provider will trim() before
@@ -732,9 +866,36 @@ public class MediaScanner implements AutoCloseable {
                 mWidth = parseSubstring(value, 0, 0);
             } else if (name.equalsIgnoreCase("height")) {
                 mHeight = parseSubstring(value, 0, 0);
+            /// M: add for MTK added feature. {@
+            /// 1. DRM
+            } else if (name.equalsIgnoreCase("drm_content_uri")) {
+                mDrmContentUr = value.trim();
+            } else if (name.equalsIgnoreCase("drm_offset")) {
+                mDrmOffset = parseSubstring(value, 0, 0);
+            } else if (name.equalsIgnoreCase("drm_dataLen")) {
+                mDrmDataLen = parseSubstring(value, 0, 0);
+            } else if (name.equalsIgnoreCase("drm_rights_issuer")) {
+                mDrmRightsIssuer = value.trim();
+            } else if (name.equalsIgnoreCase("drm_content_name")) {
+                mDrmContentName = value.trim();
+            } else if (name.equalsIgnoreCase("drm_content_description")) {
+                mDrmContentDescriptioin = value.trim();
+            } else if (name.equalsIgnoreCase("drm_content_vendor")) {
+                mDrmContentVendor = value.trim();
+            } else if (name.equalsIgnoreCase("drm_icon_uri")) {
+                mDrmIconUri = value.trim();
+            } else if (name.equalsIgnoreCase("drm_method")) {
+                mDrmMethod = parseSubstring(value, 0, 0);
+            /// 2. slow motion
+            } else if (name.equalsIgnoreCase("SlowMotion_Speed_Value")) {
+                mSlowMotionSpeed = "(0,0)x" + value;
+            /// 3. fancy gallery homepage
+            } else if (name.equalsIgnoreCase("rotation")) {
+                mOrientation = parseSubstring(value, 0, 0);
             } else {
                 //Log.v(TAG, "unknown tag: " + name + " (" + mProcessGenres + ")");
             }
+            /// @}
         }
 
         private boolean convertGenreCode(String input, String expected) {
@@ -742,10 +903,14 @@ public class MediaScanner implements AutoCloseable {
             if (output.equals(expected)) {
                 return true;
             } else {
-                Log.d(TAG, "'" + input + "' -> '" + output + "', expected '" + expected + "'");
+                if (DEBUG) {
+                    Log.d(TAG, "'" + input + "' -> '" + output
+                        + "', expected '" + expected + "'");
+                }
                 return false;
             }
         }
+
         private void testGenreNameConverter() {
             convertGenreCode("2", "Country");
             convertGenreCode("(2)", "Country");
@@ -766,6 +931,7 @@ public class MediaScanner implements AutoCloseable {
         public String getGenreName(String genreTagValue) {
 
             if (genreTagValue == null) {
+                Log.e(TAG, "getGenreName: Null genreTag!");
                 return null;
             }
             final int length = genreTagValue.length();
@@ -793,6 +959,7 @@ public class MediaScanner implements AutoCloseable {
                             if (genreIndex < ID3_GENRES.length && ID3_GENRES[genreIndex] != null) {
                                 return ID3_GENRES[genreIndex];
                             } else if (genreIndex == 0xFF) {
+                                Log.e(TAG, "getGenreName: genreIndex = 0xFF!");
                                 return null;
                             } else if (genreIndex < 0xFF && (i + 1) < length) {
                                 // genre is valid but unknown,
@@ -810,6 +977,7 @@ public class MediaScanner implements AutoCloseable {
                             }
                         }
                     } catch (NumberFormatException e) {
+                        Log.e(TAG, "getGenreName: invalidNum=" + number.toString(), e);
                     }
                 }
             }
@@ -818,6 +986,21 @@ public class MediaScanner implements AutoCloseable {
         }
 
         private void processImageFile(String path) {
+            /// M: If decode bmp and gif over limit size, just return.
+            long limitFileSize = Long.MAX_VALUE;
+            if (MediaFile.FILE_TYPE_BMP == mFileType) {
+                limitFileSize = mLimitBmpFileSize;
+            } else if (MediaFile.FILE_TYPE_GIF == mFileType) {
+                limitFileSize = mLimitGifFileSize;
+            }
+            if (mFileSize > limitFileSize) {
+                if (DEBUG) {
+                    Log.w(TAG, "processImageFile " + path
+                        + " over limit size " + limitFileSize);
+                    }
+                return;
+            }
+            /// @}
             try {
                 mBitmapOptions.outWidth = 0;
                 mBitmapOptions.outHeight = 0;
@@ -825,7 +1008,12 @@ public class MediaScanner implements AutoCloseable {
                 mWidth = mBitmapOptions.outWidth;
                 mHeight = mBitmapOptions.outHeight;
             } catch (Throwable th) {
-                // ignore;
+                Log.e(TAG, "processImageFile: path=" + path, th);
+            }
+            if (DEBUG) {
+                Log.v(TAG, "processImageFile: path = " + path
+                    + ", width = " + mWidth + ", height = "
+                    + mHeight + ", limitFileSize = " + limitFileSize);
             }
         }
 
@@ -839,6 +1027,9 @@ public class MediaScanner implements AutoCloseable {
             }
             mMimeType = mimeType;
             mFileType = MediaFile.getFileTypeForMimeType(mimeType);
+            if (DEBUG) {
+                Log.v(TAG, "setMimeType: mMimeType = " + mMimeType);
+            }
         }
 
         /**
@@ -874,6 +1065,10 @@ public class MediaScanner implements AutoCloseable {
                     if (resolution != null) {
                         map.put(Video.Media.RESOLUTION, resolution);
                     }
+                    /// M: Add for slow motion
+                    map.put(Video.Media.SLOW_MOTION_SPEED, mSlowMotionSpeed);
+                    /// M: Add for fancy gallery homepage
+                    map.put(Video.Media.ORIENTATION, mOrientation);
                     if (mDate > 0) {
                         map.put(Video.Media.DATE_TAKEN, mDate);
                     }
@@ -896,6 +1091,20 @@ public class MediaScanner implements AutoCloseable {
                     map.put(Audio.Media.COMPILATION, mCompilation);
                 }
             }
+
+            /// M: drm media file, add new column values.
+            if (mIsDrm) {
+                map.put(MediaStore.MediaColumns.DRM_CONTENT_DESCRIPTION, mDrmContentDescriptioin);
+                map.put(MediaStore.MediaColumns.DRM_CONTENT_NAME, mDrmContentName);
+                map.put(MediaStore.MediaColumns.DRM_CONTENT_URI, mDrmContentUr);
+                map.put(MediaStore.MediaColumns.DRM_CONTENT_VENDOR, mDrmContentVendor);
+                map.put(MediaStore.MediaColumns.DRM_DATA_LEN, mDrmDataLen);
+                map.put(MediaStore.MediaColumns.DRM_ICON_URI, mDrmIconUri);
+                map.put(MediaStore.MediaColumns.DRM_OFFSET, mDrmOffset);
+                map.put(MediaStore.MediaColumns.DRM_RIGHTS_ISSUER, mDrmRightsIssuer);
+                map.put(MediaStore.MediaColumns.DRM_METHOD, mDrmMethod);
+            }
+            /// @}
             return map;
         }
 
@@ -936,6 +1145,9 @@ public class MediaScanner implements AutoCloseable {
                 }
             }
             long rowId = entry.mRowId;
+            if (DEBUG) {
+                Log.d(TAG, "endFile() mFileType = " + mFileType);
+            }
             if (MediaFile.isAudioFileType(mFileType) && (rowId == 0 || mMtpObjectHandle != 0)) {
                 // Only set these for new entries. For existing entries, they
                 // may have been modified later, and we want to keep the current
@@ -946,13 +1158,14 @@ public class MediaScanner implements AutoCloseable {
                 values.put(Audio.Media.IS_ALARM, alarms);
                 values.put(Audio.Media.IS_MUSIC, music);
                 values.put(Audio.Media.IS_PODCAST, podcasts);
-            } else if ((mFileType == MediaFile.FILE_TYPE_JPEG
-                    || MediaFile.isRawImageFileType(mFileType)) && !mNoMedia) {
+            /// M: MAV type MPO file need parse some info from exif
+            } else if ((mFileType == MediaFile.FILE_TYPE_JPEG || mFileType == MediaFile.FILE_TYPE_MPO) && !mNoMedia) {
                 ExifInterface exif = null;
                 try {
                     exif = new ExifInterface(entry.mPath);
                 } catch (IOException ex) {
                     // exif is null
+                    Log.e(TAG, "endFile: Null ExifInterface!", ex);
                 }
                 if (exif != null) {
                     float[] latlng = new float[2];
@@ -996,9 +1209,31 @@ public class MediaScanner implements AutoCloseable {
                         }
                         values.put(Images.Media.ORIENTATION, degree);
                     }
+
+                    /// M: Gets groupId and groupIndex for continuous shots images,
+                    /// gets focus value for best shots images. @{
+                    long groupId = 0L;
+                    String groupIdStr = exif.getAttribute(ExifInterface.TAG_MTK_CONSHOT_GROUP_ID);
+                    if (groupIdStr != null) {
+                        try {
+                            groupId = Long.parseLong(groupIdStr);
+                        } catch (NumberFormatException e) {
+                            Log.e(TAG, "endFile: " + groupIdStr + " cannot be converted to long.");
+                        }
+                    }
+                    int groupIndex = exif.getAttributeInt(ExifInterface.TAG_MTK_CONSHOT_PIC_INDEX, 0);
+                    long focusHigh = exif.getAttributeInt(ExifInterface.TAG_MTK_CONSHOT_FOCUS_HIGH, 0);
+                    long focusLow = exif.getAttributeInt(ExifInterface.TAG_MTK_CONSHOT_FOCUS_LOW, 0);
+                    values.put(Images.Media.FOCUS_VALUE_HIGH, focusHigh);
+                    values.put(Images.Media.FOCUS_VALUE_LOW, focusLow);
+                    values.put(Images.Media.GROUP_ID, groupId);
+                    values.put(Images.Media.GROUP_INDEX, groupIndex);
+                    /// Add recocus for camera(2014/08/20)
+                    int refocus = isStereoPhoto(entry.mPath) ? 1 : 0;
+                    values.put(Images.Media.CAMERA_REFOCUS, refocus);
+                    /// @}
                 }
             }
-
             Uri tableUri = mFilesUri;
             MediaInserter inserter = mMediaInserter;
             if (!mNoMedia) {
@@ -1012,26 +1247,6 @@ public class MediaScanner implements AutoCloseable {
             }
             Uri result = null;
             boolean needToSetSettings = false;
-            // Setting a flag in order not to use bulk insert for the file related with
-            // notifications, ringtones, and alarms, because the rowId of the inserted file is
-            // needed.
-            if (notifications && !mDefaultNotificationSet) {
-                if (TextUtils.isEmpty(mDefaultNotificationFilename) ||
-                        doesPathHaveFilename(entry.mPath, mDefaultNotificationFilename)) {
-                    needToSetSettings = true;
-                }
-            } else if (ringtones && !mDefaultRingtoneSet) {
-                if (TextUtils.isEmpty(mDefaultRingtoneFilename) ||
-                        doesPathHaveFilename(entry.mPath, mDefaultRingtoneFilename)) {
-                    needToSetSettings = true;
-                }
-            } else if (alarms && !mDefaultAlarmSet) {
-                if (TextUtils.isEmpty(mDefaultAlarmAlertFilename) ||
-                        doesPathHaveFilename(entry.mPath, mDefaultAlarmAlertFilename)) {
-                    needToSetSettings = true;
-                }
-            }
-
             if (rowId == 0) {
                 if (mMtpObjectHandle != 0) {
                     values.put(MediaStore.MediaColumns.MEDIA_SCANNER_NEW_OBJECT_ID, mMtpObjectHandle);
@@ -1043,6 +1258,44 @@ public class MediaScanner implements AutoCloseable {
                     }
                     values.put(Files.FileColumns.FORMAT, format);
                 }
+                // Setting a flag in order not to use bulk insert for the file related with
+                // notifications, ringtones, and alarms, because the rowId of the inserted file is
+                // needed.
+
+                /// M: Set notification, ringtone and alarm if it wasn't set before. @{
+                if (notifications && ((mWasEmptyPriorToScan && !mDefaultNotificationSet) ||
+                        doesSettingEmpty(NOTIFICATION_SET))) {
+                    if (TextUtils.isEmpty(mDefaultNotificationFilename) ||
+                            doesPathHaveFilename(entry.mPath, mDefaultNotificationFilename)) {
+                        needToSetSettings = true;
+                        /// M: Adds log to debug setting ringtones.
+                        if (DEBUG) {
+                            Log.v(TAG, "endFile: needToSetNotification=true.");
+                        }
+                    }
+                } else if (ringtones && ((mWasEmptyPriorToScan && !mDefaultRingtoneSet) ||
+                        doesSettingEmpty(RINGTONE_SET))) {
+                    if (TextUtils.isEmpty(mDefaultRingtoneFilename) ||
+                            doesPathHaveFilename(entry.mPath, mDefaultRingtoneFilename)) {
+                        needToSetSettings = true;
+                        /// M: Adds log to debug setting ringtones.
+                        if (DEBUG) {
+                            Log.v(TAG, "endFile: needToSetRingtone=true.");
+                        }
+                    }
+                } else if (alarms && ((mWasEmptyPriorToScan && !mDefaultAlarmSet) ||
+                        doesSettingEmpty(ALARM_SET))) {
+                    if (TextUtils.isEmpty(mDefaultAlarmAlertFilename) ||
+                            doesPathHaveFilename(entry.mPath, mDefaultAlarmAlertFilename)) {
+                        needToSetSettings = true;
+                        /// M: Adds log to debug setting ringtones.
+                        if (DEBUG) {
+                            Log.v(TAG, "endFile: needToSetAlarm=true.");
+                        }
+                    }
+                }
+                /// @}
+
                 // New file, insert it.
                 // Directories need to be inserted before the files they contain, so they
                 // get priority when bulk inserting.
@@ -1084,22 +1337,34 @@ public class MediaScanner implements AutoCloseable {
                     }
                     values.put(FileColumns.MEDIA_TYPE, mediaType);
                 }
+
                 mMediaProvider.update(result, values, null, null);
             }
-
+            ///M: Set ringtone if it wasn't set before. @{
             if(needToSetSettings) {
-                if (notifications) {
-                    setRingtoneIfNotSet(Settings.System.NOTIFICATION_SOUND, tableUri, rowId);
+                if (notifications && doesSettingEmpty(NOTIFICATION_SET)) {
+                    setSettingIfNotSet(Settings.System.NOTIFICATION_SOUND, tableUri, rowId);
                     mDefaultNotificationSet = true;
-                } else if (ringtones) {
-                    setRingtoneIfNotSet(Settings.System.RINGTONE, tableUri, rowId);
+                    setSettingFlag(NOTIFICATION_SET);
+                    if (DEBUG) {
+                        Log.v(TAG, "endFile: set notification. uri="
+                            + tableUri + ", rowId=" + rowId);
+                    }
+                } else if (ringtones && doesSettingEmpty(RINGTONE_SET)) {
+                    setSettingIfNotSet(Settings.System.RINGTONE, tableUri, rowId);
                     mDefaultRingtoneSet = true;
-                } else if (alarms) {
-                    setRingtoneIfNotSet(Settings.System.ALARM_ALERT, tableUri, rowId);
+                    setSettingFlag(RINGTONE_SET);
+                    if (DEBUG) {
+                        Log.v(TAG, "endFile: set ringtone. uri="
+                            + tableUri + ", rowId=" + rowId);
+                    }
+                } else if (alarms && doesSettingEmpty(ALARM_SET)) {
+                    setSettingIfNotSet(Settings.System.ALARM_ALERT, tableUri, rowId);
                     mDefaultAlarmSet = true;
+                    setSettingFlag(ALARM_SET);
                 }
             }
-
+            /// @}
             return result;
         }
 
@@ -1110,11 +1375,25 @@ public class MediaScanner implements AutoCloseable {
                     pathFilenameStart + filenameLength == path.length();
         }
 
-        private void setRingtoneIfNotSet(String settingName, Uri uri, long rowId) {
-            if (wasRingtoneAlreadySet(settingName)) {
-                return;
+        /// M: Modify for ringtone list is empty @{
+        private boolean doesSettingEmpty(String settingName) {
+            String existingSettingValue = Settings.System.getString(mContext.getContentResolver(), settingName);
+            if (TextUtils.isEmpty(existingSettingValue)) {
+                return true;
             }
+            return false;
+        }
 
+        private void setSettingFlag(String settingName) {
+            final String VALUE = "yes";
+            if (DEBUG) {
+                Log.d(TAG, "setSettingFlag set:" + settingName);
+            }
+            Settings.System.putString(mContext.getContentResolver(), settingName, VALUE);
+        }
+        /// @}
+
+        private void setSettingIfNotSet(String settingName, Uri uri, long rowId) {
             ContentResolver cr = mContext.getContentResolver();
             String existingSettingValue = Settings.System.getString(cr, settingName);
             if (TextUtils.isEmpty(existingSettingValue)) {
@@ -1122,8 +1401,12 @@ public class MediaScanner implements AutoCloseable {
                 final Uri ringtoneUri = ContentUris.withAppendedId(uri, rowId);
                 RingtoneManager.setActualDefaultRingtoneUri(mContext,
                         RingtoneManager.getDefaultType(settingUri), ringtoneUri);
+                /// M: Adds log to debug setting ringtones.
+                if (DEBUG) {
+                    Log.v(TAG, "setSettingIfNotSet: name="
+                        + settingName + ",value=" + rowId);
+                }
             }
-            Settings.System.putInt(cr, settingSetIndicatorName(settingName), 1);
         }
 
         private int getFileTypeFromDrm(String path) {
@@ -1174,6 +1457,11 @@ public class MediaScanner implements AutoCloseable {
     }
 
     private void prescan(String filePath, boolean prescanFiles) throws RemoteException {
+        /// M: Adds log for debug.
+        if (DEBUG) {
+            Log.v(TAG, "prescan>>> filePath=" + filePath
+                + ",prescanFiles=" + prescanFiles);
+        }
         Cursor c = null;
         String where = null;
         String[] selectionArgs = null;
@@ -1202,6 +1490,10 @@ public class MediaScanner implements AutoCloseable {
         builder.appendQueryParameter(MediaStore.PARAM_DELETE_DATA, "false");
         MediaBulkDeleter deleter = new MediaBulkDeleter(mMediaProvider, builder.build());
 
+        /// M: Add to debug how many file scanned
+        int audioCount = 0;
+        long lastId = Long.MIN_VALUE;
+
         // Build the list of files from the content provider
         try {
             if (prescanFiles) {
@@ -1209,8 +1501,13 @@ public class MediaScanner implements AutoCloseable {
                 // Because we'll be deleting entries for missing files as we go,
                 // we need to query the database in small batches, to avoid problems
                 // with CursorWindow positioning.
-                long lastId = Long.MIN_VALUE;
-                Uri limitUri = mFilesUri.buildUpon().appendQueryParameter("limit", "1000").build();
+                ///M: Added 'force' parameter for forcing query external SD card related db items
+                // while prescan under processing.
+                Uri limitUri = mFilesUri.buildUpon()
+                              .appendQueryParameter("limit", "1000")
+                              .appendQueryParameter("force", "1")
+                              .build();
+                mWasEmptyPriorToScan = true;
 
                 while (true) {
                     selectionArgs[0] = "" + lastId;
@@ -1229,6 +1526,55 @@ public class MediaScanner implements AutoCloseable {
                     if (num == 0) {
                         break;
                     }
+                    mWasEmptyPriorToScan = false;
+                    /**M:Added for resolving  issue that caused by storage path changed on M.@{**/
+                    String externalPrimaryStoragePathOnM = null;
+                    String externalSecondaryStoragePathOnM = null;
+                    final boolean isSharedSdCardEanbled =
+                      SystemProperties.getBoolean("ro.mtk_shared_sdcard", false);
+                    StorageManager storageManager =
+                      (StorageManager)mContext.getSystemService(Context.STORAGE_SERVICE);
+
+                    for (VolumeInfo vol : storageManager.getVolumes()) {
+                        if (VolumeInfo.ID_PRIVATE_INTERNAL.equals(vol.id)) continue;
+                        if (isSharedSdCardEanbled) {
+                            if (vol.isPrimary()) {
+                               externalPrimaryStoragePathOnM = vol.getPath().getPath() + "/";
+                            }
+                            else if (vol.getDisk() != null  && vol.getDisk().isSd()) {
+                               externalSecondaryStoragePathOnM = vol.getPath().getPath() + "/";
+                            }
+                        }
+                        else {
+                            if (vol.isPhoneStorage()) {
+                               externalPrimaryStoragePathOnM = vol.getPath().getPath() + "/";
+                            }
+                            else if (vol.getDisk() != null  && vol.getDisk().isSd()) {
+                               externalSecondaryStoragePathOnM = vol.getPath().getPath() + "/";
+                            }
+                        }
+                    }
+
+                    if (externalPrimaryStoragePathOnM == null) {
+                       if(externalSecondaryStoragePathOnM != null) {
+                           externalPrimaryStoragePathOnM = externalSecondaryStoragePathOnM;
+                           externalSecondaryStoragePathOnM = null;
+                       }
+                    } else { // not null
+                       if (externalPrimaryStoragePathOnM.startsWith("/storage/emulated/")) {
+                           externalPrimaryStoragePathOnM = externalPrimaryStoragePathOnM
+                                               + UserHandle.myUserId() + "/";
+                       }
+                    }
+                    if (DEBUG) {
+                        Log.v(TAG, "prescan>>> externalPrimaryStoragePathOnM="
+                          + externalPrimaryStoragePathOnM
+                          + ", externalSecondaryStoragePathOnM="
+                          + externalSecondaryStoragePathOnM
+                          + ", uid = " + UserHandle.myUserId());
+                    }
+                    /**@}**/
+
                     while (c.moveToNext()) {
                         long rowId = c.getLong(FILES_PRESCAN_ID_COLUMN_INDEX);
                         String path = c.getString(FILES_PRESCAN_PATH_COLUMN_INDEX);
@@ -1242,8 +1588,51 @@ public class MediaScanner implements AutoCloseable {
                         if (path != null && path.startsWith("/")) {
                             boolean exists = false;
                             try {
+                               /**
+                                *M:Added for resolving  issue that caused by storage path
+                                *  changed on M.@{
+                                **/
+                                String newPath = null;
+                                if (path.startsWith("/storage/sdcard")) {
+                                    if(path.startsWith(EXTERNAL_PRIMARY_STORAGE_PATH_L)
+                                              && externalPrimaryStoragePathOnM != null) {
+                                        newPath = path.replace(EXTERNAL_PRIMARY_STORAGE_PATH_L,
+                                                externalPrimaryStoragePathOnM);
+                                    } else if(path.startsWith(EXTERNAL_SECONDARY_STORAGE_PATH_L)
+                                              && externalSecondaryStoragePathOnM != null) {
+                                        newPath = path.replace(EXTERNAL_SECONDARY_STORAGE_PATH_L,
+                                                externalSecondaryStoragePathOnM);
+                                    } else {
+                                        newPath = null;
+                                    }
+                                    if(newPath != null) {
+                                        if (DEBUG) {
+                                            Log.v(TAG, "try to check if newPath exists, "+ newPath);
+                                        }
+                                        if(Os.access(newPath, android.system.OsConstants.F_OK)) {
+                                            if (DEBUG) {
+                                                Log.v(TAG, "update>>> path=" + path
+                                                  + ", newPath=" + newPath);
+                                            }
+                                            exists = true;
+                                            Uri realUri = ContentUris.withAppendedId(mFilesUri,
+                                                                                     rowId);
+                                            ContentValues values = new ContentValues();
+                                            values.put(MediaStore.MediaColumns.DATA, newPath);
+                                            mMediaProvider.update(realUri, values,null, null);
+                                        }
+                                    }
+                                }
+
+                                if (newPath == null) {
                                 exists = Os.access(path, android.system.OsConstants.F_OK);
+                                }
+                                /**@}**/
                             } catch (ErrnoException e1) {
+                                /// M: Adds log for debug.
+                                if (DEBUG) {
+                                    Log.e(TAG, "prescan: ErrnoException! path=" + path);
+                                }
                             }
                             if (!exists && !MtpConstants.isAbstractObject(format)) {
                                 // do not delete missing playlists, since they may have been
@@ -1274,59 +1663,160 @@ public class MediaScanner implements AutoCloseable {
             deleter.flush();
         }
 
-        // compute original size of images
-        mOriginalCount = 0;
-        c = mMediaProvider.query(mImagesUri, ID_PROJECTION, null, null, null, null);
-        if (c != null) {
-            mOriginalCount = c.getCount();
-            c.close();
+        try {
+            // compute original size of images
+            mOriginalCount = 0;
+           /**
+            *M: Added 'force' parameter for forcing query external SD card
+            *    related db items while prescan under processing.@{
+            **/
+            c = mMediaProvider
+                .query(mImagesUri.buildUpon().appendQueryParameter("force", "1").build(),
+                      ID_PROJECTION, null, null, null, null);
+            /**@}**/
+            if (c != null) {
+                mOriginalCount = c.getCount();
+                c.close();
+                /// M: Make sure cursor not to be closed again in finally block.
+                c = null;
+            }
+            mOriginalVideoCount = 0;
+           /**
+            *M: Added 'force' parameter for forcing query external SD card
+            *    related db items while prescan under processing.@{
+            **/
+            c = mMediaProvider
+                .query(mVideoUri.buildUpon().appendQueryParameter("force", "1").build(),
+                       ID_PROJECTION, null, null, null, null);
+            /**@}**/
+            if (c != null) {
+                mOriginalVideoCount = c.getCount();
+                c.close();
+                /// M: Make sure cursor not to be closed again in finally block.
+                c = null;
+            }
+            /// M: log audio count in device
+           /**
+            *M: Added 'force' parameter for forcing query external SD card
+            *    related db items while prescan under processing.@{
+            **/
+            c = mMediaProvider
+                .query(mAudioUri.buildUpon().appendQueryParameter("force", "1").build(),
+                       ID_PROJECTION, null, null, null, null);
+            /**@}**/
+            if (c != null) {
+                audioCount = c.getCount();
+                c.close();
+                /// M: Make sure cursor not to be closed again in finally block.
+                c = null;
+            }
+        /// M: Make sure cursor to be closed. @{
+        } finally {
+            if (null != c) {
+                c.close();
+            }
+        /// @}
+        }
+
+        /// M: Adds log to debug setting ringtones and how many file scanned.
+        if (DEBUG) {
+            Log.v(TAG, "prescan<<< imageCount=" + mOriginalCount
+                + ",videoCount=" + mOriginalVideoCount
+                + ", audioCount=" + audioCount
+                + ", lastId=" + lastId + ",isEmpty=" + mWasEmptyPriorToScan);
         }
     }
 
     private void pruneDeadThumbnailFiles() {
+        if (DEBUG) {
+            Log.v(TAG, "pruneDeadThumbnailFiles>>>");
+        }
         HashSet<String> existingFiles = new HashSet<String>();
-        String directory = "/sdcard/DCIM/.thumbnails";
+        String directory = Environment.getExternalStorageDirectory().getPath() + "/"
+                + MiniThumbFile.getMiniThumbFileDirectoryPath();
         String [] files = (new File(directory)).list();
-        Cursor c = null;
-        if (files == null)
+        if (files == null) {
             files = new String[0];
-
+        }
         for (int i = 0; i < files.length; i++) {
             String fullPathString = directory + "/" + files[i];
             existingFiles.add(fullPathString);
         }
 
+        int imageThumbCount = 0;
+        int videoThumbCount = 0;
+        Cursor c = null;
         try {
+            /// M: remove useful image thumbnail files
             c = mMediaProvider.query(
                     mThumbsUri,
                     new String [] { "_data" },
                     null,
                     null,
                     null, null);
-            Log.v(TAG, "pruneDeadThumbnailFiles... " + c);
             if (c != null && c.moveToFirst()) {
+                imageThumbCount = c.getCount();
                 do {
                     String fullPathString = c.getString(0);
                     existingFiles.remove(fullPathString);
                 } while (c.moveToNext());
             }
-
-            for (String fileToDelete : existingFiles) {
-                if (false)
-                    Log.v(TAG, "fileToDelete is " + fileToDelete);
-                try {
-                    (new File(fileToDelete)).delete();
-                } catch (SecurityException ex) {
+            /// M: close image thumb query cursor
+            if (c != null) {
+                c.close();
+                c = null;
+            }
+            /// M: remove useful video thumbnail files
+            c = mMediaProvider.query(
+                    mVideoThumbsUri,
+                    new String [] { "_data" },
+                    null,
+                    null,
+                    null, null);
+            if (c != null && c.moveToFirst()) {
+                videoThumbCount = c.getCount();
+                do {
+                    String fullPathString = c.getString(0);
+                    existingFiles.remove(fullPathString);
+                } while (c.moveToNext());
+            }
+            if (c != null) {
+                c.close();
+                c = null;
+            }
+            /// M: If exist image or video thumbnail, remove MiniThumbFiles
+            if (imageThumbCount > 0 || videoThumbCount > 0) {
+                String miniThumbFilePath = directory + "/" + MiniThumbFile.getMiniThumbFilePrefix();
+                Iterator<String> iterator = existingFiles.iterator();
+                while (iterator.hasNext()) {
+                    String path = iterator.next();
+                    if (path.startsWith(miniThumbFilePath)) {
+                        iterator.remove();
+                    }
                 }
             }
 
-            Log.v(TAG, "/pruneDeadThumbnailFiles... " + c);
+            for (String fileToDelete : existingFiles) {
+                if (DEBUG) {
+                    Log.v(TAG, "delete dead thumbnail file " + fileToDelete);
+                }
+                try {
+                    (new File(fileToDelete)).delete();
+                } catch (SecurityException ex) {
+                    /// M: Adds log for debug.
+                    Log.e(TAG, "pruneDeadThumbnailFiles: path=" + fileToDelete, ex);
+                }
+            }
         } catch (RemoteException e) {
             // We will soon be killed...
+            Log.e(TAG, "pruneDeadThumbnailFiles: RemoteException!", e);
         } finally {
             if (c != null) {
                 c.close();
             }
+        }
+        if (DEBUG) {
+            Log.v(TAG, "pruneDeadThumbnailFiles<<< for " + directory);
         }
     }
 
@@ -1351,6 +1841,7 @@ public class MediaScanner implements AutoCloseable {
                 flush();
             }
         }
+
         public void flush() throws RemoteException {
             int size = whereArgs.size();
             if (size > 0) {
@@ -1359,7 +1850,6 @@ public class MediaScanner implements AutoCloseable {
                 int numrows = mProvider.delete(mBaseUri,
                         MediaStore.MediaColumns._ID + " IN (" +
                         whereClause.toString() + ")", foo);
-                //Log.i("@@@@@@@@@", "rows deleted: " + numrows);
                 whereClause.setLength(0);
                 whereArgs.clear();
             }
@@ -1373,8 +1863,10 @@ public class MediaScanner implements AutoCloseable {
             processPlayLists();
         }
 
-        if (mOriginalCount == 0 && mImagesUri.equals(Images.Media.getContentUri("external")))
+        if ((mOriginalCount == 0 || mOriginalVideoCount == 0)
+                && mImagesUri.equals(Images.Media.getContentUri("external"))) {
             pruneDeadThumbnailFiles();
+        }
 
         // allow GC to clean up
         mPlayLists.clear();
@@ -1413,7 +1905,7 @@ public class MediaScanner implements AutoCloseable {
             postscan(directories);
             long end = System.currentTimeMillis();
 
-            if (false) {
+            if (DEBUG) {
                 Log.d(TAG, " prescan time: " + (prescan - start) + "ms\n");
                 Log.d(TAG, "    scan time: " + (scan - prescan) + "ms\n");
                 Log.d(TAG, "postscan time: " + (end - scan) + "ms\n");
@@ -1439,6 +1931,7 @@ public class MediaScanner implements AutoCloseable {
 
             File file = new File(path);
             if (!file.exists()) {
+                Log.e(TAG, "scanSingleFile: Not exist path=" + path);
                 return null;
             }
 
@@ -1447,7 +1940,7 @@ public class MediaScanner implements AutoCloseable {
 
             // always scan the file, so we can return the content://media Uri for existing files
             return mClient.doScanFile(path, mimeType, lastModifiedSeconds, file.length(),
-                    false, true, MediaScanner.isNoMediaPath(path));
+                    file.isDirectory(), true, isNoMediaPath(path));
         } catch (RemoteException e) {
             Log.e(TAG, "RemoteException in MediaScanner.scanFile()", e);
             return null;
@@ -1538,6 +2031,11 @@ public class MediaScanner implements AutoCloseable {
                             return true;
                         }
                     }
+                    /// M: avoid loop in while@{
+                    else if (slashIndex == offset) {
+                        slashIndex++; //pass "//" case
+                    }
+                    /// @}
                     offset = slashIndex;
                 }
                 mMediaPaths.put(parent, "");
@@ -1559,7 +2057,9 @@ public class MediaScanner implements AutoCloseable {
 
             // no need to use the media scanner, but we need to update last modified and file size
             ContentValues values = new ContentValues();
-            values.put(Files.FileColumns.SIZE, file.length());
+            /// M: ALPS00670132, for WHQL ObjectSize folder case, folder file size must be 0
+            values.put(Files.FileColumns.SIZE, format == MtpConstants.FORMAT_ASSOCIATION ? 0 : file.length());
+
             values.put(Files.FileColumns.DATE_MODIFIED, lastModifiedSeconds);
             try {
                 String[] whereArgs = new String[] {  Integer.toString(objectHandle) };
@@ -1620,6 +2120,8 @@ public class MediaScanner implements AutoCloseable {
                 return new FileEntry(rowId, path, lastModified, format);
             }
         } catch (RemoteException e) {
+            /// M: Adds log for debug.
+            Log.e(TAG, "makeEntryFor: RemoteException! path=" + path, e);
         } finally {
             if (c != null) {
                 c.close();
@@ -1929,6 +2431,8 @@ public class MediaScanner implements AutoCloseable {
                 }
             }
         } catch (RemoteException e1) {
+            /// M: Adds log for debug.
+            Log.e(TAG, "processPlayLists: RemoteException!", e1);
         } finally {
             if (fileList != null) {
                 fileList.close();
@@ -1964,4 +2468,397 @@ public class MediaScanner implements AutoCloseable {
             super.finalize();
         }
     }
+
+    /// M: Checks out whether the mimetype is application/octet-stream. @(
+    private static final String MIME_APPLICATION_OCTET_STREAM = "application/octet-stream";
+    private boolean isValueslessMimeType(String mimetype) {
+        boolean valueless = false;
+        if (MIME_APPLICATION_OCTET_STREAM.equalsIgnoreCase(mimetype)) {
+            valueless = true;
+            if (DEBUG) {
+                Log.v(TAG, "isValueslessMimeType: mimetype=" + mimetype);
+            }
+        }
+        return valueless;
+    }
+    /// M: @}
+
+    /// M: MediaScanner Performance turning {@
+    /// Add some new api for MediaScanner performance enhancement feature,
+    /// we use threadpool to scan every folder in directories.
+
+    /**
+     * M: Store playlist file path and return to MediaScannerService so that it will process them
+     * when postScanAll called.
+     */
+    private ArrayList<String> mPlaylistFilePathList = new ArrayList<String>();
+
+    /**
+     * M: Pre-scan all, only call by this scanner created in thread pool.
+     * @hide
+     */
+    public void preScanAll(String volume) {
+        try {
+            prescan(null, true);
+        } catch (RemoteException e) {
+            Log.e(TAG, "RemoteException in MediaScanner.scan()", e);
+        }
+    }
+
+    /**
+     * M: Post scan all, only call by this scanner created in thread pool.
+     *
+     * @param playlistPath playlist file path, process them to database.
+     * @hide
+     */
+    public void postScanAll(ArrayList<String> playlistFilePathList) {
+        try {
+            /// handle playlists last, after we know what media files are on the storage.
+            /// Restore path list to file entry list, then process these playlist
+            if (mProcessPlaylists) {
+                for (String path : playlistFilePathList) {
+                    FileEntry entry = makeEntryFor(path);
+                    File file = new File(path);
+                    long lastModified = file.lastModified();
+                    // add some slack to avoid a rounding error
+                    long delta = (entry != null) ? (lastModified - entry.mLastModified) : 0;
+                    boolean wasModified = delta > 1 || delta < -1;
+                    if (entry == null || wasModified) {
+                        if (wasModified) {
+                            entry.mLastModified = lastModified;
+                        } else {
+                            entry = new FileEntry(0, path, lastModified, 0);
+                        }
+                        entry.mLastModifiedChanged = true;
+                    }
+                    mPlayLists.add(entry);
+                }
+                processPlayLists();
+            }
+        } catch (RemoteException e) {
+            Log.e(TAG, "RemoteException in MediaScanner.scan()", e);
+        }
+
+        if ((mOriginalCount == 0 || mOriginalVideoCount == 0)
+                && mImagesUri.equals(Images.Media.getContentUri("external"))) {
+            pruneDeadThumbnailFiles();
+        }
+
+        if (DEBUG) {
+            Log.v(TAG, "postScanAll");
+        }
+    }
+
+    /**
+     * M: Scan all given folder with right method. Single file and empty folder need scan special one by one.
+     *
+     * @param insertHanlder use to do entries insert
+     * @param folders The folders given to scan.
+     * @param volume External or internal
+     * @param isSingelFile whether the given folders is single file
+     *
+     * @return playlist file path scan in these folders
+     *
+     * @hide
+     */
+    public ArrayList<String> scanFolders(Handler insertHanlder, String[] folders, String volume, boolean isSingelFile) {
+        try {
+            /// Init mPlaylist because we may insert playlist in begin file.
+            mPlayLists.clear();
+
+            if (ENABLE_BULK_INSERTS) {
+                /// create MediaInserter for bulk inserts
+                mMediaInserter = new MediaInserter(insertHanlder, 100);
+            }
+            /// Single file scan it directly and folder need scan all it's sub files.
+            for (String path : folders) {
+                if (isSingelFile) {
+                    File file = new File(path);
+                    long lastModifiedSeconds = file.lastModified() / 1000; // lastModified is in milliseconds on Files.
+                    mClient.doScanFile(path, null, lastModifiedSeconds, file.length(),
+                            file.isDirectory(), false, isNoMediaPath(path));
+                } else {
+                    processDirectory(path, mClient);
+                }
+            }
+            if (ENABLE_BULK_INSERTS) {
+                /// flush remaining inserts
+                mMediaInserter.flushAll();
+                mMediaInserter = null;
+            }
+        } catch (SQLException e) {
+            /// this might happen if the SD card is removed while the media scanner is running
+            Log.e(TAG, "SQLException in MediaScanner.scan()", e);
+        } catch (UnsupportedOperationException e) {
+            /// this might happen if the SD card is removed while the media scanner is running
+            Log.e(TAG, "UnsupportedOperationException in MediaScanner.scan()", e);
+        } catch (RemoteException e) {
+            Log.e(TAG, "RemoteException in MediaScanner.scan()", e);
+        }
+
+        return mPlaylistFilePathList;
+    }
+
+    /**
+     * M: Scan all given folder with right method. Single file and empty folder need scan special one by one.
+     *
+     * @param folders The folders given to scan.
+     * @param volume External or internal
+     * @param isSingelFileOrEmptyFolder whether the given folders is single file or empty folder
+     *
+     * @return playlist file path scan in these folders
+     * @hide
+     */
+    public ArrayList<String> scanFolders(String[] folders, String volume, boolean isSingelFileOrEmptyFolder) {
+        try {
+            /// Init mPlaylist because we may insert playlist in begin file.
+            mPlayLists.clear();
+
+            if (ENABLE_BULK_INSERTS) {
+                /// create MediaInserter for bulk inserts
+                mMediaInserter = new MediaInserter(mMediaProvider, 500);
+            }
+            /// M: Call doScanFile to scan folder and use processDirecitory to scan subfolders.
+            for (String folder : folders) {
+                  File file = new File(folder);
+                  if (file.exists()) {
+                      // lastModified is in milliseconds on Files.
+                      long lastModifiedSeconds = file.lastModified() / 1000;
+                      mClient.doScanFile(folder, null, lastModifiedSeconds, file.length(),
+                              file.isDirectory(), false, isNoMediaPath(folder));
+                  }
+
+                  if (!isSingelFileOrEmptyFolder) {
+                    processDirectory(folder, mClient);
+                  }
+            }
+
+            if (ENABLE_BULK_INSERTS) {
+                /// flush remaining inserts
+                mMediaInserter.flushAll();
+                mMediaInserter = null;
+            }
+        } catch (SQLException e) {
+            /// this might happen if the SD card is removed while the media scanner is running
+            Log.e(TAG, "SQLException in MediaScanner.scan()", e);
+        } catch (UnsupportedOperationException e) {
+            /// this might happen if the SD card is removed while the media scanner is running
+            Log.e(TAG, "UnsupportedOperationException in MediaScanner.scan()", e);
+        } catch (RemoteException e) {
+            Log.e(TAG, "RemoteException in MediaScanner.scan()", e);
+        }
+
+        return mPlaylistFilePathList;
+    }
+    /// @}
+
+    /**M: Added for parsing stereo info.@{**/
+    private static final String XMP_HEADER_START = "http://ns.adobe.com/xap/1.0/\0";
+    private static final String XMP_EXT_MAIN_HEADER1 = "http://ns.adobe.com/xmp/extension/";
+    private static final String NS_GDEPTH = "http://ns.google.com/photos/1.0/depthmap/";
+    private static final String MTK_REFOCUS_PREFIX = "MRefocus";
+
+    private static final int SOI = 0xFFD8;
+    private static final int SOS = 0xFFDA;
+    private static final int APP1 = 0xFFE1;
+    private static final int APPXTAG_PLUS_LENGTHTAG_BYTE_COUNT = 4;
+
+    /**
+     * Check if current photo is stereo or not.
+     * @param filePath
+     *            file path of photo for checking
+     * @return true if stereo photo, false if not stereo photo
+     */
+    public static boolean isStereoPhoto(String filePath) {
+        if (filePath == null) {
+            if (DEBUG) {
+                Log.d(TAG, "<isStereoPhoto> filePath is null!!");
+            }
+            return false;
+        }
+
+        File srcFile = new File(filePath);
+        if (!srcFile.exists()) {
+            if (DEBUG) {
+                Log.d(TAG, "<isStereoPhoto> " + filePath + " not exists!!!");
+            }
+            return false;
+        }
+
+        long start = System.currentTimeMillis();
+        ArrayList<Section> sections = parseApp1Info(filePath);
+        if (sections == null || sections.size() < 0) {
+            if (DEBUG) {
+                Log.d(TAG, "<isStereoPhoto> " + filePath + ", no app1 sections");
+            }
+            return false;
+        }
+        RandomAccessFile rafIn = null;
+        try {
+            rafIn = new RandomAccessFile(filePath, "r");
+            for (int i = 0; i < sections.size(); i++) {
+                Section section = sections.get(i);
+                if (isStereo(section, rafIn)) {
+                    if (DEBUG) {
+                        Log.d(TAG, "<isStereoPhoto> " + filePath + " is stereo photo");
+                    }
+                    return true;
+                }
+            }
+            if (DEBUG) {
+                Log.d(TAG, "<isStereoPhoto> " + filePath + " is not stereo photo");
+            }
+            return false;
+        } catch (FileNotFoundException e) {
+            Log.e(TAG, "<isStereoPhoto> FileNotFoundException:", e);
+            return false;
+        } catch (IllegalArgumentException e) {
+            Log.e(TAG, "<isStereoPhoto> IllegalArgumentException:", e);
+            return false;
+        } finally {
+            try {
+                if (rafIn != null) {
+                    rafIn.close();
+                    rafIn = null;
+                }
+            } catch (IOException e) {
+                Log.e(TAG, "<isStereoPhoto> IOException:", e);
+            }
+            if (DEBUG) {
+                Log.d(TAG, "<isStereoPhoto> <performance> costs(ms): "
+                    + (System.currentTimeMillis() - start));
+            }
+        }
+    }
+
+    private static boolean isStereo(Section section, RandomAccessFile rafIn) {
+        try {
+            if (section.mIsXmpMain) {
+                rafIn.seek(section.mOffset + 2);
+                int len = rafIn.readShort() - 2;
+                rafIn.skipBytes(XMP_HEADER_START.length());
+                byte[] xmpBuffer = new byte[len - XMP_HEADER_START.length()];
+                rafIn.read(xmpBuffer, 0, xmpBuffer.length);
+                String xmpContent = new String(xmpBuffer);
+                if (xmpContent == null) {
+                    if (DEBUG) {
+                        Log.d(TAG, "<isStereo> xmpContent is null");
+                    }
+                    return false;
+                }
+                if (xmpContent.contains(MTK_REFOCUS_PREFIX)) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (IOException e) {
+            Log.e(TAG, "<isStereo> IOException:", e);
+            return false;
+        }
+    }
+
+    private static ArrayList<Section> parseApp1Info(String filePath) {
+        RandomAccessFile raf = null;
+        try {
+            raf = new RandomAccessFile(filePath, "r");
+            int value = raf.readUnsignedShort();
+            if (value != SOI) {
+                if (DEBUG) {
+                    Log.d(TAG, "<parseApp1Info> error, find no SOI");
+                }
+                return new ArrayList<Section>();
+            }
+            int marker = -1;
+            long offset = -1;
+            int length = -1;
+            ArrayList<Section> sections = new ArrayList<Section>();
+
+            while ((value = raf.readUnsignedShort()) != -1 && value != SOS) {
+                marker = value;
+                offset = raf.getFilePointer() - 2;
+                length = raf.readUnsignedShort();
+                if (value == APP1) {
+                    Section section =
+                            new Section(marker, offset, length);
+                    long currentPos = raf.getFilePointer();
+                    section = checkIfMainXmpInApp1(raf, section);
+                    if (section != null && section.mIsXmpMain) {
+                        sections.add(section);
+                        break;
+                    }
+                    raf.seek(currentPos);
+                }
+                raf.skipBytes(length - 2);
+            }
+
+            return sections;
+        } catch (IOException e) {
+            Log.e(TAG, "<parseApp1Info> IOException, path " + filePath, e);
+            return null;
+        } finally {
+            try {
+                if (raf != null) {
+                    raf.close();
+                    raf = null;
+                }
+            } catch (IOException e) {
+                Log.e(TAG, "<parseApp1Info> IOException, path " + filePath, e);
+            }
+        }
+    }
+
+    private static Section checkIfMainXmpInApp1(RandomAccessFile raf, Section section) {
+        if (section == null) {
+            if (DEBUG) {
+                Log.d(TAG, "<checkIfMainXmpInApp1> section is null!!!");
+            }
+            return null;
+        }
+        byte[] buffer = null;
+        String str = null;
+        try {
+            if (section.mMarker == APP1) {
+                raf.seek(section.mOffset + APPXTAG_PLUS_LENGTHTAG_BYTE_COUNT);
+                buffer = new byte[XMP_EXT_MAIN_HEADER1.length()];
+                raf.read(buffer, 0, buffer.length);
+                str = new String(buffer, 0, XMP_HEADER_START.length());
+                if (XMP_HEADER_START.equals(str)) {
+                    section.mIsXmpMain = true;
+                }
+            }
+            return section;
+        } catch (UnsupportedEncodingException e) {
+            Log.e(TAG, "<checkIfMainXmpInApp1> UnsupportedEncodingException" + e);
+            return null;
+        } catch (IOException e) {
+            Log.e(TAG, "<checkIfMainXmpInApp1> IOException" + e);
+            return null;
+        }
+    }
+
+    /**
+     * APP Section.
+     */
+    private static class Section {
+        // e.g. 0xffe1, exif
+        public int mMarker;
+        // marker offset from start of file
+        public long mOffset;
+        // app length, follow spec, include 2 length bytes
+        public int mLength;
+        public boolean mIsXmpMain;
+
+        /**
+          * Create a Section.
+          * @param marker section mark
+          * @param offset section address offset
+          * @param length section length
+          */
+        public Section(int marker, long offset, int length) {
+            mMarker = marker;
+            mOffset = offset;
+            mLength = length;
+        }
+    }
+    /**@}**/
 }

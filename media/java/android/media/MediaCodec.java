@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2012 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -1470,6 +1475,8 @@ import java.util.Map;
  </table>
  */
 final public class MediaCodec {
+    private static final String TAG = "MediaCodec";
+
     /**
      * Per buffer metadata includes an offset and size specifying
      * the range of valid data in the associated codec (output) buffer.
@@ -1578,6 +1585,12 @@ final public class MediaCodec {
     })
     @Retention(RetentionPolicy.SOURCE)
     public @interface BufferFlag {}
+
+    /**
+     * @hide
+     * This indicated that the frame is marked as the interpolated-frame.
+     */
+    public static final int BUFFER_FLAG_INTERPOLATE_FRAME     = 32;
 
     private EventHandler mEventHandler;
     private EventHandler mOnFrameRenderedHandler;

@@ -213,7 +213,9 @@ class TelephonyIcons {
     static final int FLIGHT_MODE_ICON = R.drawable.stat_sys_airplane_mode;
     static final int ROAMING_ICON = R.drawable.stat_sys_data_fully_connected_roam;
     static final int ICON_LTE = R.drawable.stat_sys_data_fully_connected_lte;
+
     static final int ICON_LTE_PLUS = R.drawable.stat_sys_data_fully_connected_lte_plus;
+
     static final int ICON_G = R.drawable.stat_sys_data_fully_connected_g;
     static final int ICON_E = R.drawable.stat_sys_data_fully_connected_e;
     static final int ICON_H = R.drawable.stat_sys_data_fully_connected_h;
@@ -394,7 +396,6 @@ class TelephonyIcons {
             true,
             TelephonyIcons.QS_DATA_LTE
             );
-
     static final MobileIconGroup LTE_PLUS = new MobileIconGroup(
             "LTE+",
             TelephonyIcons.TELEPHONY_SIGNAL_STRENGTH,
@@ -409,7 +410,6 @@ class TelephonyIcons {
             true,
             TelephonyIcons.QS_DATA_LTE_PLUS
             );
-
     static final MobileIconGroup ROAMING = new MobileIconGroup(
             "Roaming",
             TelephonyIcons.TELEPHONY_SIGNAL_STRENGTH_ROAMING,
@@ -435,9 +435,9 @@ class TelephonyIcons {
             TelephonyIcons.QS_TELEPHONY_NO_NETWORK,
             AccessibilityContentDescriptions.PHONE_SIGNAL_STRENGTH[0],
             R.string.accessibility_cell_data_off,
-            TelephonyIcons.ICON_DATA_DISABLED,
+            0,
             false,
-            TelephonyIcons.QS_ICON_DATA_DISABLED
+            0
             );
 }
 

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -751,6 +756,33 @@ public abstract class ApplicationThreadNative extends Binder
             return true;
         }
 
+        /// M: Mediatek added functions start
+
+        /// M: ANR mechanism for Message History/Queue @{
+        case DUMP_MESSAGE_HISTORY_TRANSACTION:
+        {
+            dumpMessageHistory();
+            return true;
+        }
+        case ENABLE_LOOPER_LOG:
+        {
+            enableLooperLog();
+            return true;
+        }
+        /// M: ANR mechanism for Message History/Queue @}
+
+        /// M: Dynamically enable AMS ActivityThread logs @{
+        case CONFIG_ACTIVITY_LOG_TAG:
+        {
+            data.enforceInterface(IApplicationThread.descriptor);
+            String tag = data.readString();
+            boolean on = data.readInt() != 0;
+            configActivityLogTag(tag, on);
+            return true;
+        }
+        /// M: Dynamically enable AMS ActivityThread logs @}
+
+        /// M: Mediatek added functions end
         }
 
         return super.onTransact(code, data, reply, flags);
@@ -1524,4 +1556,42 @@ class ApplicationThreadProxy implements IApplicationThread {
                 IBinder.FLAG_ONEWAY);
         data.recycle();
     }
+
+    /// M: Mediatek added functions start
+
+    /// M: ANR mechanism for Message History/Queue @{
+    public void dumpMessageHistory() throws RemoteException {
+        Parcel data = Parcel.obtain();
+        data.writeInterfaceToken(IApplicationThread.descriptor);
+        mRemote.transact(DUMP_MESSAGE_HISTORY_TRANSACTION, data, null, IBinder.FLAG_ONEWAY);
+        data.recycle();
+    }
+    public void enableLooperLog() throws RemoteException {
+        Parcel data = Parcel.obtain();
+        data.writeInterfaceToken(IApplicationThread.descriptor);
+        mRemote.transact(ENABLE_LOOPER_LOG, data, null, IBinder.FLAG_ONEWAY);
+        data.recycle();
+    }
+    /// M: ANR mechanism for Message History/Queue @}
+    /// M: ANR mechanism for Message History/Queue for system server @{
+    public void dumpAllMessageHistory() throws RemoteException {
+        Parcel data = Parcel.obtain();
+        data.writeInterfaceToken(IApplicationThread.descriptor);
+        mRemote.transact(DUMP_ALL_MESSAGE_HISTORY_TRANSACTION, data, null, IBinder.FLAG_ONEWAY);
+        data.recycle();
+    }
+    /// M: ANR mechanism for Message History/Queue for system server @}
+
+    /// M: Dynamically enable AMS ActivityThread logs @{
+    public void configActivityLogTag(String tag, boolean on) throws RemoteException {
+        Parcel data = Parcel.obtain();
+        data.writeInterfaceToken(IApplicationThread.descriptor);
+        data.writeString(tag);
+        data.writeInt(on ? 1 : 0);
+        mRemote.transact(CONFIG_ACTIVITY_LOG_TAG, data, null, IBinder.FLAG_ONEWAY);
+        data.recycle();
+    }
+    /// M: Dynamically enable AMS ActivityThread logs @}
+
+    /// M: Mediatek added functions end
 }

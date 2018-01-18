@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,6 +20,10 @@
  */
 
 package android.util;
+
+import com.mediatek.common.MPlugin;
+import com.mediatek.common.util.IPatterns;
+import com.mediatek.common.util.IWebProtocolNames;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -306,6 +315,12 @@ public class Patterns {
     /* A word boundary or end of input.  This is to stop foo.sure from matching as foo.su */
     private static final String WORD_BOUNDARY = "(?:\\b|$|^)";
 
+    private static final String CHINA_WORD_BOUNDARY = "(?:"
+            + WORD_BOUNDARY
+            + "|"
+            + "(?:" + UCS_CHAR + ")"
+            + ")";
+
     private static final String USER_INFO = "(?:[a-zA-Z0-9\\$\\-\\_\\.\\+\\!\\*\\'\\(\\)"
             + "\\,\\;\\?\\&\\=]|(?:\\%[a-fA-F0-9]{2})){1,64}(?:\\:(?:[a-zA-Z0-9\\$\\-\\_"
             + "\\.\\+\\!\\*\\'\\(\\)\\,\\;\\?\\&\\=]|(?:\\%[a-fA-F0-9]{2})){1,25})?\\@";
@@ -370,12 +385,34 @@ public class Patterns {
             + WORD_BOUNDARY
             + ")";
 
+    private static final String CHINA_WEB_URL_WITHOUT_PROTOCOL = "("
+            + CHINA_WORD_BOUNDARY
+            + "(?<!:\\/\\/)"
+            + "(?i:"
+            + "(?:" + STRICT_DOMAIN_NAME + ")"
+            + "(?:" + PORT_NUMBER + ")?"
+            + ")"
+            + "(?:" + PATH_AND_QUERY + ")?"
+            + CHINA_WORD_BOUNDARY
+            + ")";
+
     /**
      * Regular expression to match strings that start with a supported protocol. Rules for domain
      * names and TLDs are more relaxed. TLDs are optional.
      */
     private static final String WEB_URL_WITH_PROTOCOL = "("
             + WORD_BOUNDARY
+            + "(?:"
+            + "(?:" + PROTOCOL + "(?:" + USER_INFO + ")?" + ")"
+            + "(?:" + RELAXED_DOMAIN_NAME + ")?"
+            + "(?:" + PORT_NUMBER + ")?"
+            + ")"
+            + "(?:" + PATH_AND_QUERY + ")?"
+            + WORD_BOUNDARY
+            + ")";
+
+    private static final String CHINA_WEB_URL_WITH_PROTOCOL = "("
+            + CHINA_WORD_BOUNDARY
             + "(?:"
             + "(?:" + PROTOCOL + "(?:" + USER_INFO + ")?" + ")"
             + "(?:" + RELAXED_DOMAIN_NAME + ")?"
@@ -394,6 +431,10 @@ public class Patterns {
      */
     public static final Pattern AUTOLINK_WEB_URL = Pattern.compile(
             "(" + WEB_URL_WITH_PROTOCOL + "|" + WEB_URL_WITHOUT_PROTOCOL + ")");
+
+    //M: Add new flag for china operator. Refer to ALPS02828852.
+    private static final Pattern CHINA_AUTOLINK_WEB_URL = Pattern.compile(
+            "(" + CHINA_WEB_URL_WITH_PROTOCOL + "|" + CHINA_WEB_URL_WITHOUT_PROTOCOL + ")");
 
     /**
      * Regular expression for valid email characters. Does not include some of the valid characters
@@ -425,6 +466,60 @@ public class Patterns {
             WORD_BOUNDARY + ")"
     );
 
+    /**
+     * M: The extended web url pattern
+     */
+    private static Pattern sWebUrlPattern = null;
+
+    /**
+     * M: Use this method to get web url pattern with extended protocol name
+     * @hide
+     * @return the exntended pattern of web url
+     */
+    public static final Pattern getWebUrlPattern() {
+        if (sWebUrlPattern == null) {
+            Pattern urlPattern = AUTOLINK_WEB_URL;
+            IPatterns patternPlugin = (IPatterns) MPlugin
+                    .createInstance(IPatterns.class.getName());
+            if (patternPlugin != null) {
+                if (patternPlugin.getPatternType() == IPatterns.PATTERN_CHINA) {
+                    urlPattern = CHINA_AUTOLINK_WEB_URL;
+                } else {
+                    Log.d("Patterns",
+                            "getWebUrlPattern(), unrecognized pattern type: "
+                                    + patternPlugin.getPatternType());
+                }
+            } else {
+                Log.d("Patterns", "getWebUrlPattern(), IPatterns "
+                        + "fail to create plugin instance");
+            }
+
+            IWebProtocolNames plugin = (IWebProtocolNames) MPlugin
+                    .createInstance(IWebProtocolNames.class.getName());
+            if (plugin != null) {
+                String newProtocolsStr = plugin.getExtendedWebUrlProtocol();
+                if (newProtocolsStr != null) {
+                    String webUrlStr = urlPattern.toString();
+                    int index = webUrlStr.indexOf("http|");
+                    if (index != -1) {
+                        webUrlStr = new StringBuilder(webUrlStr).insert(index,
+                                newProtocolsStr).toString();
+                        urlPattern = Pattern.compile(webUrlStr);
+                    } else {
+                        Log.d("Patterns", "getWebUrlPattern(), no http "
+                                + "in extended protocol");
+                    }
+                }
+            } else {
+                Log.d("Patterns", "getWebUrlPattern(), IWebProtocolNames "
+                        + "fail to create plugin instance");
+            }
+
+            sWebUrlPattern = urlPattern;
+        }
+        return sWebUrlPattern;
+    }
+
     public static final Pattern EMAIL_ADDRESS
         = Pattern.compile(
             "[a-zA-Z0-9\\+\\.\\_\\%\\-\\+]{1,256}" +
@@ -455,6 +550,18 @@ public class Patterns {
                 "(\\+[0-9]+[\\- \\.]*)?"        // +<digits><sdd>*
                 + "(\\([0-9]+\\)[\\- \\.]*)?"   // (<digits>)<sdd>*
                 + "([0-9][0-9\\- \\.]+[0-9])"); // <digit><digit|sdd>+<digit>
+
+    /**
+     * M: MTK Version for ALPS00934864
+     * @hide
+     * @internal
+     */
+    public static final Pattern PHONE_EX
+        = Pattern.compile(// sdd = space, dot, or dash
+                "(\\+[0-9\\(\\)]+[\\- \\.]*)?"                                    // +<digits or ( or )><sdd>*
+                + "(\\([0-9\\(\\)]+\\)[\\- \\.]*)?"                               // (<digits or ( or )>)<sdd>*
+                + "([0-9\\(\\)][0-9\\(\\)\\- \\.][0-9\\(\\)\\- \\.]+[0-9\\(\\)])" // <digit or ( or )><digit or ( or )|sdd>+<digit>
+                + "(,? *)?");
 
     /**
      *  Convenience method to take all of the non-null matching groups in a

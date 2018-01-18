@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,7 +30,7 @@ import com.android.ims.internal.IImsVideoCallCallback;
 /**
  * Internal remote interface for IMS's video call provider.
  *
- * At least initially, this aidl mirrors telecomm's {@link IVideoCallProvider}. We created a
+ * At least initially, this aidl mirrors telecom's {@link IVideoCallProvider}. We created a
  * separate aidl interface even though the methods and parameters are same because the
  * {@link IVideoCallProvider} was specifically created as a binder for inter-process communication
  * between Telecomm and Telephony.
@@ -62,4 +67,8 @@ oneway interface IImsVideoCallProvider {
     void requestCallDataUsage();
 
     void setPauseImage(in Uri uri);
+
+    /* M: ViLTE part start */
+    void setUIMode(int mode);
+    /* M: ViLTE part end */
 }

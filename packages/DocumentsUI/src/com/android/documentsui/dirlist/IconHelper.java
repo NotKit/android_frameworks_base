@@ -23,6 +23,10 @@ import static com.android.documentsui.State.MODE_LIST;
 import android.content.ContentProviderClient;
 import android.content.ContentResolver;
 import android.content.Context;
+import android.database.Cursor;
+/// M: DRM refactory
+import android.drm.DrmStore;
+
 import android.graphics.Bitmap;
 import android.graphics.Point;
 import android.graphics.drawable.Drawable;
@@ -32,10 +36,13 @@ import android.os.CancellationSignal;
 import android.os.OperationCanceledException;
 import android.provider.DocumentsContract;
 import android.provider.DocumentsContract.Document;
+import android.provider.MediaStore;
 import android.support.annotation.Nullable;
 import android.util.Log;
 import android.widget.ImageView;
+import android.view.View;
 
+import com.android.documentsui.DocumentsFeatureOption;
 import com.android.documentsui.DocumentsApplication;
 import com.android.documentsui.IconUtils;
 import com.android.documentsui.MimePredicate;
@@ -45,6 +52,15 @@ import com.android.documentsui.R;
 import com.android.documentsui.State;
 import com.android.documentsui.State.ViewMode;
 import com.android.documentsui.ThumbnailCache;
+import static com.android.documentsui.model.DocumentInfo.getCursorInt;
+import static com.android.documentsui.model.DocumentInfo.getCursorString;
+
+
+/// M: Add to support drm
+/// M: DRM refactory
+import com.mediatek.omadrm.OmaDrmStore;
+import com.mediatek.omadrm.OmaDrmUtils;
+
 
 /**
  * A class to assist with loading and managing the Images (i.e. thumbnails and icons) associated
@@ -205,15 +221,57 @@ public class IconHelper {
      * @return
      */
     public void loadThumbnail(Uri uri, String mimeType, int docFlags, int docIcon,
-            ImageView iconThumb, ImageView iconMime, @Nullable ImageView subIconMime) {
+            ImageView iconThumb, ImageView iconMime, @Nullable ImageView subIconMime,
+                              Cursor cursor, ImageView mIconDrm) {
         boolean cacheHit = false;
 
         final String docAuthority = uri.getAuthority();
 
+        /// M: add to support drm, show drm lock refer to drm right except fl drm file.
+        /// we don't show drm lock icon
+        /// with drm mothod is invilid(-1),
+        /// this may happen when drm file has been delete and download want to show
+        /// them to users. {@
+        final ImageView iconDrm = mIconDrm;
+        boolean isDrm = getCursorInt(cursor, MediaStore.MediaColumns.IS_DRM) > 0;
+        int drmMethod = getCursorInt(cursor, MediaStore.MediaColumns.DRM_METHOD);
+        boolean showDrmThumbnail = true;
+        Log.d(TAG, "DRM isDRM = " + isDrm + " drmMethod = " + drmMethod + " support DRM = "
+              + DocumentsFeatureOption.IS_SUPPORT_DRM);
+        if (DocumentsFeatureOption.IS_SUPPORT_DRM && isDrm
+                && (drmMethod > 0 /*&& drmMethod != OmaDrmStore.Method.FL*/)) {
+            int actionId = OmaDrmUtils.getActionByMimetype(mimeType);
+            String data = getCursorString(cursor, MediaStore.MediaColumns.DATA);
+            /// Only data is not null can get drm real right status.
+            int right = DrmStore.RightsStatus.RIGHTS_INVALID;
+            if (data != null) {
+                right = DocumentsApplication.getDrmClient(mContext).checkRightsStatus(data,
+                        actionId);
+            }
+            /// Only valid right need show open lock icon and thumbnail.
+            int lockResId = com.mediatek.internal.R.drawable.drm_red_lock;
+            showDrmThumbnail = false;
+            if (right == DrmStore.RightsStatus.RIGHTS_VALID) {
+                lockResId = com.mediatek.internal.R.drawable.drm_green_lock;
+                showDrmThumbnail = true;
+            }
+            Log.d(TAG, "DRM icon displayed");
+            iconDrm.setVisibility(View.VISIBLE);
+            iconDrm.setImageResource(lockResId);
+        } else {
+            Log.d(TAG, "DRM icon not displayed");
+            iconDrm.setVisibility(View.GONE);
+        }
+        /// @}
+
+
         final boolean supportsThumbnail = (docFlags & Document.FLAG_SUPPORTS_THUMBNAIL) != 0;
         final boolean allowThumbnail = (mMode == MODE_GRID)
                 || MimePredicate.mimeMatches(MimePredicate.VISUAL_MIMES, mimeType);
-        final boolean showThumbnail = supportsThumbnail && allowThumbnail && mThumbnailsEnabled;
+
+        /// M: Control drm thumbnail, only valid right need show it.
+        final boolean showThumbnail = supportsThumbnail && allowThumbnail && mThumbnailsEnabled
+            && showDrmThumbnail;
         if (showThumbnail) {
             final Bitmap cachedResult = mCache.get(uri);
             if (cachedResult != null) {

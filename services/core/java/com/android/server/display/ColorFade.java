@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,6 +34,7 @@ import android.graphics.PixelFormat;
 import android.graphics.SurfaceTexture;
 import android.hardware.display.DisplayManagerInternal;
 import android.hardware.display.DisplayManagerInternal.DisplayTransactionListener;
+import android.os.Build;
 import android.opengl.EGL14;
 import android.opengl.EGLConfig;
 import android.opengl.EGLContext;
@@ -59,7 +65,7 @@ import com.android.server.LocalServices;
 final class ColorFade {
     private static final String TAG = "ColorFade";
 
-    private static final boolean DEBUG = false;
+    private static final boolean DEBUG = "eng".equals(Build.TYPE);
 
     // The layer for the electron beam surface.
     // This is currently hardcoded to be one layer above the boot animation.

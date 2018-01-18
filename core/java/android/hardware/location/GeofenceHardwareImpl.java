@@ -40,7 +40,7 @@ import java.util.Iterator;
  */
 public final class GeofenceHardwareImpl {
     private static final String TAG = "GeofenceHardwareImpl";
-    private static final boolean DEBUG = Log.isLoggable(TAG, Log.DEBUG);
+    private static final boolean DEBUG = true;//Log.isLoggable(TAG, Log.DEBUG);
     private static final int FIRST_VERSION_WITH_CAPABILITIES = 2;
 
     private final Context mContext;
@@ -578,6 +578,7 @@ public final class GeofenceHardwareImpl {
             switch (msg.what) {
                 case ADD_GEOFENCE_CALLBACK:
                     geofenceId = msg.arg1;
+                    Log.d(TAG, "handle add geofence callback id:" + geofenceId);
                     synchronized (mGeofences) {
                         callback = mGeofences.get(geofenceId);
                     }
@@ -588,17 +589,16 @@ public final class GeofenceHardwareImpl {
                         } catch (RemoteException e) {Log.i(TAG, "Remote Exception:" + e);}
                     }
                     releaseWakeLock();
+                    Log.d(TAG, "handle add fence done");
                     break;
                 case REMOVE_GEOFENCE_CALLBACK:
                     geofenceId = msg.arg1;
+                    Log.d(TAG, "handle remove geofence callback id:" + geofenceId);
                     synchronized (mGeofences) {
                         callback = mGeofences.get(geofenceId);
                     }
 
                     if (callback != null) {
-                        try {
-                            callback.onGeofenceRemove(geofenceId, msg.arg2);
-                        } catch (RemoteException e) {}
                         IBinder callbackBinder = callback.asBinder();
                         boolean callbackInUse = false;
                         synchronized (mGeofences) {
@@ -628,8 +628,13 @@ public final class GeofenceHardwareImpl {
                                 }
                             }
                         }
+                        /// M: Remove here to make sure remove process is done.
+                        try {
+                            callback.onGeofenceRemove(geofenceId, msg.arg2);
+                        } catch (RemoteException e) {}
                     }
                     releaseWakeLock();
+                    Log.d(TAG, "handle remove geofence done");
                     break;
 
                 case PAUSE_GEOFENCE_CALLBACK:

@@ -1077,6 +1077,9 @@ class TouchExplorer implements EventStreamTransformation, AccessibilityGestureDe
                     return CLICK_LOCATION_LAST_TOUCH_EXPLORED;
                 }
             }
+            /// M: [ALPS01957706] Should return CLICK_LOCATION_LAST_TOUCH_EXPLORED
+            /// if having last explore event.
+            return CLICK_LOCATION_LAST_TOUCH_EXPLORED;
         }
         if (mAms.getAccessibilityFocusClickPointInScreen(outLocation)) {
             return CLICK_LOCATION_ACCESSIBILITY_FOCUS;

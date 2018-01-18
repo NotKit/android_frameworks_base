@@ -1363,6 +1363,14 @@ status_t preProcessImage(const Bundle* bundle, const sp<AaptAssets>& /* assets *
         return NO_ERROR;
     }
 
+    /// M: ALPS01947812, only process PNG images @{
+#ifdef MTK_GMO_ROM_OPTIMIZE
+    if (file->getSourceFile().getPathExtension() != ".png") {
+        return NO_ERROR;
+    }
+#endif
+    /// @}
+
     // Example of renaming a file:
     //*outNewLeafName = file->getPath().getBasePath().getFileName();
     //outNewLeafName->append(".nupng");

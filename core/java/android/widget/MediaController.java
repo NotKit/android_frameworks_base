@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -170,13 +175,20 @@ public class MediaController extends FrameLayout {
 
         // we need to know the size of the controller so we can properly position it
         // within its space
-        mDecor.measure(MeasureSpec.makeMeasureSpec(mAnchor.getWidth(), MeasureSpec.AT_MOST),
-                MeasureSpec.makeMeasureSpec(mAnchor.getHeight(), MeasureSpec.AT_MOST));
+        /// M: fix nullpointer from xml @{
+        if (mDecor != null) {
+            mDecor.measure(MeasureSpec.makeMeasureSpec(mAnchor.getWidth(), MeasureSpec.AT_MOST),
+                    MeasureSpec.makeMeasureSpec(mAnchor.getHeight(), MeasureSpec.AT_MOST));
+        }
 
         WindowManager.LayoutParams p = mDecorLayoutParams;
-        p.width = mAnchor.getWidth();
-        p.x = anchorPos[0] + (mAnchor.getWidth() - p.width) / 2;
-        p.y = anchorPos[1] + mAnchor.getHeight() - mDecor.getMeasuredHeight();
+        if (p != null) {
+            p.width = mAnchor.getWidth();
+            p.x = anchorPos[0] + (mAnchor.getWidth() - p.width) / 2;
+            p.y = anchorPos[1] + mAnchor.getHeight()
+                    - ((mDecor != null) ? mDecor.getMeasuredHeight() : 0);
+        }
+        /// @}
     }
 
     // This is called whenever mAnchor's layout bound changes

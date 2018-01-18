@@ -92,4 +92,50 @@ interface IImsService {
      * MultiEndpoint interface for DEP.
      */
     IImsMultiEndpoint getMultiEndpointInterface(int serviceId);
+
+    /**
+     * call interface for allowing/refusing the incoming call indication send to App.
+     */
+    void setCallIndication(String callId, String callNum, int seqNum, boolean isAllow);
+
+    /**
+     * Use to query ims enable/disable status.
+     */
+    int getImsState();
+
+    /**
+     * Use to query ims registration information.
+     */
+    boolean getImsRegInfo(int phoneId);
+
+    /**
+     * Use to query ims registration extension information.
+     */
+    String getImsExtInfo();
+
+    /**
+     * Use to hang up all calls.
+     */
+    void hangupAllCall();
+
+    ///M: WFC: Use to get WFC registration status @ {
+    /**
+     * Use to get registration status.
+     */
+    int getRegistrationStatus();
+    /// @}
+
+    ///M: Used to deregister IMS @ {
+    /**
+     * Used to deregister IMS.
+     */
+    void deregisterIms(int phoneId);
+    /// @}
+
+    ///M: Used to notify radio state change @ {
+    /**
+     * Used to notify radio state change.
+     */
+    void updateRadioState(int radioState, int phoneId);
+    /// @}
 }

@@ -117,14 +117,18 @@ static void android_view_DisplayListCanvas_callDrawGLFunction(JNIEnv* env, jobje
 // ----------------------------------------------------------------------------
 
 static jint android_view_DisplayListCanvas_getMaxTextureWidth(JNIEnv* env, jobject clazz) {
+    /// M: [ALPS02008699] wait to make sure Caches is initialized.
     if (!Caches::hasInstance()) {
+        ALOGW("can't get MaxTextureWidth, no Caches instance");
         android::uirenderer::renderthread::RenderProxy::staticFence();
     }
     return Caches::getInstance().maxTextureSize;
 }
 
 static jint android_view_DisplayListCanvas_getMaxTextureHeight(JNIEnv* env, jobject clazz) {
+    /// M: [ALPS02008699] wait to make sure Caches is initialized.
     if (!Caches::hasInstance()) {
+        ALOGW("can't get MaxTextureHeight, no Caches instance");
         android::uirenderer::renderthread::RenderProxy::staticFence();
     }
     return Caches::getInstance().maxTextureSize;

@@ -134,10 +134,11 @@ public final class PrintSpoolerService extends Service {
             mPersistanceManager.readStateLocked();
             handleReadPrintJobsLocked();
         }
-
+        Log.i(LOG_TAG, "handleReadPrintJobsLocked end");
         synchronized (sLock) {
             sInstance = this;
         }
+        Log.i(LOG_TAG, "onCreate end");
     }
 
     @Override

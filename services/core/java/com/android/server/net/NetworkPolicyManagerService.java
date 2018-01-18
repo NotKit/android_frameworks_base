@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -72,6 +77,11 @@ import static android.net.wifi.WifiManager.EXTRA_NETWORK_INFO;
 import static android.net.wifi.WifiManager.EXTRA_WIFI_CONFIGURATION;
 import static android.net.wifi.WifiManager.EXTRA_WIFI_INFO;
 import static android.text.format.DateUtils.DAY_IN_MILLIS;
+// MTK add
+import static android.telephony.TelephonyManager.SIM_STATE_READY;
+import static android.net.NetworkTemplate.MATCH_WIFI_WILDCARD;
+import static android.net.NetworkPolicyManager.ACTION_POLICY_CREATED;
+import static android.net.NetworkPolicyManager.ACTION_NETWORK_OVERLIMIT_CHANGED;
 
 import static com.android.internal.util.ArrayUtils.appendInt;
 import static com.android.internal.util.Preconditions.checkNotNull;
@@ -163,6 +173,12 @@ import android.util.SparseIntArray;
 import android.util.TrustedTime;
 import android.util.Xml;
 
+// MTK add
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
+import android.os.SystemProperties;
+
 import com.android.internal.R;
 import com.android.internal.annotations.GuardedBy;
 import com.android.internal.annotations.VisibleForTesting;
@@ -173,6 +189,10 @@ import com.android.server.DeviceIdleController;
 import com.android.server.EventLogTags;
 import com.android.server.LocalServices;
 import com.android.server.SystemConfig;
+
+// MTK add
+import com.android.internal.telephony.IccCardConstants;
+import com.android.internal.telephony.TelephonyIntents;
 
 import libcore.io.IoUtils;
 
@@ -195,6 +215,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
+
+// M:DataUsage for ViLTE
+import android.telecom.TelecomManager;
 
 /**
  * Service that maintains low-level network policy rules, using
@@ -226,8 +250,13 @@ import java.util.List;
  */
 public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
     static final String TAG = "NetworkPolicy";
-    private static final boolean LOGD = false;
-    private static final boolean LOGV = false;
+    ///M: modefied flag  @{
+    private static final boolean LOGD = true;
+    private static final boolean LOGV = true;
+    private static final String PROP_FORCE_DEBUG_KEY = "persist.log.tag.tel_dbg";
+    private static final boolean ENG_DBG = android.util.Log.isLoggable(TAG, android.util.Log.DEBUG)
+        ||(SystemProperties.getInt(PROP_FORCE_DEBUG_KEY, 0) == 1);
+    ///@}
 
     private static final int VERSION_INIT = 1;
     private static final int VERSION_ADDED_SNOOZE = 2;
@@ -291,6 +320,11 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
     private static final int MSG_REMOVE_INTERFACE_QUOTA = 11;
     private static final int MSG_RESTRICT_BACKGROUND_BLACKLIST_CHANGED = 12;
     private static final int MSG_SET_FIREWALL_RULES = 13;
+    ///M: add for ALPS00394633, exempt for MMS while limit reaches @{
+    private static final int MSG_INTERFACE_DOWN = 14;
+    ///@}
+
+    private static final String INVALID_SUBSCRIBER_ID = "FFFFFFFFFFFFFFF"; //valid: 15 digits
 
     private final Context mContext;
     private final IActivityManager mActivityManager;
@@ -321,6 +355,10 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
     final ArrayMap<NetworkTemplate, NetworkPolicy> mNetworkPolicy = new ArrayMap<>();
     /** Currently active network rules for ifaces. */
     final ArrayMap<NetworkPolicy, String[]> mNetworkRules = new ArrayMap<>();
+
+    // M:DataUsage for ViLTE
+    final ArrayMap<String, Boolean> mNetworkTemplateOverWarningState = new ArrayMap<>();
+    final ArrayMap<String, Boolean> mNetworkTemplateOverLimitState = new ArrayMap<>();
 
     /** Defined UID policies. */
     @GuardedBy("mUidRulesFirstLock") final SparseIntArray mUidPolicy = new SparseIntArray();
@@ -631,7 +669,16 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
 
             // watch for network interfaces to be claimed
             final IntentFilter connFilter = new IntentFilter(CONNECTIVITY_ACTION);
+            //M: ALPS01878264: Due to setPolicyDataEnable is implemented,
+            //   data will not re-connected after execeed limit.
+            connFilter.addAction(TelephonyIntents.ACTION_DEFAULT_DATA_SUBSCRIPTION_CHANGED);
+            ///M: add for ALPS00394633, exempt for MMS while limit reaches
+            connFilter.addAction("com.mediatek.conn.MMS_CONNECTIVITY");
             mContext.registerReceiver(mConnReceiver, connFilter, CONNECTIVITY_INTERNAL, mHandler);
+
+            // M: Support SIM hot plug, listen for SIM  state changes
+            final IntentFilter mSimFilter = new IntentFilter(TelephonyIntents.ACTION_SIM_STATE_CHANGED);
+            mContext.registerReceiver(mSimStateReceiver, mSimFilter);
 
             // listen for package changes to update policy
             final IntentFilter packageFilter = new IntentFilter();
@@ -741,6 +788,12 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
                 // global background data policy
                 if (LOGV) Slog.v(TAG, "ACTION_PACKAGE_ADDED for uid=" + uid);
                 synchronized (mUidRulesFirstLock) {
+                    // MTK: Add back whitelist
+                    if (mDefaultRestrictBackgroundWhitelistUids.get(uid) &&
+                        !mRestrictBackgroundWhitelistRevokedUids.get(uid)) {
+                        if (LOGV) Slog.v(TAG, "add default white list back, uid=" + uid);
+                        addRestrictBackgroundWhitelistedUid(uid);
+                    }
                     updateRestrictionRulesForUidUL(uid);
                 }
             }
@@ -933,6 +986,18 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
                 mHandler.obtainMessage(MSG_LIMIT_REACHED, iface).sendToTarget();
             }
         }
+        ///M: add for ALPS00394633, exempt for MMS while limit reaches @{
+        @Override
+        public void interfaceRemoved(String iface) {
+            Slog.d(TAG, "interfaceRemoved: " + iface);
+            if (iface.contains("ccmni") || iface.contains("ppp") || iface.contains("cc2mni") ||
+                iface.contains("ccemni")) {
+                mHandler.obtainMessage(MSG_INTERFACE_DOWN, iface).sendToTarget();
+            } else {
+                Slog.d(TAG, "interfaceRemoved: ignore " + iface);
+            }
+        }
+        ///@}
     };
 
     /**
@@ -967,6 +1032,16 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
                 } else {
                     enqueueNotification(policy, TYPE_LIMIT, totalBytes);
                     notifyOverLimitNL(policy.template);
+                    // M:DataUsage for ViLTE
+                    final TelecomManager tm =
+                        (TelecomManager) mContext.getSystemService(Context.TELECOM_SERVICE);
+                    if (tm.isInVideoCall()) {
+                        if (!("OP12".equals(SystemProperties.get("ro.operator.optr", "")))) {
+                            notifyOverLimitNL(policy.template);
+                        }
+                    } else {
+                        notifyOverLimitNL(policy.template);
+                    }
                 }
 
             } else {
@@ -994,7 +1069,7 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
      * data connection status.
      */
     private boolean isTemplateRelevant(NetworkTemplate template) {
-        if (template.isMatchRuleMobile()) {
+         if (template.isMatchRuleMobile()) {
             final TelephonyManager tele = TelephonyManager.from(mContext);
             final SubscriptionManager sub = SubscriptionManager.from(mContext);
 
@@ -1020,7 +1095,12 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
      */
     private void notifyOverLimitNL(NetworkTemplate template) {
         if (!mOverLimitNotified.contains(template)) {
-            mContext.startActivity(buildNetworkOverLimitIntent(template));
+            // M: Fix activity no show under multi user case
+            if (ENG_DBG) {
+                Slog.v(TAG, "notifyOverLimitNL for" + template);
+            }
+            mContext.startActivityAsUser(buildNetworkOverLimitIntent(template),
+                UserHandle.CURRENT);
             mOverLimitNotified.add(template);
         }
     }
@@ -1067,8 +1147,9 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
                         mContext, 0, snoozeIntent, PendingIntent.FLAG_UPDATE_CURRENT));
 
                 final Intent viewIntent = buildViewDataUsageIntent(policy.template);
-                builder.setContentIntent(PendingIntent.getActivity(
-                        mContext, 0, viewIntent, PendingIntent.FLAG_UPDATE_CURRENT));
+                builder.setContentIntent(PendingIntent.getActivityAsUser (
+                        mContext, 0, viewIntent, PendingIntent.FLAG_UPDATE_CURRENT,
+                        null, UserHandle.CURRENT));
 
                 break;
             }
@@ -1103,8 +1184,9 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
                 builder.setContentText(body);
 
                 final Intent intent = buildNetworkOverLimitIntent(policy.template);
-                builder.setContentIntent(PendingIntent.getActivity(
-                        mContext, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT));
+                builder.setContentIntent(PendingIntent.getActivityAsUser (
+                        mContext, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT,
+                        null, UserHandle.CURRENT));
                 break;
             }
             case TYPE_LIMIT_SNOOZED: {
@@ -1138,8 +1220,9 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
                 builder.setContentText(body);
 
                 final Intent intent = buildViewDataUsageIntent(policy.template);
-                builder.setContentIntent(PendingIntent.getActivity(
-                        mContext, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT));
+                builder.setContentIntent(PendingIntent.getActivityAsUser (
+                        mContext, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT,
+                        null, UserHandle.CURRENT));
                 break;
             }
         }
@@ -1175,6 +1258,14 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
     private BroadcastReceiver mConnReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
+
+            if ("com.mediatek.conn.MMS_CONNECTIVITY".equals(intent.getAction())) {
+                synchronized (mNetworkPoliciesSecondLock) {
+                    normalizePoliciesNL();
+                    updateNetworkRulesNL();
+                }
+                return;
+            }
             // on background handler thread, and verified CONNECTIVITY_INTERNAL
             // permission above.
 
@@ -1185,6 +1276,30 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
                 updateNetworkEnabledNL();
                 updateNetworkRulesNL();
                 updateNotificationsNL();
+            }
+        }
+    };
+
+    // M: Support SIM hot plug, listen for SIM  state changes
+    private final BroadcastReceiver mSimStateReceiver = new BroadcastReceiver() {
+        public void onReceive(Context context, Intent intent) {
+            final String action = intent.getAction();
+            if (TelephonyIntents.ACTION_SIM_STATE_CHANGED.equals(action)) {
+               String simState = intent.getStringExtra(IccCardConstants.INTENT_KEY_ICC_STATE);
+               if(IccCardConstants.INTENT_VALUE_ICC_LOADED.equals(simState) ||
+                   IccCardConstants.INTENT_VALUE_ICC_LOCKED.equals(simState) ||
+                   IccCardConstants.INTENT_VALUE_ICC_ABSENT.equals(simState)) {
+                   Slog.d(TAG,"receive ACTION_SIM_STATE_CHANGED");
+
+                   maybeRefreshTrustedTime();
+                   synchronized (mNetworkPoliciesSecondLock) {
+                       ensureActiveMobilePolicyNL();
+                       normalizePoliciesNL();
+                       updateNetworkEnabledNL();
+                       updateNetworkRulesNL();
+                       updateNotificationsNL();
+                   }
+               }
             }
         }
     };
@@ -1200,11 +1315,18 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
         // completely, which is currently rare case.
 
         final long currentTime = currentTimeMillis();
+        // M:DataUsage for ViLTE
+        boolean overWarningLimitStateChanged = false;
         for (int i = mNetworkPolicy.size()-1; i >= 0; i--) {
             final NetworkPolicy policy = mNetworkPolicy.valueAt(i);
+            Slog.v(TAG, " checking policy:" + policy);
             // shortcut when policy has no limit
             if (policy.limitBytes == LIMIT_DISABLED || !policy.hasCycle()) {
                 setNetworkTemplateEnabled(policy.template, true);
+                // M:DataUsage for ViLTE
+                boolean changed;
+                changed = setNetworkTemplateOverLimit(policy.template, false);
+                overWarningLimitStateChanged = overWarningLimitStateChanged || changed;
                 continue;
             }
 
@@ -1218,8 +1340,103 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
             final boolean networkEnabled = !overLimitWithoutSnooze;
 
             setNetworkTemplateEnabled(policy.template, networkEnabled);
+            // M:DataUsage for ViLTE
+            final boolean overWarningWithoutSnooze = policy.isOverWarning(totalBytes)
+                    && policy.lastLimitSnooze < start;
+            boolean changed;
+            changed = setNetworkTemplateOverWarning(policy.template, overWarningWithoutSnooze);
+            overWarningLimitStateChanged = overWarningLimitStateChanged || changed;
+            changed = setNetworkTemplateOverLimit(policy.template, overLimitWithoutSnooze);
+            overWarningLimitStateChanged = overWarningLimitStateChanged || changed;
+        }
+        // M:DataUsage for ViLTE
+        if (overWarningLimitStateChanged) {
+            sendNetworkOverLimitChanged();
         }
     }
+
+    // M:DataUsage for ViLTE
+    public boolean getNetworkTemplateOverWarning(String subscriberId) {
+        Slog.v(TAG, "Call getNetworkTemplateOverWarning:" + subscriberId);
+        if(mNetworkTemplateOverWarningState.containsKey(subscriberId)) {
+            Slog.v(TAG, "return:" + mNetworkTemplateOverWarningState.get(subscriberId));
+            return mNetworkTemplateOverWarningState.get(subscriberId);
+        } else {
+            Slog.v(TAG, "return false due to not exist.");
+            return false;
+        }
+    }
+
+    public boolean getNetworkTemplateOverLimit(String subscriberId) {
+        Slog.v(TAG, "Call getNetworkTemplateOverLimit:" + subscriberId);
+        if(mNetworkTemplateOverLimitState.containsKey(subscriberId)) {
+            Slog.v(TAG, "return:" + mNetworkTemplateOverLimitState.get(subscriberId));
+            return mNetworkTemplateOverLimitState.get(subscriberId);
+        } else {
+            Slog.v(TAG, "return false due to not exist.");
+            return false;
+        }
+    }
+
+    private boolean setNetworkTemplateOverWarning(NetworkTemplate template, boolean enabled) {
+        Boolean oldState;
+        boolean changed = false;
+        String  subscriberId;
+        switch (template.getMatchRule()) {
+            case MATCH_MOBILE_3G_LOWER:
+            case MATCH_MOBILE_4G:
+            case MATCH_MOBILE_ALL:
+                subscriberId = template.getSubscriberId();
+                Slog.v(TAG, "setNetworkTemplateOverWarning subscriberId:" + subscriberId
+                    + ":" + enabled);
+                //Return true if state changes or oldState not exist
+                if(mNetworkTemplateOverWarningState.containsKey(subscriberId)) {
+                    oldState = mNetworkTemplateOverWarningState.get(subscriberId);
+                    if(oldState.equals(enabled)) {
+                        changed = false;
+                    } else {
+                        mNetworkTemplateOverWarningState.put(subscriberId, enabled);
+                        changed = true;
+                    }
+                } else {
+                    mNetworkTemplateOverWarningState.put(subscriberId, enabled);
+                    changed = true;
+                }
+                break;
+            }
+        return changed;
+    }
+
+    private boolean setNetworkTemplateOverLimit(NetworkTemplate template, boolean enabled) {
+        Boolean oldState;
+        boolean changed = false;
+        String  subscriberId;
+        switch (template.getMatchRule()) {
+            case MATCH_MOBILE_3G_LOWER:
+            case MATCH_MOBILE_4G:
+            case MATCH_MOBILE_ALL:
+                subscriberId = template.getSubscriberId();
+                Slog.v(TAG, "setNetworkTemplateOverLimit subscriberId:" + subscriberId
+                    + ":" + enabled);
+                //Return true if state changes or oldState not exist
+                if(mNetworkTemplateOverLimitState.containsKey(subscriberId)) {
+                    oldState = mNetworkTemplateOverLimitState.get(subscriberId);
+                    if(oldState.equals(enabled)) {
+                        changed = false;
+                    } else {
+                        mNetworkTemplateOverLimitState.put(subscriberId, enabled);
+                        changed = true;
+                    }
+                } else {
+                    mNetworkTemplateOverLimitState.put(subscriberId, enabled);
+                    changed = true;
+                }
+                break;
+            }
+        if(changed) Slog.v(TAG, "setNetworkTemplateOverLimit return:" + changed);
+        return changed;
+    }
+
 
     /**
      * Proactively disable networks that match the given
@@ -1228,7 +1445,7 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
     private void setNetworkTemplateEnabled(NetworkTemplate template, boolean enabled) {
         // TODO: reach into ConnectivityManager to proactively disable bringing
         // up this network, since we know that traffic will be blocked.
-
+        if (LOGD) Log.d(TAG, "setNetworkTemplateEnabled:" + enabled + ":on:" + template);
         if (template.getMatchRule() == MATCH_MOBILE_ALL) {
             // If mobile data usage hits the limit or if the user resumes the data, we need to
             // notify telephony.
@@ -1242,6 +1459,7 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
                         TelephonyManager.NETWORK_TYPE_UNKNOWN, subscriberId, null, false, true);
                 // Template is matched when subscriber id matches.
                 if (template.matches(probeIdent)) {
+                    if (LOGD) Log.d(TAG, "setPolicyDataEnabled:" + enabled + ":on:" + subId);
                     tm.setPolicyDataEnabled(enabled, subId);
                 }
             }
@@ -1255,10 +1473,28 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
      */
     void updateNetworkRulesNL() {
         if (LOGV) Slog.v(TAG, "updateNetworkRulesNL()");
+        ///M: add for ALPS00394633, exempt for MMS while limit reaches @{
+        String mmsifacename = null;
+        ///@}
 
         final NetworkState[] states;
         try {
             states = mConnManager.getAllNetworkState();
+            ///M: add for ALPS00394633, exempt for MMS while limit reaches
+                    //listen for MMS network change
+            NetworkRequest nr = new NetworkRequest.Builder()
+            .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR)
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_MMS)
+            .build();
+            Network mmsNetwork = mConnManager.getNetworkIfCreated(nr);
+            if (ENG_DBG) Slog.d(TAG, "getNetworkIfCreated: mmsNetwork =" + mmsNetwork);
+            if (mmsNetwork != null) {
+                LinkProperties netProperties = mConnManager.getLinkProperties(mmsNetwork);
+                if (netProperties != null) {
+                    mmsifacename = netProperties.getInterfaceName();
+                }
+                Slog.v(TAG, "updateNetworkRulesLocked() mmsifacename=" + mmsifacename);
+            }
         } catch (RemoteException e) {
             // ignored; service lives in system_server
             return;
@@ -1299,6 +1535,7 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
             for (int j = connIdents.size() - 1; j >= 0; j--) {
                 final Pair<String, NetworkIdentity> ident = connIdents.get(j);
                 if (policy.template.matches(ident.second)) {
+                    Slog.d(TAG, "add iface for policy:" + policy);
                     ifaceList.add(ident.first);
                 }
             }
@@ -1336,7 +1573,7 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
             final boolean hasWarning = policy.warningBytes != LIMIT_DISABLED;
             final boolean hasLimit = policy.limitBytes != LIMIT_DISABLED;
             if (hasLimit || policy.metered) {
-                final long quotaBytes;
+                long quotaBytes;
                 if (!hasLimit) {
                     // metered network, but no policy limit; we still need to
                     // restrict apps, so push really high quota.
@@ -1358,6 +1595,11 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
                 }
 
                 for (String iface : ifaces) {
+                    if (iface == null || iface.length() == 0) { continue; }
+                    if (iface.equals(mmsifacename)) {
+                        Slog.d(TAG, "mmsifacename set quota mms ifacename=" + mmsifacename);
+                        quotaBytes = Long.MAX_VALUE;
+                    }
                     // long quotaBytes split up into two ints to fit in message
                     mHandler.obtainMessage(MSG_UPDATE_INTERFACE_QUOTA,
                             (int) (quotaBytes >> 32), (int) (quotaBytes & 0xFFFFFFFF), iface)
@@ -1413,12 +1655,27 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
 
         final int[] subIds = sub.getActiveSubscriptionIdList();
         for (int subId : subIds) {
-            final String subscriberId = tele.getSubscriberId(subId);
+            int slotId = SubscriptionManager.getSlotId(subId);
+            String subscriberId = INVALID_SUBSCRIBER_ID;
+            if (!SubscriptionManager.isValidSubscriptionId(subId) ||
+                    tele.getSimState(slotId) != SIM_STATE_READY) {
+                continue;
+            } else {
+                subscriberId = tele.getSubscriberId(subId);
+            }
+
             ensureActiveMobilePolicyNL(subscriberId);
         }
     }
 
     private void ensureActiveMobilePolicyNL(String subscriberId) {
+        if (ENG_DBG) {
+            Slog.v(TAG, "ensureActiveMobilePolicyLocked subscriberId(" + subscriberId + ")");
+        }
+        if (subscriberId == null) {
+            Slog.v(TAG, "skip ensureActiveMobilePolicyNL due to subscriberId = null");
+            return;
+        }
         // Poke around to see if we already have a policy
         final NetworkIdentity probeIdent = new NetworkIdentity(TYPE_MOBILE,
                 TelephonyManager.NETWORK_TYPE_UNKNOWN, subscriberId, null, false, true);
@@ -1456,6 +1713,8 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
         final NetworkPolicy policy = new NetworkPolicy(template, cycleDay, cycleTimezone,
                 warningBytes, LIMIT_DISABLED, SNOOZE_NEVER, SNOOZE_NEVER, true, true);
         addNetworkPolicyNL(policy);
+
+        sendPolicyCreatedBroadcast();
     }
 
     private void readPolicyAL() {
@@ -1908,6 +2167,12 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
         try {
             maybeRefreshTrustedTime();
             synchronized (mUidRulesFirstLock) {
+                //M: prevent MATCH_WIFI_WILDCARD to cause JE in setNetworkTemplateEnabled()
+                for (NetworkPolicy policy : policies) {
+                    if ( MATCH_WIFI_WILDCARD == policy.template.getMatchRule() ) {
+                        throw new IllegalArgumentException("unexpected template in setNetworkPolicies");
+                    }
+                }
                 synchronized (mNetworkPoliciesSecondLock) {
                     normalizePoliciesNL(policies);
                     updateNetworkEnabledNL();
@@ -1922,7 +2187,12 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
     }
 
     void addNetworkPolicyNL(NetworkPolicy policy) {
+        Slog.v(TAG, "addNetworkPolicyLocked(" + policy + ")");
         NetworkPolicy[] policies = getNetworkPolicies(mContext.getOpPackageName());
+        //M: prevent MATCH_WIFI_WILDCARD to cause JE in setNetworkTemplateEnabled()
+        if ( MATCH_WIFI_WILDCARD == policy.template.getMatchRule() ) {
+            Slog.e(TAG, " Error!! addNetworkPolicyLocked( MATCH_WIFI_WILDCARD )");
+        }
         policies = ArrayUtils.appendElement(NetworkPolicy.class, policies, policy);
         setNetworkPolicies(policies);
     }
@@ -1989,6 +2259,7 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
     }
 
     void performSnooze(NetworkTemplate template, int type) {
+        if (LOGD) Log.d(TAG, "performSnooze on:" + template);
         maybeRefreshTrustedTime();
         final long currentTime = currentTimeMillis();
         synchronized (mUidRulesFirstLock) {
@@ -2035,6 +2306,7 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
     public void setRestrictBackground(boolean restrictBackground) {
         mContext.enforceCallingOrSelfPermission(MANAGE_NETWORK_POLICY, TAG);
         final long token = Binder.clearCallingIdentity();
+        Slog.d(TAG, "setRestrictBackground(" + restrictBackground + ")");
         try {
             maybeRefreshTrustedTime();
             synchronized (mUidRulesFirstLock) {
@@ -2141,11 +2413,15 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
             Slog.i(TAG, "removing uid " + uid + " from restrict background whitelist");
             mRestrictBackgroundWhitelistUids.delete(uid);
         }
-        if (mDefaultRestrictBackgroundWhitelistUids.get(uid)
+        // MTK: Add back whitelist removed due to shareduid or some reason.
+        if (!uidDeleted && mDefaultRestrictBackgroundWhitelistUids.get(uid)
                 && !mRestrictBackgroundWhitelistRevokedUids.get(uid)) {
             if (LOGD) Slog.d(TAG, "Adding uid " + uid
                     + " to revoked restrict background whitelist");
             mRestrictBackgroundWhitelistRevokedUids.append(uid, true);
+        } else {
+            if (LOGD) Slog.d(TAG, "Skip revoking " + uid
+                    + " from restrict background whitelist");
         }
         if (needFirewallRules) {
             // Only update firewall rules if necessary...
@@ -2981,7 +3257,9 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
      */
     private void updateRulesForDataUsageRestrictionsUL(int uid, boolean uidDeleted) {
         if (!uidDeleted && !isUidValidForWhitelistRules(uid)) {
-            if (LOGD) Slog.d(TAG, "no need to update restrict data rules for uid " + uid);
+            if (LOGD && ENG_DBG) {
+                Slog.d(TAG, "no need to update restrict data rules for uid " + uid);
+            }
             return;
         }
 
@@ -3123,8 +3401,10 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
      */
     private int updateRulesForPowerRestrictionsUL(int uid, int oldUidRules, boolean paroled) {
         if (!isUidValidForBlacklistRules(uid)) {
-            if (LOGD) Slog.d(TAG, "no need to update restrict power rules for uid " + uid);
-            return RULE_NONE;
+            if (LOGD && ENG_DBG) {
+                Slog.d(TAG, "no need to update restrict power rules for uid " + uid);
+                return RULE_NONE;
+            }
         }
 
         final boolean isIdle = !paroled && isUidIdle(uid);
@@ -3190,7 +3470,9 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
             try {
                 final int uid = mContext.getPackageManager().getPackageUidAsUser(packageName,
                         PackageManager.MATCH_UNINSTALLED_PACKAGES, userId);
-                if (LOGV) Log.v(TAG, "onAppIdleStateChanged(): uid=" + uid + ", idle=" + idle);
+                if (LOGV && ENG_DBG) {
+                    Log.v(TAG, "onAppIdleStateChanged(): uid=" + uid + ", idle=" + idle);
+                }
                 synchronized (mUidRulesFirstLock) {
                     updateRuleForAppIdleUL(uid);
                     updateRulesForPowerRestrictionsUL(uid);
@@ -3259,6 +3541,7 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
     private Handler.Callback mHandlerCallback = new Handler.Callback() {
         @Override
         public boolean handleMessage(Message msg) {
+            if (LOGV) Log.v(TAG, "handleMessage(): msg=" + msg.what);
             switch (msg.what) {
                 case MSG_RULES_CHANGED: {
                     final int uid = msg.arg1;
@@ -3399,6 +3682,17 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
                     removeInterfaceQuota((String) msg.obj);
                     return true;
                 }
+                ///M: add for ALPS00394633 @{
+                case MSG_INTERFACE_DOWN: {
+                    final String iface = (String) msg.obj;
+                    maybeRefreshTrustedTime();
+                    synchronized (mNetworkPoliciesSecondLock) {
+                        Slog.d(TAG, " MSG_INTERFACE_DOWN call updateNetworkRulesNL");
+                        updateNetworkRulesNL();
+                    }
+                    return true;
+                }
+                ///@}
                 case MSG_SET_FIREWALL_RULES: {
                     final int chain = msg.arg1;
                     final int toggle = msg.arg2;
@@ -3422,7 +3716,8 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
         try {
             mNetworkManager.setInterfaceQuota(iface, quotaBytes);
         } catch (IllegalStateException e) {
-            Log.wtf(TAG, "problem setting interface quota", e);
+            ///M: modified remove wtf
+            Log.e(TAG, "problem setting interface quota:"+ e);
         } catch (RemoteException e) {
             // ignored; service lives in system_server
         }
@@ -3432,7 +3727,8 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
         try {
             mNetworkManager.removeInterfaceQuota(iface);
         } catch (IllegalStateException e) {
-            Log.wtf(TAG, "problem removing interface quota", e);
+            ///M: modified remove wtf
+            Log.e(TAG, "problem removing interface quota", e);
         } catch (RemoteException e) {
             // ignored; service lives in system_server
         }
@@ -3443,7 +3739,8 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
         try {
             mNetworkManager.setUidMeteredNetworkBlacklist(uid, enable);
         } catch (IllegalStateException e) {
-            Log.wtf(TAG, "problem setting blacklist (" + enable + ") rules for " + uid, e);
+            ///M: modified remove wtf
+            Log.e(TAG, "problem setting blacklist (" + enable + ") rules for " + uid, e);
         } catch (RemoteException e) {
             // ignored; service lives in system_server
         }
@@ -3575,13 +3872,16 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
      * Try refreshing {@link #mTime} when stale.
      */
     void maybeRefreshTrustedTime() {
-        if (mTime.getCacheAge() > TIME_CACHE_MAX_AGE) {
+        ///M: USE_TRUESTED_TIME
+        if (mTime.getCacheAge() > TIME_CACHE_MAX_AGE && NetworkStatsService.USE_TRUESTED_TIME ) {
             mTime.forceRefresh();
         }
     }
 
     private long currentTimeMillis() {
-        return mTime.hasCache() ? mTime.currentTimeMillis() : System.currentTimeMillis();
+        ///M: use USE_TRUESTED_TIME
+        return (mTime.hasCache()&& NetworkStatsService.USE_TRUESTED_TIME) ?
+            mTime.currentTimeMillis() : System.currentTimeMillis();
     }
 
     private static Intent buildAllowBackgroundDataIntent() {
@@ -3669,5 +3969,22 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
                 }
             }
         }
+    }
+
+   private void sendPolicyCreatedBroadcast() {
+     if (LOGV) Slog.v(TAG, "sendPolicyCreatedBroadcast ACTION_POLICY_CREATED");
+     Intent intent = new Intent(ACTION_POLICY_CREATED);
+     intent.addFlags(Intent.FLAG_RECEIVER_REPLACE_PENDING);
+     intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
+     mContext.sendBroadcast(intent);
+   }
+
+    // M:DataUsage for ViLTE
+    private void sendNetworkOverLimitChanged() {
+        if (LOGV) Slog.v(TAG, "sendPolicyCreatedBroadcast ACTION_NETWORK_OVERLIMIT_CHANGED");
+
+        Intent intent = new Intent(ACTION_NETWORK_OVERLIMIT_CHANGED);
+        intent.addFlags(Intent.FLAG_RECEIVER_REPLACE_PENDING);
+        mContext.sendBroadcast(intent);
     }
 }

@@ -61,4 +61,13 @@ public class EmergencyCarrierArea extends AlphaOptimizedLinearLayout {
     public void setCarrierTextVisible(boolean visible) {
         mCarrierText.setVisibility(visible ? View.VISIBLE : View.GONE);
     }
+
+    /**
+     * M: Set the carrier text gravity.
+     *
+     * @param gravity the customized gravity value.
+     */
+    public void setCarrierTextGravity(int gravity) {
+        mCarrierText.setGravity(gravity);
+    }
 }

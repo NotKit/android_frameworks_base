@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,6 +26,7 @@ import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Paint.FontMetricsInt;
 import android.graphics.RectF;
+import android.os.Trace;
 import android.text.Layout.Directions;
 import android.text.Layout.TabStops;
 import android.text.style.CharacterStyle;
@@ -652,17 +658,24 @@ class TextLine {
      * @param wp
      */
     private static void expandMetricsFromPaint(FontMetricsInt fmi, TextPaint wp) {
+        /// M: new FontMetrics method for complex text support.
+        expandMetricsFromPaint(fmi, wp, null);
+    }
+
+    /// M: new FontMetrics method for complex text support. @{
+    private static void expandMetricsFromPaint(FontMetricsInt fmi, TextPaint wp, CharSequence text) {
         final int previousTop     = fmi.top;
         final int previousAscent  = fmi.ascent;
         final int previousDescent = fmi.descent;
         final int previousBottom  = fmi.bottom;
         final int previousLeading = fmi.leading;
 
-        wp.getFontMetricsInt(fmi);
+        wp.getFontMetricsInt(text, fmi);
 
         updateMetrics(fmi, previousTop, previousAscent, previousDescent, previousBottom,
                 previousLeading);
     }
+    /// M: new FontMetrics method for complex text support. }@
 
     static void updateMetrics(FontMetricsInt fmi, int previousTop, int previousAscent,
             int previousDescent, int previousBottom, int previousLeading) {
@@ -699,7 +712,8 @@ class TextLine {
 
         // Get metrics first (even for empty strings or "0" width runs)
         if (fmi != null) {
-            expandMetricsFromPaint(fmi, wp);
+            /// M: new FontMetrics method for complex text support.
+            expandMetricsFromPaint(fmi, wp, mText);
         }
 
         int runLen = end - start;
@@ -857,7 +871,8 @@ class TextLine {
             TextPaint wp = mWorkPaint;
             wp.set(mPaint);
             if (fmi != null) {
-                expandMetricsFromPaint(fmi, wp);
+                /// M: new FontMetrics method for complex text support.
+                expandMetricsFromPaint(fmi, wp, mText);
             }
             return 0f;
         }
@@ -952,7 +967,9 @@ class TextLine {
      */
     private void drawTextRun(Canvas c, TextPaint wp, int start, int end,
             int contextStart, int contextEnd, boolean runIsRtl, float x, int y) {
-
+        if (TextUtils.DEBUG_LOG) {
+            Trace.traceBegin(Trace.TRACE_TAG_VIEW, "Text-drawTextRun");
+        }
         if (mCharsValid) {
             int count = end - start;
             int contextCount = contextEnd - contextStart;
@@ -962,6 +979,9 @@ class TextLine {
             int delta = mStart;
             c.drawTextRun(mText, delta + start, delta + end,
                     delta + contextStart, delta + contextEnd, x, y, runIsRtl, wp);
+        }
+        if (TextUtils.DEBUG_LOG) {
+            Trace.traceEnd(Trace.TRACE_TAG_VIEW);
         }
     }
 

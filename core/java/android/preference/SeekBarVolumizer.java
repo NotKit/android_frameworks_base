@@ -156,12 +156,13 @@ public class SeekBarVolumizer implements OnSeekBarChangeListener, Handler.Callba
     public boolean handleMessage(Message msg) {
         switch (msg.what) {
             case MSG_SET_STREAM_VOLUME:
-                if (mMuted && mLastProgress > 0) {
+                int volume = msg.arg1;
+                if (mMuted && volume > 0) {
                     mAudioManager.adjustStreamVolume(mStreamType, AudioManager.ADJUST_UNMUTE, 0);
-                } else if (!mMuted && mLastProgress == 0) {
+                } else if (!mMuted && volume == 0) {
                     mAudioManager.adjustStreamVolume(mStreamType, AudioManager.ADJUST_MUTE, 0);
                 }
-                mAudioManager.setStreamVolume(mStreamType, mLastProgress,
+                mAudioManager.setStreamVolume(mStreamType, volume,
                         AudioManager.FLAG_SHOW_UI_WARNINGS);
                 break;
             case MSG_START_SAMPLE:
@@ -276,7 +277,7 @@ public class SeekBarVolumizer implements OnSeekBarChangeListener, Handler.Callba
         // Do the volume changing separately to give responsive UI
         mLastProgress = progress;
         mHandler.removeMessages(MSG_SET_STREAM_VOLUME);
-        mHandler.sendMessage(mHandler.obtainMessage(MSG_SET_STREAM_VOLUME));
+        mHandler.sendMessage(mHandler.obtainMessage(MSG_SET_STREAM_VOLUME, progress, 0));
     }
 
     public void onStartTrackingTouch(SeekBar seekBar) {

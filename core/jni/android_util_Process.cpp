@@ -1,3 +1,8 @@
+/*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
 /* //device/libs/android_runtime/android_util_Process.cpp
 **
 ** Copyright 2006, The Android Open Source Project
@@ -44,6 +49,12 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+/// M: CPUSET workaround @{
+#ifdef ENABLE_CPUSETS
+#include <dlfcn.h>
+#include "PerfServiceNative.h"
+#endif
+/// @}
 
 #define GUARD_THREAD_PRIORITY 0
 
@@ -370,6 +381,38 @@ static void get_cpuset_cores_for_policy(SchedPolicy policy, cpu_set_t *cpu_set)
 }
 #endif
 
+/// M: CPUSET workaround @{
+#ifdef ENABLE_CPUSETS
+static int (*perfSetExclusiveCore)(int, int) = NULL;
+typedef int (*set_exclusive_core)(int, int);
+
+static void load_api(void)
+{
+    void *handle, *func;
+    static int inited = 0;
+
+    // only enter once
+    if(inited)
+        return;
+    inited = 1;
+
+    handle = dlopen("libperfservicenative.so", RTLD_NOW);
+    if (handle == NULL) {
+        ALOGE("Can't load library: %s", dlerror());
+        return;
+    }
+
+    func = dlsym(handle, "PerfServiceNative_setExclusiveCore");
+    perfSetExclusiveCore = reinterpret_cast<set_exclusive_core>(func);
+
+    if (perfSetExclusiveCore == NULL) {
+        ALOGE("perfSetExclusiveCore error: %s", dlerror());
+        dlclose(handle);
+        return;
+    }
+}
+#endif
+/// @}
 
 /**
  * Determine CPU cores exclusively assigned to the
@@ -389,6 +432,23 @@ void get_exclusive_cpuset_cores(SchedPolicy policy, cpu_set_t *cpu_set) {
         // Then get the ones only in cpu_set
         CPU_AND(cpu_set, cpu_set, &tmp_set);
     }
+
+    /// M: CPUSET workaround @{
+    /* use PerfService to indicate hps */
+    int cpu_mask = 0, count = CPU_COUNT(cpu_set), length = sizeof(cpu_set_t)*8;;
+
+    for (i = 0; i< length && count > 0; i++) {
+        if (CPU_ISSET(i, cpu_set)) {
+            cpu_mask |= (1 << i);
+            count--;
+        }
+    }
+
+    load_api();
+    if(perfSetExclusiveCore)
+        perfSetExclusiveCore((int)getpid(), cpu_mask);
+    ALOGV("get_exclusive_cpuset_cores - CPU_COUNT:%d, cpu_mask:%x", CPU_COUNT(cpu_set), cpu_mask);
+    /// @}
 #else
     (void) policy;
     CPU_ZERO(cpu_set);
@@ -597,7 +657,7 @@ static jlong getFreeMemoryImpl(const char* const sums[], const size_t sumsLen[],
         return -1;
     }
 
-    char buffer[256];
+    char buffer[512];
     const int len = read(fd, buffer, sizeof(buffer)-1);
     close(fd);
 
@@ -649,6 +709,19 @@ static jlong android_os_Process_getTotalMemory(JNIEnv* env, jobject clazz)
     static const size_t sumsLen[] = { strlen("MemTotal:"), 0 };
     return getFreeMemoryImpl(sums, sumsLen, 1);
 }
+
+
+#ifndef MTK_BSP_PACKAGE
+/// M: get lru anonymous memory size @{
+static jlong android_os_Process_getLruAnonMemory(JNIEnv* env, jobject clazz)
+{
+    static const char* const sums[] = { "Active(anon):", "Inactive(anon):", NULL };
+    static const size_t sumsLen[] = { strlen("Active(anon):"), strlen("Inactive(anon):"), 0 };
+    return getFreeMemoryImpl(sums, sumsLen, 2);
+}
+/// @}
+#endif // MTK_BSP_PACKAGE
+
 
 void android_os_Process_readProcLines(JNIEnv* env, jobject clazz, jstring fileStr,
                                       jobjectArray reqFields, jlongArray outFields)
@@ -1105,6 +1178,7 @@ static jlong android_os_Process_getPss(JNIEnv* env, jobject clazz, jint pid)
     return pss * 1024;
 }
 
+
 jintArray android_os_Process_getPidsForCommands(JNIEnv* env, jobject clazz,
         jobjectArray commandNames)
 {
@@ -1223,6 +1297,9 @@ static const JNINativeMethod methods[] = {
     {"sendSignalQuiet", "(II)V", (void*)android_os_Process_sendSignalQuiet},
     {"getFreeMemory", "()J", (void*)android_os_Process_getFreeMemory},
     {"getTotalMemory", "()J", (void*)android_os_Process_getTotalMemory},
+#ifndef MTK_BSP_PACKAGE
+    {"getLruAnonMemory", "()J", (void*)android_os_Process_getLruAnonMemory},
+#endif
     {"readProcLines", "(Ljava/lang/String;[Ljava/lang/String;[J)V", (void*)android_os_Process_readProcLines},
     {"getPids", "(Ljava/lang/String;[I)[I", (void*)android_os_Process_getPids},
     {"readProcFile", "(Ljava/lang/String;[I[Ljava/lang/String;[J[F)Z", (void*)android_os_Process_readProcFile},

@@ -132,7 +132,7 @@ public abstract class DocumentHolder
             if (mEventListener != null) {
                 return mEventListener.onSelect(this);
             }
-        } else if (Events.isTouchEvent(event)) {
+        } else /*if (Events.isTouchEvent(event))*/ {
             // Touch events select if they occur in the selection hotspot, otherwise they activate.
             if (mEventListener == null) {
                 return false;

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -34,6 +39,8 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map.Entry;
 import java.util.Set;
+
+import android.os.SystemProperties;
 
 /**
  * @hide
@@ -251,6 +258,7 @@ public abstract class Filter {
             frame.setTimestamp(mCurrentTimestamp);
         }
         getOutputPort(name).pushFrame(frame);
+        saveOutput(name, frame);
     }
 
     protected final Frame pullInput(String name) {
@@ -461,6 +469,8 @@ public abstract class Filter {
     }
 
     final synchronized void performProcess(FilterContext context) {
+        preProcess();
+
         if (mStatus == STATUS_RELEASED) {
             throw new RuntimeException("Filter " + this + " is already torn down!");
         }
@@ -475,6 +485,8 @@ public abstract class Filter {
         if (filterMustClose()) {
             performClose(context);
         }
+
+        postProcess();
     }
 
     final synchronized void performClose(FilterContext context) {
@@ -705,4 +717,41 @@ public abstract class Filter {
         }
         return false;
     }
+
+    /// M: for debug @{
+    private void saveOutput(String name, Frame frame) {
+        if (mLogVerbose) {
+            Log.v(TAG, "saveOutput() " + mName + "_"  + name);
+            String string = SystemProperties.get("debug.effect.save.name");
+            if (string.compareTo("all") == 0 || string.compareTo(mName) == 0) {
+                if (frame instanceof GLFrame) {
+                    Frame.wait3DReady();
+                    frame.saveFrame(mName + "_" + name);
+                }
+            }
+        }
+    }
+
+    private void preProcess() {
+        if (mLogVerbose) {
+            Log.v(TAG, "preProcess() " + mName);
+            String processin = SystemProperties.get("debug.effect.processin.name");
+            if (processin.compareTo(mName) == 0) {
+                Frame.wait3DReady();
+                Log.v(TAG, "preProcess() " + mName + " glReadPixels done");
+            }
+        }
+    }
+
+    private void postProcess() {
+        if (mLogVerbose) {
+            Log.v(TAG, "postProcess() " + mName);
+            String processout = SystemProperties.get("debug.effect.processout.name");
+            if (processout.compareTo(mName) == 0) {
+                Frame.wait3DReady();
+                Log.v(TAG, "postProcess() " + mName + " glReadPixels done");
+            }
+        }
+    }
+    /// @}
 }

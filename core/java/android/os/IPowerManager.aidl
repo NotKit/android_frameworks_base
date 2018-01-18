@@ -42,6 +42,10 @@ interface IPowerManager
     void userActivity(long time, int event, int flags);
     void wakeUp(long time, String reason, String opPackageName);
     void goToSleep(long time, int reason, int flags);
+
+    void startBacklight(int msec);
+    void stopBacklight();
+
     void nap(long time);
     boolean isInteractive();
     boolean isPowerSaveMode();
@@ -62,6 +66,8 @@ interface IPowerManager
     // see the effect of a settings change without applying it immediately
     void setTemporaryScreenBrightnessSettingOverride(int brightness);
     void setTemporaryScreenAutoBrightnessAdjustmentSettingOverride(float adj);
+
+    void setBacklightOffForWfd(boolean enable);
 
     // sets the attention light (used by phone app only)
     void setAttentionLight(boolean on, int color);

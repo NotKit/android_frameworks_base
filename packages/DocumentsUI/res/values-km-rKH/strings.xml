@@ -99,6 +99,7 @@
     <string name="notification_touch_for_details" msgid="6268189413228855582">"ប៉ះដើម្បីមើលព័ត៌មានលម្អិត"</string>
     <string name="close" msgid="3043722427445528732">"បិទ"</string>
     <string name="copy_failure_alert_content" msgid="4563147454522476183">"ឯកសារទាំងនេះមិនត្រូវបានថតចម្លងទេ៖ <xliff:g id="LIST">%1$s</xliff:g>"</string>
+    <string name="mode_selected_count">"បាន​ជ្រើស <xliff:g id="COUNT">%1$d</xliff:g>"</string>
     <string name="move_failure_alert_content" msgid="2635075788682922861">"ឯកសារទាំងនេះមិនត្រូវបានផ្លាស់ទីទេ៖ <xliff:g id="LIST">%1$s</xliff:g>"</string>
     <string name="delete_failure_alert_content" msgid="892393767207938353">"ឯកសារទាំងនេះមិនត្រូវបានលុបទេ៖ <xliff:g id="LIST">%1$s</xliff:g>"</string>
     <string name="copy_converted_warning_content" msgid="5753861488218674361">"ឯកសារទាំងនេះត្រូវបានបម្លែងទៅជាទម្រង់ផ្សេង៖ <xliff:g id="LIST">%1$s</xliff:g>"</string>
@@ -140,4 +141,6 @@
     </plurals>
     <string name="too_many_selected" msgid="6781456208116966753">"សូមអភ័យទោស អ្នកអាចជ្រើសបានតែ 1000 ធាតុតែប៉ុណ្ណោះក្នុងមួយលើក"</string>
     <string name="too_many_in_select_all" msgid="8281987479885307456">"អាចជ្រើសបានតែ 1000 ធាតុប៉ុណ្ណោះ"</string>
+		<string name="drm_file_cannot_move">មិនអាចផ្លាស់ទីឯកសារខ្លះដែលត្រូវ​បានការពារ</string>
+		<string name="drm_file_cannot_copy">មិនអាចថតចម្លងឯកសារខ្លះដែលត្រូវបានការពារ</string>
 </resources>

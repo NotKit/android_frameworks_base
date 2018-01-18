@@ -685,6 +685,11 @@ public class TaskStackView extends FrameLayout implements TaskStack.TaskStackCal
             }
 
             int taskIndex = mStack.indexOfStackTask(task);
+            /// M: Avoid JE when taskIndex is -1 @{
+            if(taskIndex == -1){
+                continue;
+            }
+            /// @ }
             TaskViewTransform transform = mCurrentTaskTransforms.get(taskIndex);
             if (animationOverrides != null && animationOverrides.containsKey(task)) {
                 animation = animationOverrides.get(task);
@@ -1365,6 +1370,7 @@ public class TaskStackView extends FrameLayout implements TaskStack.TaskStackCal
                     isFrontMostTask.value = true;
                 }
                 continue;
+
             }
             return task;
         }

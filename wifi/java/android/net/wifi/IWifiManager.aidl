@@ -30,6 +30,10 @@ import android.net.DhcpInfo;
 import android.os.Messenger;
 import android.os.ResultReceiver;
 import android.os.WorkSource;
+//M:@{
+import android.net.wifi.PPPOEInfo;
+import android.net.wifi.WpsInfo;
+//@}
 
 /**
  * Interface that allows controlling and querying Wi-Fi connectivity.
@@ -169,5 +173,92 @@ interface IWifiManager
     void factoryReset();
 
     Network getCurrentNetwork();
+
+    // M: Added functions
+    /**
+     * @hide
+     */
+    boolean doCtiaTestOn();
+    /**
+     * @hide
+     */
+    boolean doCtiaTestOff();
+    /**
+     * @hide
+     */
+    boolean doCtiaTestRate(int rate);
+    /**
+     * @hide
+     */
+    boolean setTxPowerEnabled(boolean enable);
+    /**
+     * @hide
+     */
+    boolean setTxPower(int offset);
+
+    /**
+     * @hide
+     */
+    boolean setWifiEnabledForIPO(boolean enable);
+    /**
+     * @hide
+     */
+    void suspendNotification(int type);
+    /**
+     * @hide
+     */
+    boolean hasConnectableAp();
+    /**
+     * @hide
+     */
+    int syncGetConnectingNetworkId();
+    /**
+     * @hide
+     */
+    String getWifiStatus();
+    /**
+     * @hide
+     */
+    void setPowerSavingMode(boolean mode);
+    /**
+     * @hide
+     */
+    void setTdlsPowerSave(boolean enable);
+    /**
+     * @hide
+     */
+    PPPOEInfo getPPPOEInfo();
+    /**
+     *@hide
+    */
+    boolean setWoWlanNormalMode();
+    /**
+     *@hide
+    */
+    boolean setWoWlanMagicMode();
+    /**
+     *@hide
+    */
+    boolean is5gBandSupported();
+   /**
+   *@hide
+   */
+   boolean setHotspotOptimization(boolean enable);
+    /**
+     * @hide
+     */
+    String getTestEnv(int channel);
+    /**
+     * @hide
+     */
+    boolean setWifiDisabled(int flag);
+    /**
+     * @hide
+     */
+    void registerWifiOffListener();
+    /**
+     * @hide
+     */
+    void unregisterWifiOffListener();
 }
 

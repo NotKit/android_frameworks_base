@@ -54,7 +54,7 @@ namespace renderthread {
     LOG_ALWAYS_FATAL_IF( METHOD_INVOKE_PAYLOAD_SIZE < sizeof(ARGS(method)), \
         "METHOD_INVOKE_PAYLOAD_SIZE %zu is smaller than sizeof(" #method "Args) %zu", \
                 METHOD_INVOKE_PAYLOAD_SIZE, sizeof(ARGS(method))); \
-    MethodInvokeRenderTask* task = new MethodInvokeRenderTask((RunnableMethod) Bridge_ ## method); \
+    MethodInvokeRenderTask* task = new MethodInvokeRenderTask((RunnableMethod) Bridge_ ## method, ""#method""); \
     ARGS(method) *args = (ARGS(method) *) task->payload()
 
 CREATE_BRIDGE4(createContext, RenderThread* thread, bool translucent,
@@ -468,6 +468,10 @@ CREATE_BRIDGE2(dumpGraphicsMemory, int fd, RenderThread* thread) {
         String8 cachesLog;
         Caches::getInstance().dumpMemoryUsage(cachesLog);
         fprintf(file, "\nCaches:\n%s\n", cachesLog.string());
+
+        /// M: Reload properties here, so we can dynamically switch log on/off by
+        /// adb shell dumpsys gfxinfo PID
+        setDebugLog();
     } else {
         fprintf(file, "\nNo caches instance.\n");
     }
@@ -680,6 +684,7 @@ void RenderProxy::post(RenderTask* task) {
 }
 
 void* RenderProxy::postAndWait(MethodInvokeRenderTask* task) {
+    ATRACE_CALL_L1();
     void* retval;
     task->setReturnPtr(&retval);
     SignalingRenderTask syncTask(task, &mSyncMutex, &mSyncCondition);
@@ -690,6 +695,7 @@ void* RenderProxy::postAndWait(MethodInvokeRenderTask* task) {
 }
 
 void* RenderProxy::staticPostAndWait(MethodInvokeRenderTask* task) {
+    ATRACE_CALL_L1();
     RenderThread& thread = RenderThread::getInstance();
     void* retval;
     task->setReturnPtr(&retval);

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -48,7 +53,7 @@ import java.io.PrintWriter;
  **/
 public class NetworkFactory extends Handler {
     private static final boolean DBG = true;
-    private static final boolean VDBG = false;
+    private static final boolean VDBG = true;
 
     private static final int BASE = Protocol.BASE_NETWORK_FACTORY;
     /**
@@ -188,7 +193,17 @@ public class NetworkFactory extends Handler {
     @VisibleForTesting
     protected void handleRemoveRequest(NetworkRequest request) {
         NetworkRequestInfo n = mNetworkRequests.get(request.requestId);
+        /** M: add debug info @{*/
+        if (DBG) log("handleRemoveRequest" + request);
+        if (VDBG) {
+            for (int i = 0; i < mNetworkRequests.size(); i++) {
+                log("req:" + mNetworkRequests.valueAt(i).requested
+                        + ":" + mNetworkRequests.valueAt(i).request);
+            }
+        }
+        /** @} */
         if (n != null) {
+            if (DBG) log("find n");
             mNetworkRequests.remove(request.requestId);
             if (n.requested) releaseNetworkFor(n.request);
         }
@@ -228,7 +243,7 @@ public class NetworkFactory extends Handler {
     }
 
     private void evalRequest(NetworkRequestInfo n) {
-        if (VDBG) log("evalRequest");
+        if (VDBG) log("evalRequest request = " + n.request + " with requested = " + n.requested);
         if (n.requested == false && n.score < mScore &&
                 n.request.networkCapabilities.satisfiedByNetworkCapabilities(
                 mCapabilityFilter) && acceptRequest(n.request, n.score)) {

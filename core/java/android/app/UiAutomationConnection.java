@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,6 +31,7 @@ import android.os.Binder;
 import android.os.IBinder;
 import android.os.ParcelFileDescriptor;
 import android.os.Process;
+import android.util.Log;
 import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.os.UserHandle;
@@ -60,6 +66,7 @@ public final class UiAutomationConnection extends IUiAutomationConnection.Stub {
     private final IWindowManager mWindowManager = IWindowManager.Stub.asInterface(
             ServiceManager.getService(Service.WINDOW_SERVICE));
 
+    private static final String LOG_TAG = UiAutomationConnection.class.getSimpleName();
     private final IAccessibilityManager mAccessibilityManager = IAccessibilityManager.Stub
             .asInterface(ServiceManager.getService(Service.ACCESSIBILITY_SERVICE));
 
@@ -408,6 +415,13 @@ public final class UiAutomationConnection extends IUiAutomationConnection.Stub {
 
     private void throwIfCalledByNotTrustedUidLocked() {
         final int callingUid = Binder.getCallingUid();
+//@M: added by mtk54039@ problem happens if mOwningUid =0 and callingUid = 1000;
+//this is a hot fix. hope it's right...
+        Log.i(LOG_TAG, "Calling UID : = " + callingUid + "Ownering UID := " + mOwningUid);
+    if (mOwningUid == 0 /*root*/) return; //don't check permission if this Connection
+//is created by root. this happens on eng load only! and this fix is for eng load.
+//user load is not effected...
+//@M end@
         if (callingUid != mOwningUid && mOwningUid != Process.SYSTEM_UID
                 && callingUid != 0 /*root*/) {
             throw new SecurityException("Calling from not trusted UID!");

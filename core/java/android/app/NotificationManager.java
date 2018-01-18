@@ -974,7 +974,28 @@ public class NotificationManager
             throw e.rethrowFromSystemServer();
         }
     }
+    //guohuajun add
+   	public final boolean openLed(int id,int r,int g,int b) {
+      final INotificationManager service = getService();
+      try {
+          service.openLed(id,r,g,b);
+      } catch (RemoteException e) {
+          throw e.rethrowFromSystemServer();
+      }
+      return true;
+  	}
 
+
+	public final boolean openLed(int id,int r,int g,int b,int speed) {
+	  final INotificationManager service = getService();
+      try {
+          service.openLedSpeed(id,r,g,b,speed);
+      } catch (RemoteException e) {
+          throw e.rethrowFromSystemServer();
+      }
+      return true;
+  	}
+   //guohuajun add end 
     /**
      * Sets the current notification interruption filter.
      *

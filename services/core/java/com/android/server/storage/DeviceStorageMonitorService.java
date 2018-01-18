@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007-2008 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -53,6 +58,23 @@ import java.io.PrintWriter;
 
 import dalvik.system.VMRuntime;
 
+///M:for low storage feature,@{
+import android.app.AlertDialog;
+
+import android.content.BroadcastReceiver;
+import android.content.DialogInterface;
+import android.content.IntentFilter;
+import android.content.pm.IPackageStatsObserver;
+import android.content.pm.PackageStats;
+
+import android.view.WindowManager;
+import android.content.DialogInterface.OnClickListener;
+
+//import com.vladium.emma.rt.RT; /// M : Add emma coverage report for system server.
+import com.mediatek.common.MPlugin;
+import com.mediatek.common.lowstorage.ILowStorageExt;
+///@}
+
 /**
  * This class implements a service to monitor the amount of disk
  * storage space on the device.  If the free storage on device is less
@@ -80,12 +102,19 @@ public class DeviceStorageMonitorService extends SystemService {
     static final boolean localLOGV = false;
 
     static final int DEVICE_MEMORY_WHAT = 1;
+    static final int DEVICE_MEMORY_CRITICAL_LOW = 2; // For low storage dialog show
+
     private static final int MONITOR_INTERVAL = 1; //in minutes
     private static final int LOW_MEMORY_NOTIFICATION_ID = 1;
 
+    private static final int DEFAULT_THRESHOLD_PERCENTAGE = 10;
+    // /M:Add for low storage feature,google default is 500M,@{
+    private static final int DEFAULT_THRESHOLD_MAX_BYTES = 50 * 1024 * 1024; // 50MB
+    ///@}
+
     private static final int DEFAULT_FREE_STORAGE_LOG_INTERVAL_IN_MINUTES = 12*60; //in minutes
     private static final long DEFAULT_DISK_FREE_CHANGE_REPORTING_THRESHOLD = 2 * 1024 * 1024; // 2MB
-    private static final long DEFAULT_CHECK_INTERVAL = MONITOR_INTERVAL*60*1000;
+    private static final long DEFAULT_CHECK_INTERVAL = MONITOR_INTERVAL * 30 * 1000;  // M: change to 30, original 60
 
     // com.android.internal.R.string.low_internal_storage_view_text_no_boot
     // hard codes 250MB in the message as the storage space required for the
@@ -135,6 +164,27 @@ public class DeviceStorageMonitorService extends SystemService {
     private long mMemCacheTrimToThreshold;
     private long mMemFullThreshold;
 
+    // /M:Add for low storage feature,@{
+    ILowStorageExt lse = null;
+    private static final int FULL_THRESHOLD_BYTES = 5 * 1024 * 1024; // 5MB
+    private static final int CRITICAL_LOW_THRESHOLD_BYTES = 4 * 1024 * 1024; // 4MB
+    private static final int EXCEPTION_LOW_THRESHOLD_BYTES = 10 * 1024 * 1024; // 10MB
+    private static final int EMAIL_CHECK_SIZE = 50 * 1024 * 1024; // 50MB
+    private boolean mConfigChanged = false;
+    private static final String IPO_POWER_ON = "android.intent.action.ACTION_BOOT_IPO"; // /M:For IPO feature
+    private AlertDialog mDialog = null;
+    private int mLastCriticalLowLevel = 4;
+    private boolean mIPOBootup = false; // /M:For IPO feature
+    private boolean mCheckAppSize = true;
+    private StatFs mQueryDataFs;
+    private long mCacheSize = 0;
+    private long mCodeSize = 0;
+    private long mDataSize = 0;
+    private long mTotalSize = 0;
+    private String[] mStrings = null;
+    private boolean mGetSize = false; // M
+    // /@}
+
     /**
      * This string is used for ServiceManager access to this class.
      */
@@ -147,6 +197,61 @@ public class DeviceStorageMonitorService extends SystemService {
     private final Handler mHandler = new Handler() {
         @Override
         public void handleMessage(Message msg) {
+            // /M:For Low storage,to show warning dialog per 30s,@{
+            if (msg.what == DEVICE_MEMORY_CRITICAL_LOW) {
+                if (mDialog == null || mIPOBootup || mConfigChanged) {
+                    mIPOBootup = false;
+                    if (mConfigChanged) {
+                        mConfigChanged = false;
+                    }
+                    final Context context = getContext();
+                    AlertDialog.Builder builder = new AlertDialog.Builder(context)
+                            .setIcon(com.android.internal.R.drawable.ic_dialog_alert)
+                            .setTitle(
+                                    context
+                                            .getText(com.mediatek.internal.R.string.low_internal_storage_view_title))
+                            .setMessage(
+                                    context
+                                            .getText(com.mediatek.internal.R.string.low_storage_warning_message))
+                            .setNegativeButton(
+                                    context.getText(com.mediatek.R.string.free_memory_btn), new OnClickListener() {
+                                        @Override
+                                        public void onClick(DialogInterface dialog, int which) {
+                                            Intent mIntent = new Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS);
+                                            mIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                                            context.startActivity(mIntent);
+                                        }
+                             })
+                            .setPositiveButton(
+                                    context.getText(com.android.internal.R.string.cancel), null);
+                    if (mTotalSize > EMAIL_CHECK_SIZE) {
+                        builder.setNeutralButton(
+                            context.getText(com.mediatek.internal.R.string.deleteMails), new OnClickListener() {
+                                @Override
+                                public void onClick(DialogInterface dialog, int which) {
+                                    Intent mIntent = new Intent();
+                                    mIntent.setAction("android.intent.action.MAIN");
+                                    mIntent.addCategory("android.intent.category.APP_EMAIL");
+                                    mIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                                    context.startActivity(mIntent);
+                                }
+                        });
+                    }
+                    mDialog = builder.create();
+                }
+
+                mDialog.getWindow().setType(WindowManager.LayoutParams.TYPE_SYSTEM_ALERT);
+                if (!mDialog.isShowing()) {
+                    // For CTS running,do not show the no space dailog
+                    if (android.os.SystemProperties.getInt("ctsrunning", 0) == 0) {
+                        mDialog.show();
+                    } else {
+                        Slog.i(TAG, "In CTS Running,do not show the no space dailog");
+                    }
+                }
+                return;
+            }
+            // /@}
             //don't handle an invalid message
             if (msg.what != DEVICE_MEMORY_WHAT) {
                 Slog.e(TAG, "Will not process invalid message");
@@ -251,27 +356,52 @@ public class DeviceStorageMonitorService extends SystemService {
             restatDataDir();
             if (localLOGV)  Slog.v(TAG, "freeMemory="+mFreeMem);
 
+            // /M:Add for checking operator's low storage threshold
+            // @{
+            if (lse == null) {
+                lse = MPlugin.createInstance("com.mediatek.common.lowstorage.ILowStorageExt",
+                                                 getContext());
+                if (lse == null) {
+                    Slog.e(TAG, "Failed to create LowStorageExt instance.");
+                }
+                else {
+                    lse.init(getContext(), mTotalMemory);
+                }
+            }
+            if (lse != null) {
+                lse.checkStorage(mFreeMem);
+            }
+            // /@}
             //post intent to NotificationManager to display icon if necessary
             if (mFreeMem < mMemLowThreshold) {
+                // check the Email apk size
+                if (mCheckAppSize) {
+                    mCheckAppSize = false;
+                    PackageManager pm = getContext().getPackageManager();
+                    pm.getPackageSizeInfo("com.android.email", mStatsObserver);
+                }
                 if (checkCache) {
                     // We are allowed to clear cache files at this point to
                     // try to get down below the limit, because this is not
                     // the initial call after a cache clear has been attempted.
                     // In this case we will try a cache clear if our free
                     // space has gone below the cache clear limit.
-                    if (mFreeMem < mMemCacheStartTrimThreshold) {
+                    // /M:Add for low storage, when storage < mMemLowThreshold always do
+                    // clear cache,@{
+                    //  if (mFreeMem < mMemCacheStartTrimThreshold) {
                         // We only clear the cache if the free storage has changed
                         // a significant amount since the last time.
-                        if ((mFreeMemAfterLastCacheClear-mFreeMem)
-                                >= ((mMemLowThreshold-mMemCacheStartTrimThreshold)/4)) {
+                       // if ((mFreeMemAfterLastCacheClear-mFreeMem)
+                       //         >= ((mMemLowThreshold-mMemCacheStartTrimThreshold)/4)) {
                             // See if clearing cache helps
                             // Note that clearing cache is asynchronous and so we do a
                             // memory check again once the cache has been cleared.
                             mThreadStartTime = System.currentTimeMillis();
                             mClearSucceeded = false;
                             clearCache();
-                        }
-                    }
+                        //}
+                   // }
+                   ///@}
                 } else {
                     // This is a call from after clearing the cache.  Note
                     // the amount of free storage at this point.
@@ -290,6 +420,8 @@ public class DeviceStorageMonitorService extends SystemService {
             } else {
                 mFreeMemAfterLastCacheClear = mFreeMem;
                 if (mLowMemFlag) {
+                    mCheckAppSize = true;
+                    mGetSize = false;
                     Slog.i(TAG, "Memory available. Cancelling notification");
                     cancelNotification();
                     mLowMemFlag = false;
@@ -301,6 +433,7 @@ public class DeviceStorageMonitorService extends SystemService {
                 mLowMemFlag = true;
             }
             if (mFreeMem < mMemFullThreshold) {
+                Slog.v(TAG, "Running on storage full,freeStorage=" + mFreeMem);
                 if (!mMemFullFlag) {
                     sendFullNotification();
                     mMemFullFlag = true;
@@ -311,12 +444,40 @@ public class DeviceStorageMonitorService extends SystemService {
                     mMemFullFlag = false;
                 }
             }
+            // /M:Add for low storage, if storage <4M,show the wanring
+            // message,@{
+            int criticalLowLevel = (int) Math.floor(mFreeMem / (1024 * 1024));
+            if (criticalLowLevel < mLastCriticalLowLevel) {
+                if (mFreeMem < mLastCriticalLowLevel * 1024 * 1024 && mGetSize) {
+                    mHandler.sendMessage(mHandler.obtainMessage(DEVICE_MEMORY_CRITICAL_LOW));
+                    Slog.i(TAG, "Show warning dialog, critical level: " + criticalLowLevel);
+                    mLastCriticalLowLevel = criticalLowLevel;
+                }
+            }
+            if (mLastCriticalLowLevel < criticalLowLevel) {
+                mLastCriticalLowLevel = Math.min(criticalLowLevel, 4);
+            }
+            // /@}
         }
         if(localLOGV) Slog.i(TAG, "Posting Message again");
         //keep posting messages to itself periodically
         postCheckMemoryMsg(true, DEFAULT_CHECK_INTERVAL);
     }
 
+    // /M:For low storage,to check the APP(Eamil&Message) used data size,@{
+    final IPackageStatsObserver.Stub mStatsObserver = new IPackageStatsObserver.Stub() {
+        public void onGetStatsCompleted(PackageStats stats, boolean succeeded) {
+            mCacheSize = stats.cacheSize;
+            mCodeSize = stats.codeSize;
+            mDataSize = stats.dataSize;
+            mTotalSize = mCacheSize + mCodeSize + mDataSize;
+            mGetSize = true;
+            Slog.v(TAG, "mStatsObserver  mCacheSize = " + mCacheSize + "mCodeSize = " + mCodeSize
+                    + "mDataSize=" + mDataSize + "mTotalSize=" + mTotalSize);
+        }
+    };
+
+    // /@}
     void postCheckMemoryMsg(boolean clearCache, long delay) {
         // Remove queued messages
         mHandler.removeMessages(DEVICE_MEMORY_WHAT);
@@ -325,6 +486,30 @@ public class DeviceStorageMonitorService extends SystemService {
                 delay);
     }
 
+    /*
+    * just query settings to retrieve the memory threshold.
+    * Preferred this over using a ContentObserver since Settings.Secure caches the value
+    * any way
+    */
+    private long getMemThreshold() {
+        long value = Settings.Global.getInt(
+                              mResolver,
+                              Settings.Global.SYS_STORAGE_THRESHOLD_PERCENTAGE,
+                              DEFAULT_THRESHOLD_PERCENTAGE);
+        if (localLOGV) Slog.v(TAG, "Threshold Percentage=" + value);
+        value = (value * mTotalMemory) / 100;
+        long maxValue = Settings.Global.getInt(
+                mResolver,
+                Settings.Global.SYS_STORAGE_THRESHOLD_MAX_BYTES,
+                DEFAULT_THRESHOLD_MAX_BYTES);
+        //evaluate threshold value
+        return value < maxValue ? value : maxValue;
+    }
+
+    /**
+    * Constructor to run service. initializes the disk space threshold value
+    * and posts an empty message to kickstart the process.
+    */
     public DeviceStorageMonitorService(Context context) {
         super(context);
         mLastReportedFreeMemTime = 0;
@@ -334,9 +519,14 @@ public class DeviceStorageMonitorService extends SystemService {
         mDataFileStats = new StatFs(DATA_PATH.getAbsolutePath());
         mSystemFileStats = new StatFs(SYSTEM_PATH.getAbsolutePath());
         mCacheFileStats = new StatFs(CACHE_PATH.getAbsolutePath());
+        mQueryDataFs = new StatFs(DATA_PATH.getAbsolutePath());
         //initialize total storage on device
         mTotalMemory = (long)mDataFileStats.getBlockCount() *
                         mDataFileStats.getBlockSize();
+        // /M:Initialize sys.lowstorage_flag
+        // @{
+        SystemProperties.set("sys.lowstorage_flag", "0");
+        // /@}
         mStorageLowIntent = new Intent(Intent.ACTION_DEVICE_STORAGE_LOW);
         mStorageLowIntent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
         mStorageOkIntent = new Intent(Intent.ACTION_DEVICE_STORAGE_OK);
@@ -345,6 +535,11 @@ public class DeviceStorageMonitorService extends SystemService {
         mStorageFullIntent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
         mStorageNotFullIntent = new Intent(Intent.ACTION_DEVICE_STORAGE_NOT_FULL);
         mStorageNotFullIntent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
+
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(IPO_POWER_ON);
+        filter.addAction(Intent.ACTION_LOCALE_CHANGED);
+        context.registerReceiver(mIntentReceiver, filter);
     }
 
     private static boolean isBootImageOnDisk() {
@@ -363,9 +558,12 @@ public class DeviceStorageMonitorService extends SystemService {
     @Override
     public void onStart() {
         // cache storage thresholds
-        final StorageManager sm = StorageManager.from(getContext());
-        mMemLowThreshold = sm.getStorageLowBytes(DATA_PATH);
-        mMemFullThreshold = sm.getStorageFullBytes(DATA_PATH);
+        //final StorageManager sm = StorageManager.from(getContext());
+        //mMemLowThreshold = sm.getStorageLowBytes(DATA_PATH);
+        //mMemFullThreshold = sm.getStorageFullBytes(DATA_PATH);
+
+        mMemLowThreshold = getMemThreshold();
+        mMemFullThreshold = FULL_THRESHOLD_BYTES;
 
         mMemCacheStartTrimThreshold = ((mMemLowThreshold*3)+mMemFullThreshold)/4;
         mMemCacheTrimToThreshold = mMemLowThreshold
@@ -396,6 +594,25 @@ public class DeviceStorageMonitorService extends SystemService {
         public long getMemoryLowThreshold() {
             return mMemLowThreshold;
         }
+
+
+        public boolean isMemoryCriticalLow() {
+            long tempFreeMem = 0;
+            try {
+                mQueryDataFs.restat(DATA_PATH.getAbsolutePath());
+                tempFreeMem = (long) mQueryDataFs.getAvailableBlocks() *
+                mQueryDataFs.getBlockSize();
+            } catch (IllegalArgumentException e) {
+                // use the default value of tempFreeMem
+                tempFreeMem = mFreeMem;
+                Slog.v(TAG, "Failed to get current free storage size.");
+            }
+            if (tempFreeMem <= EXCEPTION_LOW_THRESHOLD_BYTES) {
+                return true;
+            } else {
+                return false;
+            }
+        }
     };
 
     private final IBinder mRemoteService = new Binder() {
@@ -416,6 +633,29 @@ public class DeviceStorageMonitorService extends SystemService {
 
     void dumpImpl(PrintWriter pw) {
         final Context context = getContext();
+
+        // /M:Add for EMMA coverage rate counting
+        // ,@{
+/*        int opti = 0;
+        while (opti < args.length) {
+            String opt = args[opti];
+            if (opt == null || opt.length() <= 0 || opt.charAt(0) != '-') {
+                break;
+            }
+            opti++;
+
+            if ("-r".equals(opt)) {
+                RT.resetCoverageData();
+                return;
+            } else if ("-g".equals(opt)) {
+                RT.dumpCoverageData(new File ("/data/server_coverage.ec"), false);
+                return;
+            } else {
+                pw.println("Unknown argument: " + opt + "; use -h for help");
+            }
+        }
+*/
+        // /@}
 
         pw.println("Current DeviceStorageMonitor state:");
 
@@ -468,7 +708,7 @@ public class DeviceStorageMonitorService extends SystemService {
                 (NotificationManager)context.getSystemService(
                         Context.NOTIFICATION_SERVICE);
         CharSequence title = context.getText(
-                com.android.internal.R.string.low_internal_storage_view_title);
+                com.mediatek.internal.R.string.low_internal_storage_view_title);
         CharSequence details = context.getText(mIsBootImageOnDisk
                 ? com.android.internal.R.string.low_internal_storage_view_text
                 : com.android.internal.R.string.low_internal_storage_view_text_no_boot);
@@ -536,4 +776,26 @@ public class DeviceStorageMonitorService extends SystemService {
             EventLogTags.writeCacheFileDeleted(path);
         }
     }
+
+    /**
+     * M:add for Received the IPO boot and locale change intent
+     */
+    private BroadcastReceiver mIntentReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+
+            if (action.equals(IPO_POWER_ON)) {
+                mIPOBootup = true;
+                mLowMemFlag = false;
+            }
+
+            if (action.equals(Intent.ACTION_LOCALE_CHANGED)) {
+                mConfigChanged = true;
+                if (null != mDialog) {
+                    mDialog.cancel();
+                }
+            }
+        }
+    };
 }

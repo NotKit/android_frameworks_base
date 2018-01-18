@@ -63,6 +63,17 @@
 namespace android {
 namespace uirenderer {
 
+#if DEBUG_SHADOW
+    #ifdef ALOGD
+    #undef ALOGD
+    #endif
+    #define ALOGD(...) ALOGD_IF(CC_UNLIKELY(g_HWUI_DEBUG_SHADOW), __VA_ARGS__);
+    #ifdef ALOGW
+    #undef ALOGW
+    #endif
+    #define ALOGW(...) ALOGW_IF(CC_UNLIKELY(g_HWUI_DEBUG_SHADOW), __VA_ARGS__);
+#endif
+
 static const float EPSILON = 1e-7;
 
 /**

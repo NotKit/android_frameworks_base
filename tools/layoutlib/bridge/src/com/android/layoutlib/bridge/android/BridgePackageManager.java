@@ -842,6 +842,10 @@ public class BridgePackageManager extends PackageManager {
         return null;
     }
 
+    public int checkAPKSignatures(String pkg) {
+        return 0;
+    }
+
     @Override
     public void addCrossProfileIntentFilter(IntentFilter filter, int sourceUserId, int targetUserId,
             int flags) {

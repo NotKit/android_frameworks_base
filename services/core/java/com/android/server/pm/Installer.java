@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2008 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -173,6 +178,12 @@ public final class Installer extends SystemService {
     public void rmdex(String codePath, String instructionSet) throws InstallerException {
         assertValidInstructionSet(instructionSet);
         mInstaller.execute("rmdex", codePath, instructionSet);
+    }
+
+    /// M: Support remove dex file after a preintalled app is replaced or removed.
+    protected void rmdexcache(String codePath, String instructionSet) throws InstallerException {
+        assertValidInstructionSet(instructionSet);
+        mInstaller.execute("rmdexcache", codePath, instructionSet);
     }
 
     public void rmPackageDir(String packageDir) throws InstallerException {

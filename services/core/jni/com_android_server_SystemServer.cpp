@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,6 +23,9 @@
 #include <JNIHelp.h>
 
 #include <sensorservice/SensorService.h>
+#ifdef MTK_SENSOR_HUB_SUPPORT
+#include <sensorhubservice/SensorHubService.h>
+#endif
 
 #include <cutils/properties.h>
 #include <utils/Log.h>
@@ -32,6 +40,13 @@ static void android_server_SystemServer_startSensorService(JNIEnv* /* env */, jo
         // Start the sensor service
         SensorService::instantiate();
     }
+
+#ifdef MTK_SENSOR_HUB_SUPPORT
+    property_get("ro.mtk_sensorhub_support", propBuf, "1");
+    if (strcmp(propBuf, "1") == 0) {
+        SensorHubService::instantiate();
+    }
+#endif
 }
 
 /*

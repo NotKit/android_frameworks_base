@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -39,6 +44,10 @@ final class VideoCallbackServant {
     private static final int MSG_CHANGE_CALL_DATA_USAGE = 4;
     private static final int MSG_CHANGE_CAMERA_CAPABILITIES = 5;
     private static final int MSG_CHANGE_VIDEO_QUALITY = 6;
+    /* M: ViLTE part start */
+    private static final int MSG_MTK_BASE = 100;
+    private static final int MSG_CHANGE_PEER_DIMENSIONS_WITH_ANGLE = MSG_MTK_BASE;
+    /* M: ViLTE part end */
 
     private final IVideoCallback mDelegate;
 
@@ -88,6 +97,18 @@ final class VideoCallbackServant {
                     }
                     break;
                 }
+                /* M: ViLTE part start */
+                /* Different from AOSP, additional parameter "rotation" is added. */
+                case MSG_CHANGE_PEER_DIMENSIONS_WITH_ANGLE: {
+                    SomeArgs args = (SomeArgs) msg.obj;
+                    try {
+                        mDelegate.changePeerDimensionsWithAngle(args.argi1, args.argi2, args.argi3);
+                    } finally {
+                        args.recycle();
+                    }
+                    break;
+                }
+                /* M: ViLTE part end */
                 case MSG_CHANGE_CALL_DATA_USAGE: {
                     SomeArgs args = (SomeArgs) msg.obj;
                     try {
@@ -139,6 +160,19 @@ final class VideoCallbackServant {
             args.argi2 = height;
             mHandler.obtainMessage(MSG_CHANGE_PEER_DIMENSIONS, args).sendToTarget();
         }
+
+        /* M: ViLTE part start */
+        /* Different from AOSP, additional parameter "rotation" is added. */
+        @Override
+        public void changePeerDimensionsWithAngle(int width, int height, int rotation)
+                throws RemoteException {
+            SomeArgs args = SomeArgs.obtain();
+            args.argi1 = width;
+            args.argi2 = height;
+            args.argi3 = rotation;
+            mHandler.obtainMessage(MSG_CHANGE_PEER_DIMENSIONS_WITH_ANGLE, args).sendToTarget();
+        }
+        /* M: ViLTE part end */
 
         @Override
         public void changeCallDataUsage(long dataUsage) throws RemoteException {

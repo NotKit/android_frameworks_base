@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2015 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2012 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -130,7 +135,10 @@ public class FusionEngine implements LocationListener {
         ProviderStats stats = mStats.get(name);
         if (stats == null) return;
 
-        if (mLocationManager.isProviderEnabled(name)) {
+        Log.v(TAG, "requestLocationUpdates name=" + name + " minTime=" + minTime);
+        /// M: Catch exceptions when network provider is not pre-installed.
+        try {
+        //if (mLocationManager.isProviderEnabled(name)) {
             if (!stats.requested) {
                 stats.requestTime = SystemClock.elapsedRealtime();
                 stats.requested = true;
@@ -140,6 +148,9 @@ public class FusionEngine implements LocationListener {
                 stats.minTime = minTime;
                 mLocationManager.requestLocationUpdates(name, minTime, 0, this, mLooper);
             }
+        //}
+        } catch (IllegalArgumentException e) {
+            Log.w(TAG, "requestLocationUpdates to unexisted provider: ", e);
         }
     }
 

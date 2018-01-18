@@ -303,6 +303,16 @@ public class UsbService extends IUsbManager.Stub {
         }
     }
 
+    @Override
+        public int getCurrentState() {
+            mContext.enforceCallingOrSelfPermission(android.Manifest.permission.MANAGE_USB, null);
+            if (mDeviceManager != null) {
+                return mDeviceManager.getCurrentState();
+            } else {
+                return 0;
+            }
+        }
+
     private static boolean isSupportedCurrentFunction(String function) {
         if (function == null) return true;
 
@@ -313,6 +323,9 @@ public class UsbService extends IUsbManager.Stub {
             case UsbManager.USB_FUNCTION_MTP:
             case UsbManager.USB_FUNCTION_PTP:
             case UsbManager.USB_FUNCTION_RNDIS:
+            case UsbManager.USB_FUNCTION_MASS_STORAGE:
+            case UsbManager.USB_FUNCTION_BICR:
+            case UsbManager.USB_FUNCTION_EEM:
                 return true;
         }
 

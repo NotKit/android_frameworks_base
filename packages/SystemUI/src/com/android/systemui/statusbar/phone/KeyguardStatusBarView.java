@@ -21,6 +21,7 @@ import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.graphics.drawable.Drawable;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.View;
 import android.view.ViewTreeObserver;
@@ -28,6 +29,7 @@ import android.widget.ImageView;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
 
+import com.android.keyguard.CarrierText;
 import com.android.systemui.BatteryMeterView;
 import com.android.systemui.Interpolators;
 import com.android.systemui.R;
@@ -45,11 +47,13 @@ import java.text.NumberFormat;
 public class KeyguardStatusBarView extends RelativeLayout
         implements BatteryController.BatteryStateChangeCallback {
 
+    private static final String TAG = "KeyguardStatusBarView";
     private boolean mBatteryCharging;
     private boolean mKeyguardUserSwitcherShowing;
     private boolean mBatteryListening;
 
-    private TextView mCarrierLabel;
+    // private TextView mCarrierLabel;
+    private CarrierText mCarrierLabel;
     private View mSystemIconsSuperContainer;
     private MultiUserSwitch mMultiUserSwitch;
     private ImageView mMultiUserAvatar;
@@ -75,7 +79,8 @@ public class KeyguardStatusBarView extends RelativeLayout
         mMultiUserSwitch = (MultiUserSwitch) findViewById(R.id.multi_user_switch);
         mMultiUserAvatar = (ImageView) findViewById(R.id.multi_user_avatar);
         mBatteryLevel = (TextView) findViewById(R.id.battery_level);
-        mCarrierLabel = (TextView) findViewById(R.id.keyguard_carrier_text);
+        // mCarrierLabel = (TextView) findViewById(R.id.keyguard_carrier_text);
+        mCarrierLabel = (CarrierText) findViewById(R.id.keyguard_carrier_text);
         loadDimens();
         updateUserSwitcher();
     }
@@ -217,6 +222,7 @@ public class KeyguardStatusBarView extends RelativeLayout
         userInfoController.addListener(new UserInfoController.OnUserInfoChangedListener() {
             @Override
             public void onUserInfoChanged(String name, Drawable picture) {
+                Log.d(TAG,"onUserInfoChanged and set new profile icon");
                 mMultiUserAvatar.setImageDrawable(picture);
             }
         });

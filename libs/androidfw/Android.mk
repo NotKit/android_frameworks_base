@@ -1,3 +1,8 @@
+#
+# Copyright (C) 2014 MediaTek Inc.
+# Modification based on code covered by the mentioned copyright
+# and/or permission notice(s).
+#
 # Copyright (C) 2010 The Android Open Source Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -50,6 +55,9 @@ LOCAL_CFLAGS += -Wall -Werror -Wunused -Wunreachable-code
 LOCAL_SRC_FILES:= $(hostSources)
 LOCAL_C_INCLUDES := external/zlib
 
+ifeq ($(strip $(MTK_DFO_RESOLUTION_SUPPORT)),yes)
+LOCAL_CFLAGS += -DMTK_FOR_HOST_BUILD_AAPT
+endif
 include $(BUILD_HOST_STATIC_LIBRARY)
 
 

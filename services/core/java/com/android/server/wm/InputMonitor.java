@@ -16,6 +16,7 @@
 
 package com.android.server.wm;
 
+import static com.android.server.wm.WindowManagerDebugConfig.DEBUG_BOOT;
 import static com.android.server.wm.WindowManagerDebugConfig.DEBUG_DRAG;
 import static com.android.server.wm.WindowManagerDebugConfig.DEBUG_FOCUS_LIGHT;
 import static com.android.server.wm.WindowManagerDebugConfig.DEBUG_INPUT;
@@ -39,6 +40,12 @@ import com.android.server.input.InputWindowHandle;
 
 import java.io.PrintWriter;
 import java.util.Arrays;
+
+/// M: KeyDispatchingTimeout predump mechanism @{
+import com.mediatek.anrappframeworks.ANRAppFrameworks;
+import com.mediatek.anrappmanager.ANRManagerNative;
+import com.mediatek.anrmanager.ANRManager;
+/// KeyDispatchingTimeout predump mechanism @}
 
 final class InputMonitor implements InputManagerService.WindowManagerCallbacks {
     private final WindowManagerService mService;
@@ -69,6 +76,9 @@ final class InputMonitor implements InputManagerService.WindowManagerCallbacks {
     private final Object mInputDevicesReadyMonitor = new Object();
     private boolean mInputDevicesReady;
 
+    /// M: Mobile Manager Service
+    private static final long MILLI_TO_NANO = 1000 * 1000;
+
     public InputMonitor(WindowManagerService service) {
         mService = service;
     }
@@ -92,6 +102,39 @@ final class InputMonitor implements InputManagerService.WindowManagerCallbacks {
         }
     }
 
+    /// M: KeyDispatchingTimeout predump mechanism @{
+    public void notifyPredump(InputApplicationHandle inputApplicationHandle,
+            InputWindowHandle inputWindowHandle, int pid, int message)
+    {
+        try
+        {
+            WindowState windowState = null;
+            AppWindowToken appWindowToken = null;
+            if (inputWindowHandle != null)
+            {
+                windowState = (WindowState) inputWindowHandle.windowState;
+                if (windowState != null)
+                {
+                    appWindowToken = windowState.mAppToken;
+                }
+            }
+            // Add windowState!= null condition for notifyANR new case
+            if (appWindowToken != null || inputApplicationHandle != null || windowState != null)
+            {
+                ANRManagerNative.getDefault(new ANRAppFrameworks()).notifyLightWeightANR(
+                        pid, "KeyDispatchingTimeout predump", message);
+            } else {
+                Slog.i(TAG_WM,"Touch event for WNR, it isn't necessary to predump");
+            }
+        }
+        catch (RemoteException e)
+        {
+            Slog.w(TAG_WM, "Error notifyPredump ", e);
+        }
+    }
+    /// M: KeyDispatchingTimeout predump mechanism @}
+
+
     /* Notifies the window manager about an application that is not responding.
      * Returns a new timeout to continue waiting in nanoseconds, or 0 to abort dispatch.
      *
@@ -103,11 +146,30 @@ final class InputMonitor implements InputManagerService.WindowManagerCallbacks {
         AppWindowToken appWindowToken = null;
         WindowState windowState = null;
         boolean aboveSystem = false;
+        boolean bIsWNR = false;     /// M: WNR debugging mechanism
+
         synchronized (mService.mWindowMap) {
             if (inputWindowHandle != null) {
                 windowState = (WindowState) inputWindowHandle.windowState;
                 if (windowState != null) {
                     appWindowToken = windowState.mAppToken;
+                    /// M: WNR debugging mechanism @{
+                    if (ANRManager.DISABLE_ALL_ANR_MECHANISM
+                            != ANRManager.enableANRDebuggingMechanism()) {
+                        if (appWindowToken == null) {
+                            bIsWNR = true;
+                        }
+
+                        /// M: Dump input dispatching status in ViewRoot.@{
+                        try {
+                            windowState.mClient.dumpInputDispatchingStatus();
+                        } catch (RemoteException e) {
+                            Slog.w(WindowManagerService.TAG,
+                                    "Error dump input dispatching status.", e);
+                        }
+                        /// @}
+                    }
+                    /// M: WNR debugging mechanism @}
                 }
             }
             if (appWindowToken == null && inputApplicationHandle != null) {
@@ -136,7 +198,7 @@ final class InputMonitor implements InputManagerService.WindowManagerCallbacks {
             mService.saveANRStateLocked(appWindowToken, windowState, reason);
         }
 
-        if (appWindowToken != null && appWindowToken.appToken != null) {
+        if (appWindowToken != null && appWindowToken.appToken != null && bIsWNR == false) {
             try {
                 // Notify the activity manager about the timeout and let it decide whether
                 // to abort dispatching or keep waiting.
@@ -157,10 +219,14 @@ final class InputMonitor implements InputManagerService.WindowManagerCallbacks {
                 if (timeout >= 0) {
                     // The activity manager declined to abort dispatching.
                     // Wait a bit longer and timeout again later.
-                    return timeout * 1000000L; // nanoseconds
+                    /// M: Convert unit to nano second
+                    return timeout * MILLI_TO_NANO;
                 }
             } catch (RemoteException ex) {
             }
+        }
+        else {
+            Slog.i(WindowManagerService.TAG, "both windowState & appWindowToken are null");
         }
         return 0; // abort dispatching
     }
@@ -467,7 +533,16 @@ final class InputMonitor implements InputManagerService.WindowManagerCallbacks {
             final InputApplicationHandle handle = newApp.mInputApplicationHandle;
             handle.name = newApp.toString();
             handle.dispatchingTimeoutNanos = newApp.inputDispatchingTimeoutNanos;
-
+            /// M: KeyDispatchingTimeout predump mechanism @{
+            try
+            {
+                handle.pid = newApp.appToken.getFocusAppPid();
+            }
+            catch (RemoteException ex)
+            {
+                Slog.e(TAG_WM, "GetFocusAppPid fail");
+            }
+            /// KeyDispatchingTimeout predump mechanism @}
             mService.mInputManager.setFocusedApplication(handle);
         }
     }
@@ -523,10 +598,10 @@ final class InputMonitor implements InputManagerService.WindowManagerCallbacks {
 
     public void setEventDispatchingLw(boolean enabled) {
         if (mInputDispatchEnabled != enabled) {
-            if (DEBUG_INPUT) {
+            /// M: Add more log at WMS
+            if (DEBUG_INPUT || DEBUG_BOOT) {
                 Slog.v(TAG_WM, "Setting event dispatching to " + enabled);
             }
-
             mInputDispatchEnabled = enabled;
             updateInputDispatchModeLw();
         }

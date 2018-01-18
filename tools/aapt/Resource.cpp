@@ -1,3 +1,8 @@
+/*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
 //
 // Copyright 2006 The Android Open Source Project
 //
@@ -37,6 +42,10 @@ static const bool kIsDebug = false;
 
 // Number of threads to use for preprocessing images.
 static const size_t MAX_THREADS = 4;
+
+///M: the image type that could be overlaid with changing file extension @{
+static const char* image_overlaid_type[]= {".bmp", ".jpg", ".png", ".gif", ".ktx", ".BMP", ".JPG", ".PNG", ".GIF", ".KTX"};
+///@}
 
 // ==========================================================================
 // ==========================================================================
@@ -594,6 +603,39 @@ static void checkForIds(const String8& path, ResXMLParser& parser)
     }
 }
 
+///M: Check if this file(does not consider the file extension) has been overlaid(removed) before in this falvor @{
+//return true, if this file has not been overlaid before,
+//return false,if this file has been overlaid before
+static bool firstTimeOverlaid(const KeyedVector<AaptGroupEntry, String8>& overlaidFlavorAndFiles,
+                              const String8& filename,
+                              const AaptGroupEntry& groupEntry,
+                              bool Debuginfo
+                              )
+{
+  ssize_t searchIndex = overlaidFlavorAndFiles.indexOfKey(groupEntry);
+  bool ret = true;
+  if(searchIndex >= 0){
+    // the same flavor is removed before
+    String8 overlaidFilename = overlaidFlavorAndFiles.valueAt(searchIndex).getBasePath();
+    String8 overlayingFilename = filename.getBasePath();
+
+    if(Debuginfo){
+        printf("aapt: verbose :[OVERLAY]The flavor %s is removed before \n",groupEntry.toString().string());
+        printf("aapt: verbose :[OVERLAY]The next overlayingFilename is %s\n",overlayingFilename.string());
+    }
+
+    if(overlaidFilename == overlayingFilename){
+        //the filename(without fileextension) is removed before
+        if(Debuginfo){
+            printf("aapt: verbose :[OVERLAY]The filename %s is matched in overlaid list(removed before) \n",overlaidFilename.string());
+        }
+        ret = false;
+    }
+  }
+
+  return ret;
+}
+///@}
 static bool applyFileOverlay(Bundle *bundle,
                              const sp<AaptAssets>& assets,
                              sp<ResourceTypeSet> *baseSet,
@@ -602,6 +644,14 @@ static bool applyFileOverlay(Bundle *bundle,
     if (bundle->getVerbose()) {
         printf("applyFileOverlay for %s\n", resType);
     }
+
+     ///M:@{
+       //saving the new created group(filename) or flavor(in the existed group),
+       //saving the newed pair(the newFlavor->filename for the resType)
+     KeyedVector<AaptGroupEntry, String8> newedFlavorAndFile;
+       //saving the overlaid pair(the overlaidFlavor->filename for the resType)
+     KeyedVector<AaptGroupEntry, String8> overlaidFlavorAndFile;
+     ///@}
 
     // Replace any base level files in this category with any found from the overlay
     // Also add any found only in the overlay.
@@ -625,6 +675,12 @@ static bool applyFileOverlay(Bundle *bundle,
                     printf("trying overlaySet Key=%s\n",overlaySet->keyAt(overlayIndex).string());
                 }
                 ssize_t baseIndex = -1;
+
+                ///M:for saving the new created group or flavor for the resType @{
+                newedFlavorAndFile.clear();
+                String8 fullFilename = overlaySet->keyAt(overlayIndex);
+                ///@}
+
                 if (baseSet->get() != NULL) {
                     baseIndex = (*baseSet)->indexOfKey(overlaySet->keyAt(overlayIndex));
                 }
@@ -664,7 +720,22 @@ static bool applyFileOverlay(Bundle *bundle,
                                         overlayGroup->getLeaf().string(),
                                         overlayFiles.keyAt(overlayGroupIndex).toString().string());
                             }
-                            baseGroup->removeFile(baseFileIndex);
+                            ///M:@{
+                            if(firstTimeOverlaid(overlaidFlavorAndFile,
+                                                 overlayGroup->getLeaf(),
+                                                 overlayFiles.keyAt(overlayGroupIndex),
+                                                 bundle->getVerbose())){
+                                if (bundle->getVerbose()) {
+                                    printf("aapt: verbose :[OVERLAY]It is the first time the flavor %s is removed in the file(group) %s \n",overlayFiles.keyAt(overlayGroupIndex).toString().string(),overlayGroup->getLeaf().string());
+                                }
+                                overlaidFlavorAndFile.add(overlayFiles.keyAt(overlayGroupIndex),overlayGroup->getLeaf());
+                            ///@}
+                                baseGroup->removeFile(baseFileIndex);
+                            ///M:@{
+                            }else{
+                                printf("aapt: verbose :[OVERLAY]It is NOT the first time the flavor %s is removed in the file %s \n",overlayFiles.keyAt(overlayGroupIndex).toString().string(),overlayGroup->getLeaf().string());
+                            }
+                            ///@}
                         } else {
                             // didn't find a match fall through and add it..
                             if (true || bundle->getVerbose()) {
@@ -672,6 +743,14 @@ static bool applyFileOverlay(Bundle *bundle,
                                         overlayGroup->getLeaf().string(),
                                         overlayFiles.keyAt(overlayGroupIndex).toString().string());
                             }
+                            ///M:@{
+                            // a new flavor for this group(filename) is going to be added
+                            // hence the base one should be considered to be removed
+                            newedFlavorAndFile.add(overlayFiles.keyAt(overlayGroupIndex),overlayGroup->getLeaf());
+                            if (bundle->getVerbose()) {
+                                printf("aapt: verbose :[OVERLAY][new flavor,existing file] %s is added for flavor %s\n",overlayGroup->getLeaf().string(),overlayFiles.keyAt(overlayGroupIndex).toString().string());
+                            }
+                            ///@}
                         }
                         baseGroup->addFile(overlayFiles.valueAt(overlayGroupIndex));
                         assets->addGroupEntry(overlayFiles.keyAt(overlayGroupIndex));
@@ -693,12 +772,101 @@ static bool applyFileOverlay(Bundle *bundle,
                             overlayGroupIndex<overlayGroupSize;
                             overlayGroupIndex++) {
                         assets->addGroupEntry(overlayFiles.keyAt(overlayGroupIndex));
+                        ///M:@{
+                        newedFlavorAndFile.add(overlayFiles.keyAt(overlayGroupIndex),overlayGroup->getLeaf());
+                        if (bundle->getVerbose()) {
+                            printf("aapt: verbose :[OVERLAY][new flavor,new file] %s is added with flavor %s \n",overlayGroup->getLeaf().string(),overlayFiles.keyAt(overlayGroupIndex).toString().string());
+                        }
+                        ///@}
+
                     }
+
+                    ///M:@{
+                    // a new group(filename)is be added
+                    // hence the base one should considered be to be removed
+                    ///@}
                 }
+                ///M:@{
+                if(!newedFlavorAndFile.isEmpty()){
+                    //try to removed the first base one if it exists
+                    if (bundle->getVerbose()) {
+                        printf("aapt: verbose :[OVERLAY]The type trying to remove is %s \n",
+                                resTypeString.string());
+                        printf("aapt: verbose :[OVERLAY]There are %zd of newed for removed\n",
+                                newedFlavorAndFile.size());
+                    }
+                    String8 fileName = fullFilename.getBasePath();
+                    String8 ext = fullFilename.getPathExtension();
+
+                    // change file extention and find the one with the same flavor
+                    for(size_t imgTypeIndex=0; imgTypeIndex < (sizeof(image_overlaid_type)/sizeof(char*)) ; imgTypeIndex++ ){
+                        ssize_t rmBaseIndex = -1;
+                        String8 fileNameExt = fileName + image_overlaid_type[imgTypeIndex];
+                        if (bundle->getVerbose()) {
+                            printf("aapt: verbose :[OVERLAY]the changed one is %s \n",fileNameExt.string());
+                        }
+                        //skip the overlaid one(try to remove other file extensions)
+                        if( strcmp(image_overlaid_type[imgTypeIndex],ext.string()) == 0 ){
+                           if (bundle->getVerbose()) {
+                                printf("aapt: verbose :[OVERLAY]the changed one is %s, it is the same one \n",fileNameExt.string());
+                            }
+                            continue;
+                        }
+
+                        rmBaseIndex = (*baseSet)->indexOfKey(fileNameExt);
+                        if (rmBaseIndex >= 0) {
+                            // the group is found in baseSet
+                            // look for same flavor. we want to remove the same flavor.
+                            if (bundle->getVerbose()) {
+                                printf("aapt: verbose :[OVERLAY]the changed one %s is found\n",fileNameExt.string());
+                            }
+                            sp<AaptGroup> rmBaseGroup = (*baseSet)->valueAt(rmBaseIndex);
+                            const DefaultKeyedVector<AaptGroupEntry, sp<AaptFile> > *rmBaseFiles = &(rmBaseGroup->getFiles());
+                            for(size_t newFlavorIndex=0; newFlavorIndex < newedFlavorAndFile.size() ; newFlavorIndex++ ){
+                               ssize_t rmBaseFileIndex = rmBaseFiles->indexOfKey(newedFlavorAndFile.keyAt(newFlavorIndex));
+                               if (rmBaseFileIndex >= 0) {
+
+                                 if (bundle->getVerbose()) {
+                                    printf("aapt: verbose :[OVERLAY] [remove]found a match (" ZD ") for in base file %s, for flavor %s\n",
+                                            (ZD_TYPE) rmBaseFileIndex,
+                                            rmBaseGroup->getLeaf().string(),
+                                            rmBaseFiles->keyAt(rmBaseFileIndex).toString().string());
+                                 }
+
+                                 if( firstTimeOverlaid(overlaidFlavorAndFile,
+                                                        newedFlavorAndFile.valueAt(newFlavorIndex),
+                                                        newedFlavorAndFile.keyAt(newFlavorIndex),
+                                                        bundle->getVerbose())){
+                                    //if it is the first time, we remove the flavor(if it is the second time, it implies there is an error should be reported)
+                                    //So we only remove the first found one(avodiing the duplicate filename case is fixed)
+                                    overlaidFlavorAndFile.add(newedFlavorAndFile.keyAt(newFlavorIndex),newedFlavorAndFile.valueAt(newFlavorIndex));
+                                    if (bundle->getVerbose()) {
+                                        printf("aapt: verbose :[OVERLAY][diff ext, same flavor]It is the first time the flavor %s is removed in the file %s \n",rmBaseFiles->keyAt(rmBaseFileIndex).toString().string(),rmBaseGroup->getLeaf().string());
+                                    }
+                                    rmBaseGroup->removeFile(rmBaseFileIndex);
+                                 } else{
+                                    if (bundle->getVerbose()) {
+                                        printf("aapt: verbose :[OVERLAY][diff ext, same flavor]It is NOT the first time the flavor %s is removed in the file %s , there should be error\n",rmBaseFiles->keyAt(rmBaseFileIndex).toString().string(),rmBaseGroup->getLeaf().string());
+                                    }
+                                 }
+
+                               } else { //if (rmBaseFileIndex < UNKNOWN_ERROR)
+                                //should never hit this case, just to be safe
+                                if (bundle->getVerbose()) {
+                                    printf("aapt: verbose :[OVERLAY]Couldn't find GroupAndFile %s,this should be a problem \n",newedFlavorAndFile.keyAt(newFlavorIndex).toString().string());
+                                }
+                               }
+                            }//for all flavor of the group(filename)
+                        }// if(rmBaseIndex < UNKNOWN_ERROR)
+                    }// for all image Type
+                }
+                ///@}
             }
             // this overlay didn't have resources for this type
         }
         // try next overlay
+        ///M:
+        overlaidFlavorAndFile.clear();
         overlay = overlay->getOverlay();
     }
     return true;
@@ -2848,6 +3016,24 @@ addProguardKeepMethodRule(ProguardKeepSet* keep, const String8& memberName,
     keep->add(rule, location);
 }
 
+void
+addProguardKeepPluginRule(ProguardKeepSet* keep, const String8& inClassName,
+        const String8& srcName, int line)
+{
+    String8 className(inClassName);
+    String8 rule("-keep class ");
+    rule += className;
+    rule += " { *; }";
+
+    String8 location("view ");
+    location += srcName;
+    char lineno[20];
+    sprintf(lineno, ":%d", line);
+    location += lineno;
+
+    keep->add(rule, location);
+}
+
 status_t
 writeProguardForAndroidManifest(ProguardKeepSet* keep, const sp<AaptAssets>& assets, bool mainDex)
 {
@@ -2885,6 +3071,7 @@ writeProguardForAndroidManifest(ProguardKeepSet* keep, const sp<AaptAssets>& ass
 
     tree.restart();
 
+    bool serviceTag = false;
     while ((code=tree.next()) != ResXMLTree::END_DOCUMENT && code != ResXMLTree::BAD_DOCUMENT) {
         if (code == ResXMLTree::END_TAG) {
             if (/* name == "Application" && */ depth == 2) {
@@ -2936,6 +3123,27 @@ writeProguardForAndroidManifest(ProguardKeepSet* keep, const sp<AaptAssets>& ass
                 keepTag = true;
             }
         }
+
+        /// M: support keep plug-in class for proguard shrinking @{
+        if (depth == 3) {
+            if (tag == "service") {
+                serviceTag = true;
+            } else {
+                serviceTag = false;
+            }
+        }
+
+        if (depth == 4 && serviceTag && tag == "meta-data") {
+            String8 name = AaptXml::getAttribute(tree, "http://schemas.android.com/apk/res/android",
+                    "name", &error);
+            String8 value = AaptXml::getAttribute(tree, "http://schemas.android.com/apk/res/android",
+                    "value", &error);
+            if (name == "class") {
+                addProguardKeepPluginRule(keep, value, assFile->getPrintableSource(), tree.getLineNumber());
+            }
+        }
+        /// @}
+
         if (keepTag) {
             String8 name = AaptXml::getAttribute(tree,
                     "http://schemas.android.com/apk/res/android", "name", &error);

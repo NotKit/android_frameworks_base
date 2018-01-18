@@ -1228,6 +1228,13 @@ public final class PrintManager {
                         callback.onWriteFinished(pages, mSequence);
                     } catch (RemoteException re) {
                         Log.e(LOG_TAG, "Error calling onWriteFinished", re);
+                    ///M : There is always a moment when PrintSpooler is under finalizing,
+                    //       and there should be IllegalStateException thrown, just catch this
+                    //        exception and finalize callback binder. @{
+                    } catch (IllegalStateException e) {
+                        Log.e(LOG_TAG, "PrintDocumentAdapter is destroyed or under destroy");
+                        mCallback = null;
+                    ///M : @}
                     }
                 } finally {
                     destroy();
@@ -1253,6 +1260,13 @@ public final class PrintManager {
                     callback.onWriteFailed(error, mSequence);
                 } catch (RemoteException re) {
                     Log.e(LOG_TAG, "Error calling onWriteFailed", re);
+                 ///M : There is always a moment when PrintSpooler is under finalizing,
+                 //       and there should be IllegalStateException thrown, just catch this
+                 //        exception and finalize callback binder. @{
+                 } catch (IllegalStateException e) {
+                      Log.e(LOG_TAG, "PrintDocumentAdapter is destroyed or under destroy");
+                      mCallback = null;
+                 ///M : @}
                 } finally {
                     destroy();
                 }
@@ -1277,6 +1291,13 @@ public final class PrintManager {
                     callback.onWriteCanceled(mSequence);
                 } catch (RemoteException re) {
                     Log.e(LOG_TAG, "Error calling onWriteCanceled", re);
+                 ///M : There is always a moment when PrintSpooler is under finalizing,
+                 //       and there should be IllegalStateException thrown, just catch this
+                 //        exception and finalize callback binder. @{
+                 } catch (IllegalStateException e) {
+                    Log.e(LOG_TAG, "PrintDocumentAdapter is destroyed or under destroy");
+                    mCallback = null;
+                 ///M : @}
                 } finally {
                     destroy();
                 }

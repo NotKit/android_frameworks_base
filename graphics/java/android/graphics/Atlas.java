@@ -16,6 +16,8 @@
 
 package android.graphics;
 
+import android.util.Log;
+
 /**
  * @hide
  */
@@ -131,24 +133,42 @@ public class Atlas {
      */
     public Entry pack(int width, int height, Entry entry) {
         if (entry == null) entry = new Entry();
+        /// M: Avoid null object reference exception.
+        if (mPolicy == null) return null;
         return mPolicy.pack(width, height, entry);
     }
 
     private static Policy findPolicy(Type type, int width, int height, int flags) {
-        switch (type) {
-            case SliceMinArea:
-                return new SlicePolicy(width, height, flags,
-                        new SlicePolicy.MinAreaSplitDecision());
-            case SliceMaxArea:
-                return new SlicePolicy(width, height, flags,
-                        new SlicePolicy.MaxAreaSplitDecision());
-            case SliceShortAxis:
-                return new SlicePolicy(width, height, flags,
-                        new SlicePolicy.ShorterFreeAxisSplitDecision());
-            case SliceLongAxis:
-                return new SlicePolicy(width, height, flags,
-                        new SlicePolicy.LongerFreeAxisSplitDecision());
+        try {
+            SlicePolicy.SplitDecision decision;
+            switch (type) {
+                case SliceMinArea:
+                    Log.d("Atlas", "FindPolicy: SliceMinArea on" +
+                            Thread.currentThread().getName());
+                    decision = new SlicePolicy.MinAreaSplitDecision();
+                    return new SlicePolicy(width, height, flags, decision);
+                case SliceMaxArea:
+                    Log.d("Atlas", "FindPolicy: SliceMaxArea on" +
+                                Thread.currentThread().getName());
+                    decision = new SlicePolicy.MaxAreaSplitDecision();
+                    return new SlicePolicy(width, height, flags, decision);
+                case SliceShortAxis:
+                    Log.d("Atlas", "FindPolicy: SliceShortAxis on" +
+                                Thread.currentThread().getName());
+                    decision = new SlicePolicy.ShorterFreeAxisSplitDecision();
+                    return new SlicePolicy(width, height, flags, decision);
+                case SliceLongAxis:
+                    Log.d("Atlas", "FindPolicy: SliceLongAxis on" +
+                                Thread.currentThread().getName());
+                    decision = new SlicePolicy.LongerFreeAxisSplitDecision();
+                    return new SlicePolicy(width, height, flags, decision);
+            }
+        } catch (Exception e) {
+            Log.e("Atlas", "Exception when find policy", e);
         }
+        // [ALPS02362923] Null object reference due to plocy is null. Add log to track.
+        Log.w("Atlas", "Incorrect type " + type + " in find policy on " +
+                Thread.currentThread().getName());
         return null;
     }
 

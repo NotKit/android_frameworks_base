@@ -830,6 +830,28 @@ public class CarrierConfigManager {
             "duration_blocking_disabled_after_emergency_int";
 
     /**
+    * @M: Added for VDF operator name
+    * Get the value for operator name
+    * @hide
+    */
+    public static final String KEY_WFC_OPTR_NAME_STRING = "wifi_calling_optr";
+
+    /**
+    * @M: Added for VDF Settings UX customization on the basis of SIM present
+    * If value = 0, mode to change in WFC preferecne in Wireless Settings
+    * if value = 1, mode to change WFC mode
+    * @hide
+    */
+    public static final String KEY_WFC_SETTINGS_UX_TYPE_INT = "wfc_settings_ux_type";
+
+    /**
+    * @M: Added for VDF Settings UX customization on the basis of SIM present
+    * Values as per ImsConfig.WfcModeFeatureValueConstants.
+    * @hide
+    */
+    public static final String KEY_DEFAULT_WFC_MODE_INT = "default_wfc_mode";
+
+    /**
      * @hide
      * The default value for preferred CDMA roaming mode (aka CDMA system select.)
      *          CDMA_ROAMING_MODE_RADIO_DEFAULT = the default roaming mode from the radio
@@ -846,6 +868,22 @@ public class CarrierConfigManager {
     public static final int CDMA_ROAMING_MODE_AFFILIATED = 1;
     /** @hide */
     public static final int CDMA_ROAMING_MODE_ANY = 2;
+
+    /**
+    * @M: Added for check if need support ALFMS00872039:The device shall use the
+    * ADMINISTRATIVE APN in LTE area for the UICC/OTA data connection
+    * @hide
+    */
+    public static final String KEY_USE_ADMINISTRATIVE_APN_BOOL = "use_administrative_apn_bool";
+
+    /**
+    * @M: IMS data retry requirements, including PCSC and RA fail.
+    * Modem requires this information to do corresponding actions.
+    * Default value is false.
+    * @hide
+    */
+    public static final String KEY_IMS_PDN_SYNC_FAIL_CAUSE_TO_MODEM_BOOL =
+            "ims_pdn_sync_fail_cause_to_modem_bool";
 
     /**
      * Report IMEI as device id even if it's a CDMA/LTE phone.
@@ -988,6 +1026,37 @@ public class CarrierConfigManager {
      */
     public static final String KEY_EDITABLE_WFC_ROAMING_MODE_BOOL =
             "editable_wfc_roaming_mode_bool";
+    /**
+     * @M: Added to indicate whether Ims Conference call need to disconnect with no participant
+     * Values: true, keep the conference call with zero participant else false
+     * @hide
+     */
+    public static final String KEY_IMS_KEEP_CONF_CALL_WITH_NO_PARTICIPANT_BOOL = "ims_keep_conf_call";
+
+      /**
+     * @M: Default enhanced_4g_mode_enabled value
+     * Values: true, if the default enhanced_4g_mode_enabled value is on else false
+     * @hide
+     */
+    public static final String
+            KEY_DEFAULT_ENHANCED_4G_MODE_ENABLED_BOOL = "default_enhanced_4g_mode_enabled_bool";
+
+    /**
+     * VILTE enable not dependent on data enable for some operators, default value is false.
+     * When {@code true}, VILTE enable not dependent on data enable
+     * When {@code false}, VILTE enable dependent on data enable
+     * @hide
+     */
+    public static final String KEY_VILTE_ENABLE_NOT_DEPENDENT_ON_DATA_ENABLE_BOOL
+            = "vilte_enable_not_dependent_on_data_enable_bool";
+
+    /**
+    * @M: Added for showing dialog when user accesses supplementary services in Call Settings
+    * when Mobile data disabled.
+    * Values: true, shows the dialog to user to open mobile data else false
+    * @hide
+    */
+    public static final String KEY_SHOW_OPEN_MOBILE_DATA_DIALOG_BOOL = "show_open_mobile_data_dialog";
 
     /** The default value for every variable. */
     private final static PersistableBundle sDefaults;
@@ -1001,11 +1070,13 @@ public class CarrierConfigManager {
         sDefaults.putBoolean(KEY_APN_EXPAND_BOOL, true);
         sDefaults.putBoolean(KEY_AUTO_RETRY_ENABLED_BOOL, false);
         sDefaults.putBoolean(KEY_CARRIER_SETTINGS_ENABLE_BOOL, false);
-        sDefaults.putBoolean(KEY_CARRIER_VOLTE_AVAILABLE_BOOL, false);
-        sDefaults.putBoolean(KEY_CARRIER_VT_AVAILABLE_BOOL, false);
+        /// M: Set default value of volte, vilte and wfc to true as don't care in ImsManager,
+        /// and disable the case not support.
+        sDefaults.putBoolean(KEY_CARRIER_VOLTE_AVAILABLE_BOOL, true);
+        sDefaults.putBoolean(KEY_CARRIER_VT_AVAILABLE_BOOL, true);
         sDefaults.putBoolean(KEY_NOTIFY_HANDOVER_VIDEO_FROM_WIFI_TO_LTE_BOOL, false);
         sDefaults.putBoolean(KEY_SUPPORT_DOWNGRADE_VT_TO_AUDIO_BOOL, true);
-        sDefaults.putBoolean(KEY_CARRIER_WFC_IMS_AVAILABLE_BOOL, false);
+        sDefaults.putBoolean(KEY_CARRIER_WFC_IMS_AVAILABLE_BOOL, true);
         sDefaults.putBoolean(KEY_CARRIER_WFC_SUPPORTS_WIFI_ONLY_BOOL, false);
         sDefaults.putBoolean(KEY_CARRIER_DEFAULT_WFC_IMS_ENABLED_BOOL, false);
         sDefaults.putBoolean(KEY_CARRIER_DEFAULT_WFC_IMS_ROAMING_ENABLED_BOOL, false);
@@ -1137,14 +1208,24 @@ public class CarrierConfigManager {
         sDefaults.putString(KEY_MMS_USER_AGENT_STRING, "");
         sDefaults.putBoolean(KEY_ALLOW_NON_EMERGENCY_CALLS_IN_ECM_BOOL, true);
         sDefaults.putBoolean(KEY_USE_RCS_PRESENCE_BOOL, false);
+        sDefaults.putString(KEY_WFC_OPTR_NAME_STRING, "");
+        sDefaults.putInt(KEY_WFC_SETTINGS_UX_TYPE_INT, -1);
+        /* Default value is in sync with ImsConfig.WfcModeFeatureValueConstants.WIFI_PREFERRED*/
+        sDefaults.putInt(KEY_DEFAULT_WFC_MODE_INT, 2);
         sDefaults.putBoolean(KEY_FORCE_IMEI_BOOL, false);
         sDefaults.putInt(KEY_CDMA_ROAMING_MODE_INT, CDMA_ROAMING_MODE_RADIO_DEFAULT);
 
+        // Used for BIP to check if need support KDDI feature
+        sDefaults.putBoolean(KEY_USE_ADMINISTRATIVE_APN_BOOL, false);
+
+        // M: IMS data retry requirements
+        sDefaults.putBoolean(KEY_IMS_PDN_SYNC_FAIL_CAUSE_TO_MODEM_BOOL, false);
         // Carrier Signalling Receivers
         sDefaults.putStringArray(KEY_SIGNAL_REDIRECTION_RECEIVER_STRING_ARRAY, null);
         sDefaults.putStringArray(KEY_SIGNAL_DCFAILURE_RECEIVER_STRING_ARRAY, null);
         sDefaults.putStringArray(KEY_SIGNAL_PCO_RECEIVER_STRING_ARRAY, null);
         sDefaults.putString(KEY_CARRIER_SETUP_APP_STRING, "");
+
 
         // Rat families: {GPRS, EDGE}, {EVDO, EVDO_A, EVDO_B}, {UMTS, HSPA, HSDPA, HSUPA, HSPAP},
         // {LTE, LTE_CA}
@@ -1164,6 +1245,14 @@ public class CarrierConfigManager {
         sDefaults.putStringArray(FILTERED_CNAP_NAMES_STRING_ARRAY, null);
         sDefaults.putBoolean(KEY_EDITABLE_WFC_ROAMING_MODE_BOOL, false);
         sDefaults.putBoolean(KEY_STK_DISABLE_LAUNCH_BROWSER_BOOL, false);
+
+        sDefaults.putBoolean(KEY_IMS_KEEP_CONF_CALL_WITH_NO_PARTICIPANT_BOOL, true);
+        // M: Default enhanced_4g_mode_enabled value
+        sDefaults.putBoolean(KEY_DEFAULT_ENHANCED_4G_MODE_ENABLED_BOOL, true);
+
+        /// M: VILTE enable not dependent on data enable for some operators
+        sDefaults.putBoolean(KEY_VILTE_ENABLE_NOT_DEPENDENT_ON_DATA_ENABLE_BOOL, false);
+        sDefaults.putBoolean(KEY_SHOW_OPEN_MOBILE_DATA_DIALOG_BOOL, true);
     }
 
     /**

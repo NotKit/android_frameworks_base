@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -42,6 +47,10 @@ import android.os.ServiceManager;
 import android.util.Log;
 
 import java.io.IOException;
+
+/// M: @ {
+import com.mediatek.nfcgsma_extras.INfcAdapterGsmaExtras;
+/// }
 
 /**
  * Represents the local NFC adapter.
@@ -201,6 +210,24 @@ public final class NfcAdapter {
     public static final int STATE_TURNING_ON = 2;
     public static final int STATE_ON = 3;
     public static final int STATE_TURNING_OFF = 4;
+
+    /**
+     * SIM proactive usage
+     * @hide
+     */
+    public static final int SIM_1 = 1;
+
+    /**
+     * SIM proactive usage
+     * @hide
+     */
+    public static final int SIM_2 = 2;
+
+    /**
+     * SIM proactive usage
+     * @hide
+     */
+    public static final int SIM_3 = 3;
 
     /**
      * Flag for use with {@link #enableReaderMode(Activity, ReaderCallback, int, Bundle)}.
@@ -1804,6 +1831,110 @@ public final class NfcAdapter {
             return false;
         }
     }
+
+
+    /// M: @ {
+
+
+    /**
+     *  Requester use this function to set mHandoverUseCase and uris callback on NfcActiviyManager
+     *
+     * @param  callback  the callback to set URI when prepare to BeamPlus
+     * @param  activity  the activity which use it
+     * @return     null
+     * @see        null
+     * @hide
+     * @internal
+     */
+    //public void setMtkBeamPushUrisCallback(CreateBeamUrisCallback callback, Activity activity) {
+    //    setBeamPushUrisCallback(callback, activity);
+    //}
+
+
+
+
+    /**
+     * the mode flag to controll each NFC mode.
+     * MODE_READER is used to switch Tag read/write mode
+     * @hide
+     * @internal
+     */
+    public static final int MODE_READER = 1;
+    /**
+     * the mode flag to controll each NFC mode.
+     * MODE_CARD is used to switch card emulation mode
+     * @hide
+     * @internal
+     */
+    public static final int MODE_CARD = 2;
+    /**
+     * the mode flag to controll each NFC mode.
+     * MODE_P2P is used to switch P2P mode
+     * @hide
+     * @internal
+     */
+    public static final int MODE_P2P = 4;
+    /**
+    *  To disable each NFC mode.
+     * @hide
+     * @internal
+     */
+    public static final int FLAG_OFF = 0;
+    /**
+    *  To enable each NFC mode.
+     * @hide
+     * @internal
+     */
+    public static final int FLAG_ON = 1;
+
+    /**
+     * Query specific NFC mode.
+     * @hide
+     * @param  one of the NFC mode, candidates are MODE_READER, MODE_P2P or MODE_CARD.
+     * @return  FLAG_ON or FLAG_OFF, -1 for failure
+     * @internal
+     */
+    public int getModeFlag(int mode) {
+        try {
+            return sService.getModeFlag(mode);
+        } catch (RemoteException e) {
+            attemptDeadServiceRecovery(e);
+            return -1;
+        }
+    }
+
+    /**
+     * Control specific NFC mode.
+     * @hide
+     * @param one of the NFC mode, candidates are MODE_READER, MODE_P2P or MODE_CARD.
+     * @param FLAG_ON or FLAG_OFF
+     * @internal
+     */
+    public void setModeFlag(int mode, int flag) {
+        try {
+            sService.setModeFlag(mode, flag);
+        } catch (RemoteException e) {
+            attemptDeadServiceRecovery(e);
+        }
+    }
+
+    /**
+     * @hide
+     */
+    public INfcAdapterGsmaExtras getNfcAdapterGsmaExtrasInterface() {
+        if (mContext == null) {
+            throw new UnsupportedOperationException("You need a context on NfcAdapter to use the "
+                    + " NFC gsma extras APIs");
+        }
+        try {
+            return sService.getNfcAdapterGsmaExtrasInterface(/*mContext.getPackageName()*/);
+        } catch (RemoteException e) {
+            attemptDeadServiceRecovery(e);
+            return null;
+        }
+    }
+    /// }
+
 
     /**
      * @hide

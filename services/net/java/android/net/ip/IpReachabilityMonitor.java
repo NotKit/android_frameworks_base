@@ -43,6 +43,8 @@ import android.system.OsConstants;
 import android.util.Log;
 
 import java.io.InterruptedIOException;
+import java.net.DatagramSocket;
+import java.net.DatagramPacket;
 import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -135,8 +137,8 @@ import java.util.Set;
  */
 public class IpReachabilityMonitor {
     private static final String TAG = "IpReachabilityMonitor";
-    private static final boolean DBG = false;
-    private static final boolean VDBG = false;
+    private static final boolean DBG = true;
+    private static final boolean VDBG = true;
 
     public interface Callback {
         // This callback function must execute as quickly as possible as it is
@@ -411,8 +413,27 @@ public class IpReachabilityMonitor {
             }
             final int returnValue = probeNeighbor(mInterfaceIndex, target);
             logEvent(IpReachabilityEvent.PROBE, returnValue);
+            /// M: Add UDP packet for ARP retry
+            if (returnValue != 0) {
+                logEvent(IpReachabilityEvent.PROBE, 0);
+                // Use UDP broadcast to trigger ARP procedure.
+                sendUdpBroadcast(target);
+            }
         }
         mLastProbeTimeMs = SystemClock.elapsedRealtime();
+    }
+
+    private void sendUdpBroadcast(InetAddress target) {
+        Log.d(TAG, "sendUdpBroadcast with " + target);
+        try {
+            DatagramSocket socket = new DatagramSocket();
+            byte[] data = {(byte) 0xFF};
+            DatagramPacket packet = new DatagramPacket(data, data.length,
+                                        target, 19191);
+            socket.send(packet);
+        } catch (Exception e) {
+            Log.e(TAG, "sendUdpBroadcast: " + e);
+        }
     }
 
     private static long getProbeWakeLockDuration() {

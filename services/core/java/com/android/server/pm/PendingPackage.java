@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +35,19 @@ final class PendingPackage extends PackageSettingBase {
         super(name, realName, codePath, resourcePath, legacyNativeLibraryPathString,
                 primaryCpuAbiString, secondaryCpuAbiString, cpuAbiOverrideString,
                 pVersionCode, pkgFlags, pkgPrivateFlags, parentPackageName, childPackageNames);
+        this.sharedId = sharedId;
+    }
+
+    /// M: [FlagExt] Additional constructor for MTK flags
+    PendingPackage(String name, String realName, File codePath, File resourcePath,
+            String legacyNativeLibraryPathString, String primaryCpuAbiString,
+            String secondaryCpuAbiString, String cpuAbiOverrideString, int sharedId,
+            int pVersionCode, int pkgFlags, int pkgPrivateFlags, int flagsEx,
+            String parentPackageName, List<String> childPackageNames) {
+        super(name, realName, codePath, resourcePath, legacyNativeLibraryPathString,
+                primaryCpuAbiString, secondaryCpuAbiString, cpuAbiOverrideString,
+                pVersionCode, pkgFlags, pkgPrivateFlags, flagsEx,
+                parentPackageName, childPackageNames);
         this.sharedId = sharedId;
     }
 }

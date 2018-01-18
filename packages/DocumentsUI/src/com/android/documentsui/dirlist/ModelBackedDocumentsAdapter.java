@@ -110,8 +110,14 @@ final class ModelBackedDocumentsAdapter extends DocumentsAdapter {
 
     @Override
     public void onBindViewHolder(DocumentHolder holder, int position) {
+        if (mModelIds != null && mModelIds.size() == 0) {
+            return;
+        }
         String modelId = mModelIds.get(position);
         Cursor cursor = mEnv.getModel().getItem(modelId);
+        /// M: cursor can get null for an empty list
+        if (cursor == null)
+            return;
         holder.bind(cursor, modelId, mEnv.getDisplayState());
 
         final String docMimeType = getCursorString(cursor, Document.COLUMN_MIME_TYPE);

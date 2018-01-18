@@ -939,7 +939,7 @@
     <string name="selectAll" msgid="6876518925844129331">"အားလုံးရွေးရန်"</string>
     <string name="cut" msgid="3092569408438626261">"ဖြတ်ခြင်း"</string>
     <string name="copy" msgid="2681946229533511987">"ကူးခြင်း"</string>
-    <string name="paste" msgid="5629880836805036433">"Paste"</string>
+    <string name="paste" msgid="5629880836805036433">"ကပ်ပါ"</string>
     <string name="paste_as_plain_text" msgid="5427792741908010675">"စာသားအတိုင်း ကူးထည့်ပါ"</string>
     <string name="replace" msgid="5781686059063148930">"အစားထိုခြင်း"</string>
     <string name="delete" msgid="6098684844021697789">"ဖျက်ရန်"</string>

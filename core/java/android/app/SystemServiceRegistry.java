@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2015 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2015 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -101,6 +106,7 @@ import android.os.PowerManager;
 import android.os.Process;
 import android.os.RecoverySystem;
 import android.os.ServiceManager;
+import android.os.SystemProperties;
 import android.os.SystemVibrator;
 import android.os.UserHandle;
 import android.os.UserManager;
@@ -128,8 +134,34 @@ import android.view.accessibility.CaptioningManager;
 import android.view.inputmethod.InputMethodManager;
 import android.view.textservice.TextServicesManager;
 
+/// M: add PerfService @{
+import com.mediatek.perfservice.IPerfServiceWrapper;
+import com.mediatek.perfservice.PerfServiceWrapper;
+/// @}
+
+/// M: add for running booster feature
+import com.mediatek.runningbooster.RunningBoosterManager;
+
+/// M: Add SearchEngineManager @{
+import com.mediatek.search.SearchEngineManager;
+/// @}
+/// M: Add SensorHubService @{
+import com.mediatek.sensorhub.ISensorHubManager;
+import com.mediatek.sensorhub.ISensorHubService;
+import com.mediatek.sensorhub.SensorHubManager;
+/// @}
+
+/// M: Add UspManager @{
+import com.mediatek.usp.IUspService;
+import com.mediatek.usp.UspManager;
+/// @}
+
 import java.util.HashMap;
 
+//guohuajun add
+import android.hardware.ILedManager;
+import android.hardware.LedManager;
+//guohuajun add end
 /**
  * Manages all of the system services that can be returned by {@link Context#getSystemService}.
  * Used by {@link ContextImpl}.
@@ -406,6 +438,15 @@ final class SystemServiceRegistry {
                 return new SearchManager(ctx.getOuterContext(),
                         ctx.mMainThread.getHandler());
             }});
+
+        /// M: Add SearchEngineManager @{
+        registerService(Context.SEARCH_ENGINE_SERVICE, SearchEngineManager.class,
+                new CachedServiceFetcher<SearchEngineManager>() {
+            @Override
+            public SearchEngineManager createService(ContextImpl ctx) {
+                return new SearchEngineManager(ctx);
+            }});
+        /// @}
 
         registerService(Context.SENSOR_SERVICE, SensorManager.class,
                 new CachedServiceFetcher<SensorManager>() {
@@ -775,6 +816,72 @@ final class SystemServiceRegistry {
                 return new ContextHubManager(ctx.getOuterContext(),
                   ctx.mMainThread.getHandler().getLooper());
             }});
+				//guohuajun add               
+         registerService(Context.LED_SERVICE, LedManager.class,
+                new CachedServiceFetcher<LedManager>() {
+            @Override
+            public LedManager createService(ContextImpl ctx) {
+                IBinder b = ServiceManager.getService(Context.LED_SERVICE);
+                ILedManager service = ILedManager.Stub.asInterface(b);
+                return new LedManager(ctx, service);
+            }});           
+        //guohuajun add end
+        /// M: add PerfService @{
+        registerService(Context.MTK_PERF_SERVICE, IPerfServiceWrapper.class,
+                new CachedServiceFetcher<IPerfServiceWrapper>() {
+            @Override
+            public IPerfServiceWrapper createService(ContextImpl ctx) {
+                IPerfServiceWrapper perfServiceMgr = null;
+                try {
+                    perfServiceMgr = new PerfServiceWrapper(ctx);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+                return perfServiceMgr;
+            }});
+        /// @}
+
+        /// M: Add SensorHubService @{
+        if ("1".equals(SystemProperties.get("ro.mtk_sensorhub_support"))) {
+            registerService(ISensorHubManager.SENSORHUB_SERVICE, ISensorHubManager.class,
+                    new CachedServiceFetcher<ISensorHubManager>() {
+                @Override
+                public ISensorHubManager createService(ContextImpl ctx) {
+                    ISensorHubManager sensorhubMgr = null;
+                    try {
+                        IBinder b = ServiceManager.getService(ISensorHubManager.SENSORHUB_SERVICE);
+                        ISensorHubService service = ISensorHubService.Stub.asInterface(b);
+                        sensorhubMgr = new SensorHubManager(service);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                    return sensorhubMgr;
+                }});
+        }
+        /// @}
+
+        /// M: comment @{ add UspService
+        if (!"no".equals(SystemProperties.get("ro.mtk_carrierexpress_pack", "no"))) {
+           registerService(Context.USP_SERVICE, UspManager.class,
+                new CachedServiceFetcher<UspManager>() {
+            @Override
+            public UspManager createService(ContextImpl ctx) {
+                IBinder b = ServiceManager.getService(Context.USP_SERVICE);
+                return new UspManager(IUspService.Stub.asInterface(b));
+            } });
+        }
+        /// @}
+
+        /// M: add for running booster feature @{
+        if ("1".equals(SystemProperties.get("persist.runningbooster.support"))) {
+            registerService(Context.RUNNING_BOOSTER_SERVICE, RunningBoosterManager.class,
+                    new CachedServiceFetcher<RunningBoosterManager>() {
+            @Override
+            public RunningBoosterManager createService(ContextImpl ctx) {
+                return new RunningBoosterManager(ctx);
+            }});
+        }
+        /// add for running booster feature @}
     }
 
     /**

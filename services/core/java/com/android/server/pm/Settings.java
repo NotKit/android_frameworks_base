@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -425,10 +430,11 @@ final class Settings {
         mBackupStoppedPackagesFilename = new File(mSystemDir, "packages-stopped-backup.xml");
     }
 
+    /// M: [FlagExt] Add flagsEx
     PackageSetting getPackageLPw(PackageParser.Package pkg, PackageSetting origPackage,
             String realName, SharedUserSetting sharedUser, File codePath, File resourcePath,
             String legacyNativeLibraryPathString, String primaryCpuAbi, String secondaryCpuAbi,
-            int pkgFlags, int pkgPrivateFlags, UserHandle user, boolean add) {
+            int pkgFlags, int pkgPrivateFlags, int flagsEx, UserHandle user, boolean add) {
         final String name = pkg.packageName;
         final String parentPackageName = (pkg.parentPackage != null)
                 ? pkg.parentPackage.packageName : null;
@@ -445,8 +451,8 @@ final class Settings {
 
         PackageSetting p = getPackageLPw(name, origPackage, realName, sharedUser, codePath,
                 resourcePath, legacyNativeLibraryPathString, primaryCpuAbi, secondaryCpuAbi,
-                pkg.mVersionCode, pkgFlags, pkgPrivateFlags, user, add, true /* allowInstall */,
-                parentPackageName, childPackageNames);
+                pkg.mVersionCode, pkgFlags, pkgPrivateFlags, flagsEx,
+                user, add, true /* allowInstall */, parentPackageName, childPackageNames);
         return p;
     }
 
@@ -542,9 +548,12 @@ final class Settings {
         }
         final PackageSetting dp = mDisabledSysPackages.get(name);
         // always make sure the system package code and resource paths dont change
-        if (dp == null && p.pkg != null && p.pkg.isSystemApp() && !p.pkg.isUpdatedSystemApp()) {
-            if((p.pkg != null) && (p.pkg.applicationInfo != null)) {
-                p.pkg.applicationInfo.flags |= ApplicationInfo.FLAG_UPDATED_SYSTEM_APP;
+        if (dp == null) { /// M: [Operator] Operator package should put in mDisabledSysPackages
+            if (p.pkg != null && p.pkg.isSystemApp() && !p.pkg.isUpdatedSystemApp()
+                    && !PackageManagerService.isVendorApp(p.pkg)) {
+                if ((p.pkg != null) && (p.pkg.applicationInfo != null)) {
+                    p.pkg.applicationInfo.flags |= ApplicationInfo.FLAG_UPDATED_SYSTEM_APP;
+                }
             }
             mDisabledSysPackages.put(name, p);
 
@@ -571,10 +580,11 @@ final class Settings {
         if((p.pkg != null) && (p.pkg.applicationInfo != null)) {
             p.pkg.applicationInfo.flags &= ~ApplicationInfo.FLAG_UPDATED_SYSTEM_APP;
         }
+        /// M: [FlagExt] Add flagsEx
         PackageSetting ret = addPackageLPw(name, p.realName, p.codePath, p.resourcePath,
                 p.legacyNativeLibraryPathString, p.primaryCpuAbiString,
                 p.secondaryCpuAbiString, p.cpuAbiOverrideString,
-                p.appId, p.versionCode, p.pkgFlags, p.pkgPrivateFlags,
+                p.appId, p.versionCode, p.pkgFlags, p.pkgPrivateFlags, p.pkgFlagsEx,
                 p.parentPackageName, p.childPackageNames);
         mDisabledSysPackages.remove(name);
         return ret;
@@ -588,10 +598,11 @@ final class Settings {
         mDisabledSysPackages.remove(name);
     }
 
+    /// M: [FlagExt] Add flagsEx
     PackageSetting addPackageLPw(String name, String realName, File codePath, File resourcePath,
             String legacyNativeLibraryPathString, String primaryCpuAbiString,
             String secondaryCpuAbiString, String cpuAbiOverrideString, int uid, int vc, int
-            pkgFlags, int pkgPrivateFlags, String parentPackageName,
+            pkgFlags, int pkgPrivateFlags, int flagsEx, String parentPackageName,
             List<String> childPackageNames) {
         PackageSetting p = mPackages.get(name);
         if (p != null) {
@@ -602,10 +613,11 @@ final class Settings {
                     "Adding duplicate package, keeping first: " + name);
             return null;
         }
+        /// M: [FlagExt] Add mtkFlags
         p = new PackageSetting(name, realName, codePath, resourcePath,
                 legacyNativeLibraryPathString, primaryCpuAbiString, secondaryCpuAbiString,
-                cpuAbiOverrideString, vc, pkgFlags, pkgPrivateFlags, parentPackageName,
-                childPackageNames);
+                cpuAbiOverrideString, vc, pkgFlags, pkgPrivateFlags, flagsEx,
+                parentPackageName, childPackageNames);
         p.appId = uid;
         if (addUserIdLPw(uid, p, name)) {
             mPackages.put(name, p);
@@ -682,12 +694,13 @@ final class Settings {
         }
     }
 
+    /// M: [FlagExt] Add flagsEx
     private PackageSetting getPackageLPw(String name, PackageSetting origPackage,
             String realName, SharedUserSetting sharedUser, File codePath, File resourcePath,
             String legacyNativeLibraryPathString, String primaryCpuAbiString,
             String secondaryCpuAbiString, int vc, int pkgFlags, int pkgPrivateFlags,
-            UserHandle installUser, boolean add, boolean allowInstall, String parentPackage,
-            List<String> childPackageNames) {
+            int flagsEx, UserHandle installUser, boolean add, boolean allowInstall,
+            String parentPackage, List<String> childPackageNames) {
         PackageSetting p = mPackages.get(name);
         UserManagerService userManager = UserManagerService.getInstance();
         if (p != null) {
@@ -753,9 +766,10 @@ final class Settings {
         if (p == null) {
             if (origPackage != null) {
                 // We are consuming the data from an existing package.
+                /// M: [FlagExt] Add flagsEx
                 p = new PackageSetting(origPackage.name, name, codePath, resourcePath,
                         legacyNativeLibraryPathString, primaryCpuAbiString, secondaryCpuAbiString,
-                        null /* cpuAbiOverrideString */, vc, pkgFlags, pkgPrivateFlags,
+                        null /* cpuAbiOverrideString */, vc, pkgFlags, pkgPrivateFlags, flagsEx,
                         parentPackage, childPackageNames);
                 if (PackageManagerService.DEBUG_UPGRADE) Log.v(PackageManagerService.TAG, "Package "
                         + name + " is adopting original package " + origPackage.name);
@@ -773,9 +787,10 @@ final class Settings {
                 // Update new package state.
                 p.setTimeStamp(codePath.lastModified());
             } else {
+                /// M: [FlagExt] Add flagsEx
                 p = new PackageSetting(name, realName, codePath, resourcePath,
                         legacyNativeLibraryPathString, primaryCpuAbiString, secondaryCpuAbiString,
-                        null /* cpuAbiOverrideString */, vc, pkgFlags, pkgPrivateFlags,
+                        null /* cpuAbiOverrideString */, vc, pkgFlags, pkgPrivateFlags, flagsEx,
                         parentPackage, childPackageNames);
                 p.setTimeStamp(codePath.lastModified());
                 p.sharedUser = sharedUser;
@@ -935,6 +950,10 @@ final class Settings {
         // Update flags if needed.
         if (pkg.applicationInfo.flags != p.pkgFlags) {
             p.pkgFlags = pkg.applicationInfo.flags;
+        }
+        /// M: [FlagExt] Update mtk flags if needed
+        if (pkg.applicationInfo.flagsEx != p.pkgFlagsEx) {
+            p.pkgFlagsEx = pkg.applicationInfo.flagsEx;
         }
         // If this app defines a shared user id initialize
         // the shared user signatures as well.
@@ -1189,6 +1208,7 @@ final class Settings {
             mOtherUserIds.put(uid, obj);
         }
     }
+
 
     PreferredIntentResolver editPreferredActivitiesLPw(int userId) {
         PreferredIntentResolver pir = mPreferredActivities.get(userId);
@@ -1932,6 +1952,11 @@ final class Settings {
             // might have been corrupted.
             if (!backupFile.exists()) {
                 if (!userPackagesStateFile.renameTo(backupFile)) {
+                    /// M: Check if this is permission issue
+                    if (!userPackagesStateFile.canWrite()) {
+                        Slog.e(TAG, userPackagesStateFile.getAbsolutePath() + " is not writable.");
+                    }
+
                     Slog.wtf(PackageManagerService.TAG,
                             "Unable to backup user packages state file, "
                             + "current changes will be lost at reboot");
@@ -2044,9 +2069,10 @@ final class Settings {
             // Done, all is good!
             return;
         } catch(java.io.IOException e) {
-            Slog.wtf(PackageManagerService.TAG,
-                    "Unable to write package manager user packages state, "
-                    + " current changes will be lost at reboot", e);
+            /** M: [ALPS00244356][Rose][ICS][eMMC][Free Test][NAND Flash ]The JE about system pops up when the avilable data space <= 2M.(once) @{ */
+            //Log.wtf(PackageManagerService.TAG, "Unable to write package manager user packages state, current changes will be lost at reboot", e);
+            Log.e(PackageManagerService.TAG, "Unable to write package manager user packages state, current changes will be lost at reboot " + e.toString());
+            /** @} */
         }
 
         // Clean up partially written files
@@ -2410,8 +2436,13 @@ final class Settings {
             Slog.wtf(PackageManagerService.TAG, "Unable to write package manager settings, "
                     + "current changes will be lost at reboot", e);
         } catch(java.io.IOException e) {
-            Slog.wtf(PackageManagerService.TAG, "Unable to write package manager settings, "
-                    + "current changes will be lost at reboot", e);
+            /** M: [ALPS00244356][Rose][ICS][eMMC][Free Test][NAND Flash]
+                The JE about system pops up when the avilable data space <= 2M.(once) @{ */
+            //Slog.wtf(PackageManagerService.TAG, "Unable to write package manager settings, "
+            //        + "current changes will be lost at reboot", e);
+            Log.e(PackageManagerService.TAG, "Unable to write package manager settings, "
+                   + "current changes will be lost at reboot " + e.toString());
+            /** @} */
         }
         // Clean up partially written files
         if (mSettingsFilename.exists()) {
@@ -2576,6 +2607,11 @@ final class Settings {
         serializer.attribute(null, "it", Long.toHexString(pkg.firstInstallTime));
         serializer.attribute(null, "ut", Long.toHexString(pkg.lastUpdateTime));
         serializer.attribute(null, "version", String.valueOf(pkg.versionCode));
+
+        /// M: [Operator] Add package flags recording in disabled pacakge element
+        serializer.attribute(null, "flags", String.valueOf(pkg.pkgFlags));
+        serializer.attribute(null, "pkgFlagsEx", String.valueOf(pkg.pkgFlagsEx));
+
         if (!pkg.resourcePathString.equals(pkg.codePathString)) {
             serializer.attribute(null, "resourcePath", pkg.resourcePathString);
         }
@@ -2640,6 +2676,9 @@ final class Settings {
 
         serializer.attribute(null, "publicFlags", Integer.toString(pkg.pkgFlags));
         serializer.attribute(null, "privateFlags", Integer.toString(pkg.pkgPrivateFlags));
+        /// M: [FlagExt] Record flagsEx
+        serializer.attribute(null, "pkgFlagsEx", Integer.toString(pkg.pkgFlagsEx));
+
         serializer.attribute(null, "ft", Long.toHexString(pkg.timeStamp));
         serializer.attribute(null, "it", Long.toHexString(pkg.firstInstallTime));
         serializer.attribute(null, "ut", Long.toHexString(pkg.lastUpdateTime));
@@ -2816,6 +2855,9 @@ final class Settings {
                         "No start tag found in package manager settings");
                 Slog.wtf(PackageManagerService.TAG,
                         "No start tag found in package manager settings");
+                /// M: Create version info when packages.xml is corrupt
+                findOrCreateVersion(StorageManager.UUID_PRIVATE_INTERNAL);
+                findOrCreateVersion(StorageManager.UUID_PRIMARY_PHYSICAL);
                 return false;
             }
 
@@ -2934,11 +2976,18 @@ final class Settings {
             mReadMessages.append("Error reading: " + e.toString());
             PackageManagerService.reportSettingsProblem(Log.ERROR, "Error reading settings: " + e);
             Slog.wtf(PackageManagerService.TAG, "Error reading package manager settings", e);
-
         } catch (java.io.IOException e) {
             mReadMessages.append("Error reading: " + e.toString());
             PackageManagerService.reportSettingsProblem(Log.ERROR, "Error reading settings: " + e);
             Slog.wtf(PackageManagerService.TAG, "Error reading package manager settings", e);
+        } finally {
+            /// M: Create version info when packages.xml is corrupt
+            final VersionInfo ver = getInternalVersion();
+            if (ver == null) {
+                Slog.w(PackageManagerService.TAG, "Create version info if not exist.");
+                findOrCreateVersion(StorageManager.UUID_PRIVATE_INTERNAL);
+                findOrCreateVersion(StorageManager.UUID_PRIMARY_PHYSICAL);
+            }
         }
 
         // If the build is setup to drop runtime permissions
@@ -2958,12 +3007,13 @@ final class Settings {
             final PendingPackage pp = mPendingPackages.get(i);
             Object idObj = getUserIdLPr(pp.sharedId);
             if (idObj != null && idObj instanceof SharedUserSetting) {
+                /// M: [FlagExt] Add flagsEx
                 PackageSetting p = getPackageLPw(pp.name, null, pp.realName,
                         (SharedUserSetting) idObj, pp.codePath, pp.resourcePath,
                         pp.legacyNativeLibraryPathString, pp.primaryCpuAbiString,
                         pp.secondaryCpuAbiString, pp.versionCode, pp.pkgFlags, pp.pkgPrivateFlags,
-                        null, true /* add */, false /* allowInstall */, pp.parentPackageName,
-                        pp.childPackageNames);
+                        pp.pkgFlagsEx, null, true /* add */, false /* allowInstall */,
+                        pp.parentPackageName, pp.childPackageNames);
                 if (p == null) {
                     PackageManagerService.reportSettingsProblem(Log.WARN,
                             "Unable to create application package for " + pp.name);
@@ -3424,6 +3474,10 @@ final class Settings {
         String secondaryCpuAbiStr = parser.getAttributeValue(null, "secondaryCpuAbi");
         String cpuAbiOverrideStr = parser.getAttributeValue(null, "cpuAbiOverride");
 
+        /// M: [Operator] Read pacakge flags from packages.xml
+        String flagStr = parser.getAttributeValue(null, "flags");
+        String flagsExStr = parser.getAttributeValue(null, "flagsEx");
+
         if (primaryCpuAbiStr == null && legacyCpuAbiStr != null) {
             primaryCpuAbiStr = legacyCpuAbiStr;
         }
@@ -3441,16 +3495,43 @@ final class Settings {
         }
 
         int pkgFlags = 0;
+        /** M: [Operator] Parse flag string to integer @{ */
         int pkgPrivateFlags = 0;
-        pkgFlags |= ApplicationInfo.FLAG_SYSTEM;
+        //pkgFlags |= ApplicationInfo.FLAG_SYSTEM;
+
+        int flagsEx = 0;
+        if (flagStr != null) {
+            pkgFlags = Integer.parseInt(flagStr);
+        }
+        if (flagsExStr != null) {
+            flagsEx = Integer.parseInt(flagsExStr);
+        }
+        /** @} */
+
         final File codePathFile = new File(codePathStr);
         if (PackageManagerService.locationIsPrivileged(codePathFile)) {
             pkgPrivateFlags |= ApplicationInfo.PRIVATE_FLAG_PRIVILEGED;
         }
+
+        /** M: [Operator] We should consider an operator app with flag changed after OTA @{ */
+        if (PackageManagerService.locationIsOperator(codePathFile)) {
+            flagsEx |= ApplicationInfo.FLAG_EX_OPERATOR;
+            /// M: [Operator] Remove possiblly added system flag after OTA
+            pkgFlags &= ~ApplicationInfo.FLAG_SYSTEM;
+        }
+        /** @} */
+
+        /** M: [Operator] Operator package should not have system flag @{ */
+        if ((flagsEx & ApplicationInfo.FLAG_EX_OPERATOR) == 0) {
+            pkgFlags |= ApplicationInfo.FLAG_SYSTEM;
+        }
+        /** @} */
+
+        /** M: [FlagExt] Add flagsEx @{ */
         PackageSetting ps = new PackageSetting(name, realName, codePathFile,
                 new File(resourcePathStr), legacyNativeLibraryPathStr, primaryCpuAbiStr,
                 secondaryCpuAbiStr, cpuAbiOverrideStr, versionCode, pkgFlags, pkgPrivateFlags,
-                parentPackageName, null);
+                flagsEx, parentPackageName, null);
         String timeStampStr = parser.getAttributeValue(null, "ft");
         if (timeStampStr != null) {
             try {
@@ -3546,6 +3627,11 @@ final class Settings {
         String version = null;
         int versionCode = 0;
         String parentPackageName;
+
+        /// M: [FlagExt] String & flags for flagsEx
+        String mtkStr = null;
+        int flagsEx = 0;
+
         try {
             name = parser.getAttributeValue(null, ATTR_NAME);
             realName = parser.getAttributeValue(null, "realName");
@@ -3629,6 +3715,16 @@ final class Settings {
                     }
                 }
             }
+
+            /// M: [FlagExt] read flagsEx
+            mtkStr = parser.getAttributeValue(null, "flagsEx");
+            if (mtkStr != null) {
+                try {
+                    flagsEx = Integer.parseInt(mtkStr);
+                } catch (NumberFormatException e) {
+                }
+            }
+
             String timeStampStr = parser.getAttributeValue(null, "ft");
             if (timeStampStr != null) {
                 try {
@@ -3677,10 +3773,11 @@ final class Settings {
                         "Error in package manager settings: <package> has no codePath at "
                                 + parser.getPositionDescription());
             } else if (userId > 0) {
+                /// M: [FlagExt] Add flagsEx
                 packageSetting = addPackageLPw(name.intern(), realName, new File(codePathStr),
                         new File(resourcePathStr), legacyNativeLibraryPathStr, primaryCpuAbiString,
                         secondaryCpuAbiString, cpuAbiOverrideString, userId, versionCode, pkgFlags,
-                        pkgPrivateFlags, parentPackageName, null);
+                        pkgPrivateFlags, flagsEx, parentPackageName, null);
                 if (PackageManagerService.DEBUG_SETTINGS)
                     Log.i(PackageManagerService.TAG, "Reading package " + name + ": userId="
                             + userId + " pkg=" + packageSetting);
@@ -3696,11 +3793,12 @@ final class Settings {
             } else if (sharedIdStr != null) {
                 userId = sharedIdStr != null ? Integer.parseInt(sharedIdStr) : 0;
                 if (userId > 0) {
+                    /// M: [FlagExt] Add flagsEx
                     packageSetting = new PendingPackage(name.intern(), realName, new File(
                             codePathStr), new File(resourcePathStr), legacyNativeLibraryPathStr,
                             primaryCpuAbiString, secondaryCpuAbiString, cpuAbiOverrideString,
-                            userId, versionCode, pkgFlags, pkgPrivateFlags, parentPackageName,
-                            null);
+                            userId, versionCode, pkgFlags, pkgPrivateFlags, flagsEx,
+                            parentPackageName, null);
                     packageSetting.setTimeStamp(timeStamp);
                     packageSetting.firstInstallTime = firstInstallTime;
                     packageSetting.lastUpdateTime = lastUpdateTime;
@@ -3971,7 +4069,11 @@ final class Settings {
                     continue;
                 }
                 // Only system apps are initially installed.
-                ps.setInstalled(ps.isSystem(), userHandle);
+                /** M: [Operator] Operator package should also be installed @{ */
+                boolean curInstalledStatus = ps.isSystem()
+                                    || (ps.pkgFlagsEx & ApplicationInfo.FLAG_EX_OPERATOR) != 0;
+                ps.setInstalled(curInstalledStatus, userHandle);
+                /** @} */
                 // Need to create a data directory for all apps under this user. Accumulate all
                 // required args and call the installer after mPackages lock has been released
                 volumeUuids[i] = ps.volumeUuid;
@@ -4269,6 +4371,12 @@ final class Settings {
         ApplicationInfo.PRIVATE_FLAG_BACKUP_IN_FOREGROUND, "BACKUP_IN_FOREGROUND",
     };
 
+    /** M: [FlagExt] object for flagsEx dump @{. */
+    static final Object[] MTKFLAG_DUMP_SPEC = new Object[] {
+        ApplicationInfo.FLAG_EX_OPERATOR, "OPERATOR",
+    };
+    /** @} */
+
     void dumpVersionLPr(IndentingPrintWriter pw) {
         pw.increaseIndent();
         for (int i= 0; i < mVersion.size(); i++) {
@@ -4418,6 +4526,10 @@ final class Settings {
                 pw.print(prefix); pw.print("  privateFlags="); printFlags(pw,
                         ps.pkg.applicationInfo.privateFlags, PRIVATE_FLAG_DUMP_SPEC); pw.println();
             }
+            /** M: [FlagExt] Dump flagsEx @{ */
+            pw.print(prefix); pw.print("  pkgFlagsEx="); printFlags(pw, ps.pkgFlagsEx,
+                    MTKFLAG_DUMP_SPEC); pw.println();
+            /** @} */
             pw.print(prefix); pw.print("  dataDir="); pw.println(ps.pkg.applicationInfo.dataDir);
             pw.print(prefix); pw.print("  supportsScreens=[");
             boolean first = true;
@@ -5163,16 +5275,27 @@ final class Settings {
                 return;
             }
 
+            /// M: Handle file corruption.
+            Boolean parseFailed = false;
             try {
                 XmlPullParser parser = Xml.newPullParser();
                 parser.setInput(in, null);
                 parseRuntimePermissionsLPr(parser, userId);
 
             } catch (XmlPullParserException | IOException e) {
-                throw new IllegalStateException("Failed parsing permissions file: "
-                        + permissionsFile , e);
+                /// M: Do not throw exception when the file is corrupt.
+                //throw new IllegalStateException("Failed parsing permissions file: "
+                //        + permissionsFile , e);
+                parseFailed = true;
+                Slog.e(PackageManagerService.TAG, "Failed parsing permissions file: "
+                          + permissionsFile , e);
             } finally {
                 IoUtils.closeQuietly(in);
+
+                /// M: Delete file if the file is corrupt.
+                if (parseFailed == true) {
+                    permissionsFile.delete();
+                }
             }
         }
 

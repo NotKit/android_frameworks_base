@@ -37,6 +37,11 @@ import com.android.systemui.qs.QSTile.State;
 import com.android.systemui.qs.external.CustomTile;
 import com.android.systemui.statusbar.phone.QSTileHost;
 
+/// M: add plugin in quicksetting @{
+import com.mediatek.systemui.ext.IQuickSettingsPlugin;
+import com.mediatek.systemui.PluginManager;
+/// @}
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -58,6 +63,10 @@ public class TileQueryHelper {
 
     private void addSystemTiles(final QSTileHost host) {
         String possible = mContext.getString(R.string.quick_settings_tiles_stock);
+        /// M: Customize the quick settings tile order for operator. @{
+        IQuickSettingsPlugin quickSettingsPlugin = PluginManager.getQuickSettingsPlugin(mContext);
+        possible = quickSettingsPlugin.customizeQuickSettingsTileOrder(possible);
+        /// M: Customize the quick settings tile order for operator. @}
         String[] possibleTiles = possible.split(",");
         final Handler qsHandler = new Handler(host.getLooper());
         final Handler mainHandler = new Handler(Looper.getMainLooper());

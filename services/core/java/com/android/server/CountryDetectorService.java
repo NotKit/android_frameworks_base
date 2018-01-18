@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2015 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not
@@ -81,7 +86,7 @@ public class CountryDetectorService extends ICountryDetector.Stub implements Run
     private final static String TAG = "CountryDetector";
 
     /** Whether to dump the state of the country detector service to bugreports */
-    private static final boolean DEBUG = false;
+    private static final boolean DEBUG = true; //false;
 
     private final HashMap<IBinder, Receiver> mReceivers;
     private final Context mContext;

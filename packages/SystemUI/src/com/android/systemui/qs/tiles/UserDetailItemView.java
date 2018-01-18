@@ -89,12 +89,12 @@ public class UserDetailItemView extends LinearLayout {
     }
 
     public void bind(String name, Bitmap picture, int userId) {
-        mName.setText(name);
+        mName.setText(cutNameIfTooLong(name));
         mAvatar.setAvatarWithBadge(picture, userId);
     }
 
     public void bind(String name, Drawable picture, int userId) {
-        mName.setText(name);
+        mName.setText(cutNameIfTooLong(name));
         mAvatar.setDrawableWithBadge(picture, userId);
     }
 
@@ -147,5 +147,13 @@ public class UserDetailItemView extends LinearLayout {
     @Override
     public boolean hasOverlappingRendering() {
         return false;
+    }
+
+    ///M: ALPS01853197,if Name String is too long,UI show unnormally, @{
+    private String cutNameIfTooLong(String name){
+        if (name.length()>30) {
+            name = name.subSequence(0, 30)+"...";
+        }
+        return name;
     }
 }

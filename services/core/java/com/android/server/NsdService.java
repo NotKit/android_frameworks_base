@@ -31,6 +31,8 @@ import android.os.Messenger;
 import android.os.UserHandle;
 import android.provider.Settings;
 import android.util.Base64;
+//M: Add txt record parse for CrossMount
+import android.util.ArrayMap;
 import android.util.Slog;
 import android.util.SparseArray;
 
@@ -56,7 +58,7 @@ public class NsdService extends INsdManager.Stub {
     private static final String TAG = "NsdService";
     private static final String MDNS_TAG = "mDnsConnector";
 
-    private static final boolean DBG = false;
+    private static final boolean DBG = true;
 
     private Context mContext;
     private ContentResolver mContentResolver;
@@ -145,12 +147,20 @@ public class NsdService extends INsdManager.Stub {
             @Override
             public boolean processMessage(Message msg) {
                 ClientInfo cInfo = null;
+                if (DBG) Slog.i(TAG, "[DefaultState]  processMessage what=" + msg.what);
                 switch (msg.what) {
                     case AsyncChannel.CMD_CHANNEL_HALF_CONNECTED:
                         if (msg.arg1 == AsyncChannel.STATUS_SUCCESSFUL) {
                             AsyncChannel c = (AsyncChannel) msg.obj;
                             if (DBG) Slog.d(TAG, "New client listening to asynchronous messages");
                             c.sendMessage(AsyncChannel.CMD_CHANNEL_FULLY_CONNECTED);
+                            cInfo = mClients.get(msg.replyTo);
+                            if (cInfo != null) {
+                                for (ClientInfo client : mClients.values()) {
+                                    Slog.e(TAG, "Client Info:" + client);
+                                }
+                                Slog.wtf(TAG, "cInfo exist");
+                            }
                             cInfo = new ClientInfo(c, msg.replyTo);
                             mClients.put(msg.replyTo, cInfo);
                         } else {
@@ -273,6 +283,7 @@ public class NsdService extends INsdManager.Stub {
                 NsdServiceInfo servInfo;
                 boolean result = HANDLED;
                 int id;
+                if (DBG) Slog.i(TAG, "[EnabledState]  processMessage what=" + msg.what);
                 switch (msg.what) {
                   case AsyncChannel.CMD_CHANNEL_HALF_CONNECTED:
                         //First client
@@ -491,7 +502,22 @@ public class NsdService extends INsdManager.Stub {
                         clientInfo.mResolvedService.setServiceType(type);
                         clientInfo.mResolvedService.setPort(Integer.parseInt(cooked[4]));
                         clientInfo.mResolvedService.setTxtRecords(cooked[6]);
+                        /* C.K. marked 20160408 N migration
+                        //M: Add txt record parse for CrossMount
+                        //TXT record start
+                        ArrayMap<String, byte[]> resultTxtRecords = new ArrayMap<String, byte[]>();
+                        if( cooked.length > 6 ) {
+                            for( int i = 6; i < cooked.length; i++) {
+                                parseTxtRecord(cooked[i], resultTxtRecords);
+                            }
+                        }
+                        for (String key : resultTxtRecords.keySet()) {
+                            byte[] recordValue = resultTxtRecords.get(key);
+                            clientInfo.mResolvedService.setAttribute(key, recordValue);
+                        }
 
+                        //TXT record end
+                        */
                         stopResolveService(id);
                         removeRequestMap(clientId, id, clientInfo);
 
@@ -544,6 +570,35 @@ public class NsdService extends INsdManager.Stub {
                 return handled;
             }
        }
+    }
+
+    //M: Add txt record parse for CrossMount
+    private ArrayMap<String, byte[]> parseTxtRecord(String str, ArrayMap<String
+        , byte[]> txtRecord) {
+        Slog.v(TAG, "parseTxtRecord: " + str);
+        //"no-1=for VALUE no-1""no-2=for VALUE no-2""no-3=for VALUE no-3"
+        /* rfc6763:
+         * "key1=value1" "ke y2=value2" "key3" "key4=" "key5=valu=5" ""key6=value6"
+         * key: [0x20-0x7E] except 0x3D(=), space allowed; length 1~9; key + value<255;
+         * value: any symbol after thr first '=' are values
+         */
+
+        //Do not use regular expression Pattern because input str is just a key=value pair
+        //without quote.
+        //ignore leading and tailing quotation
+        //Max length =2, any symbol after the first '=' are values
+        String[] tokens = str.split("=" ,2);
+        if (tokens.length >=2) {
+            Slog.v(TAG,"tokens:[0](" + tokens[0] + "), [1](" + tokens[1] + ")");
+            byte[] b = {};
+            try {
+                b = tokens[1].getBytes("UTF-8");
+            } catch (Exception e) {
+                System.out.println("Error: " + e);
+            }
+            txtRecord.put(tokens[0], b);
+        }
+        return txtRecord;
     }
 
     private String unescape(String s) {
@@ -839,6 +894,7 @@ public class NsdService extends INsdManager.Stub {
         if (msg.replyTo == null) return;
         Message dstMsg = obtainMessage(msg);
         dstMsg.what = what;
+        if (DBG) Slog.i(TAG, "replyToMessage what=" + what);
         mReplyChannel.replyToMessage(msg, dstMsg);
     }
 
@@ -847,6 +903,7 @@ public class NsdService extends INsdManager.Stub {
         Message dstMsg = obtainMessage(msg);
         dstMsg.what = what;
         dstMsg.arg1 = arg1;
+        if (DBG) Slog.i(TAG, "replyToMessage what=" + what);
         mReplyChannel.replyToMessage(msg, dstMsg);
     }
 
@@ -855,6 +912,7 @@ public class NsdService extends INsdManager.Stub {
         Message dstMsg = obtainMessage(msg);
         dstMsg.what = what;
         dstMsg.obj = obj;
+        if (DBG) Slog.i(TAG, "replyToMessage what=" + what);
         mReplyChannel.replyToMessage(msg, dstMsg);
     }
 

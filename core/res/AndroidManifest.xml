@@ -488,6 +488,11 @@
     <protected-broadcast android:name="android.intent.action.MANAGED_PROFILE_UNAVAILABLE" />
     <protected-broadcast android:name="com.android.server.pm.DISABLE_QUIET_MODE_AFTER_UNLOCK" />
 
+    <protected-broadcast android:name="android.intent.action.PHB_STATE_CHANGED" />
+
+    <protected-broadcast android:name="android.intent.action.UMS_DISCONNECTED" />
+    <protected-broadcast android:name="android.intent.action.UMS_CONNECTED" />
+
     <protected-broadcast android:name="com.android.server.retaildemo.ACTION_RESET_DEMO" />
 
     <!-- ====================================================================== -->
@@ -1361,6 +1366,13 @@
         android:label="@string/permlab_transmitIr"
         android:description="@string/permdesc_transmitIr"
         android:protectionLevel="normal" />
+
+    <!-- Allows an application to access MTK HW 
+         @hide -->
+    <permission android:name="mediatek.permission.ACCESS_MTK_MMHW"
+        android:protectionLevel="system|signature"
+        android:label="@string/permlab_camera"
+        android:description="@string/permdesc_camera" />
 
     <!-- ==================================================== -->
     <!-- Permissions related to changing audio settings   -->
@@ -3376,6 +3388,30 @@
                 <action android:name="android.backup.TRANSPORT_HOST" />
             </intent-filter>
         </service>
+
+        <!-- Power Off Alarm feature -->
+        <activity android:name="com.android.server.AlarmShutdownActivity"
+            android:permission="android.permission.SHUTDOWN"
+            android:configChanges="mcc|mnc|locale|keyboard|keyboardHidden|orientation|screenSize|screenLayout|fontScale|uiMode"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.ACTION_ALARM_REQUEST_SHUTDOWN" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+ 
+        <!-- storage default path enhancement -->
+        <activity android:name="com.mediatek.storage.StorageDefaultPathDialog"
+                  android:configChanges="orientation|keyboardHidden|screenSize"
+                  android:launchMode="singleTop"
+                  android:excludeFromRecents="true"
+                  android:theme="@*android:style/Theme.Holo.Dialog.Alert">
+            <intent-filter>
+                <action android:name="com.mediatek.storage.StorageDefaultPathDialog" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
 
         <service android:name="com.android.server.MountServiceIdler"
                  android:exported="true"

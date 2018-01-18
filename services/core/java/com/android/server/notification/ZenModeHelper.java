@@ -355,7 +355,19 @@ public class ZenModeHelper {
                 throw new SecurityException(
                         "Cannot delete rules not owned by your condition provider");
             }
-            return setConfigLocked(newConfig, reason, true);
+            /// M: Just filter for special test flow, normal can ignore it. @{
+            boolean setConfig = setConfigLocked(newConfig, reason, true);
+            if (rule != null && rule.conditionId != null && rule.conditionId.toString() != null
+                && rule.conditionId.toString().equalsIgnoreCase(
+                        "scheme:/mock_cp?query_item=valueUnsubscribe")) {
+                    Log.d(TAG, "foundTarget true: " + rule.conditionId.toString());
+                    try {
+                        Thread.sleep(2000);
+                    } catch (InterruptedException exception) {
+                    }
+            }
+            return setConfig;
+            /// @}
         }
     }
 

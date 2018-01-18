@@ -106,7 +106,7 @@ public class Task {
         @Override
         public String toString() {
             return "id=" + id + " stackId=" + stackId + " user=" + userId + " lastActiveTime=" +
-                    lastActiveTime;
+                    lastActiveTime + " component" + baseIntent.getComponent();
         }
 
         private void updateHashCode() {

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2012 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -536,6 +541,70 @@ public final class DisplayManager {
             int flags, @Nullable VirtualDisplay.Callback callback, @Nullable Handler handler) {
         return mGlobal.createVirtualDisplay(mContext, projection,
                 name, width, height, densityDpi, surface, flags, callback, handler);
+    }
+
+    /**
+     * Get the plug status of SmartBook
+     *
+     * @return SmartBook plugged in or not
+     * @hide
+     */
+    public boolean isSmartBookPluggedIn() {
+        return false;
+    }
+
+    /**
+     * Get feature enabled/disabled status of WiFi Display sink
+     *
+     * @return True if Wifi Display sink feature is enabled
+     * @hide
+     */
+    public boolean isSinkEnabled() {
+        return mGlobal.isSinkEnabled();
+    }
+
+    /**
+     * To enabled/disabled WiFi Display sink mode
+     *
+     * @param enable Set true is to enable WiFi Display sink mode
+     * @hide
+     */
+    public void enableSink(boolean enable) {
+        mGlobal.enableSink(enable);
+    }
+
+    /**
+     * Wait for the WiFi Display connection in sink mode
+     *
+     * @param surface The surface of the surfaceActivity created by
+     * UI layer to display WiFi Display source's screen
+     * @hide
+     */
+    public void waitWifiDisplayConnection(Surface surface) {
+        mGlobal.waitWifiDisplayConnection(surface);
+    }
+
+    /**
+     * Suspend the WiFi Display connection of sink connection
+     *
+     * @param suspend Set true to suspend WiFi Display connection.
+     * Set false is to resume the connection.
+     * @param surface The surface of the surfaceActivity created by
+     * UI layer to display WiFi Display source's screen
+     * @hide
+     */
+    public void suspendWifiDisplay(boolean suspend, Surface surface) {
+        mGlobal.suspendWifiDisplay(suspend, surface);
+    }
+
+    /**
+     * Send the input event via UIBC
+     *
+     * @param input The input event
+     * @hide
+     */
+    public void sendUibcInputEvent(String input) {
+        mGlobal.sendUibcInputEvent(input);
     }
 
     /**

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2009 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,11 +27,13 @@ import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Matrix;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.media.MediaMetadataRetriever;
 import android.media.MediaFile.MediaFileType;
 import android.net.Uri;
 import android.os.ParcelFileDescriptor;
 import android.provider.MediaStore.Images;
+import android.util.DisplayMetrics;
 import android.util.Log;
 
 import java.io.FileInputStream;
@@ -40,8 +47,16 @@ import java.io.IOException;
 public class ThumbnailUtils {
     private static final String TAG = "ThumbnailUtils";
 
+    /// M: If devices density is DENSITY_XXXHIGH(densityDip=640dip, density=4), we should increase mini
+    /// thumbnail size to avoid cts fail, because 107*170 test file on DENSITY_XXXHIGH will scale to
+    /// 428*680, with old constraint size, thumbnail size is 214*320 which smaller than cts request 240,
+    /// so we increase constraint size with 1.5 rate.
+    /// TODO google may fixed it next version.
+    private static final boolean IS_DENSITY_XXXHIGH = DisplayMetrics.DENSITY_DEVICE >= DisplayMetrics.DENSITY_XXXHIGH;
+
+    /// M: 1.5 rate MAX_NUM_PIXELS_THUMBNAIL with DENSITY_XXXHIGH device.
     /* Maximum pixels size for created bitmap. */
-    private static final int MAX_NUM_PIXELS_THUMBNAIL = 512 * 384;
+    private static final int MAX_NUM_PIXELS_THUMBNAIL = IS_DENSITY_XXXHIGH ? 768 * 576 : 512 * 384;
     private static final int MAX_NUM_PIXELS_MICRO_THUMBNAIL = 160 * 120;
     private static final int UNCONSTRAINED = -1;
 
@@ -57,9 +72,10 @@ public class ThumbnailUtils {
 
     /**
      * Constant used to indicate the dimension of mini thumbnail.
+     * M: 1.5 rate TARGET_SIZE_MINI_THUMBNAIL with DENSITY_XXXHIGH device.
      * @hide Only used by media framework and media provider internally.
      */
-    public static final int TARGET_SIZE_MINI_THUMBNAIL = 320;
+    public static final int TARGET_SIZE_MINI_THUMBNAIL = IS_DENSITY_XXXHIGH ? 480 : 320;
 
     /**
      * Constant used to indicate the dimension of micro thumbnail.
@@ -111,10 +127,20 @@ public class ThumbnailUtils {
                         || options.outHeight == -1) {
                     return null;
                 }
-                options.inSampleSize = computeSampleSize(
-                        options, targetSize, maxPixels);
+                /// M: ALPS00136162 begin @{
+//                options.inSampleSize = computeSampleSize(
+//                        options, targetSize, maxPixels);
+                options.inSampleSize = adustSampleSize(
+                                     computeSampleSize(options, targetSize, maxPixels),
+                                     options);
+                /// @}
                 options.inJustDecodeBounds = false;
 
+                /// M: Add for OMA DRM, mark inSampleSize as decode thumbnail(or 0x100) {@
+                if (filePath.endsWith(".dcf")) {
+                    options.inSampleSize |= 0x100;
+                }
+                /// @ }
                 options.inDither = false;
                 options.inPreferredConfig = Bitmap.Config.ARGB_8888;
                 bitmap = BitmapFactory.decodeFileDescriptor(fd, null, options);
@@ -131,7 +157,6 @@ public class ThumbnailUtils {
                     Log.e(TAG, "", ex);
                 }
             }
-
         }
 
         if (kind == Images.Thumbnails.MICRO_KIND) {
@@ -224,8 +249,19 @@ public class ThumbnailUtils {
         }
         Matrix matrix = new Matrix();
         matrix.setScale(scale, scale);
-        Bitmap thumbnail = transform(matrix, source, width, height,
+
+        /// M: check the bitmap size to avoid out of memory exception.
+        Bitmap thumbnail = null;
+        RectF srcR = new RectF(0, 0, source.getWidth(), source.getHeight());
+        RectF deviceR = new RectF();
+        matrix.mapRect(deviceR, srcR);
+        if ((deviceR.width() * deviceR.height()) >= (1024 * 1024)) {
+            thumbnail = transform(matrix, source, width, height, options);
+        } else {
+            thumbnail = transform(matrix, source, width, height,
                 OPTIONS_SCALE_UP | options);
+        }
+
         return thumbnail;
     }
 
@@ -480,7 +516,7 @@ public class ThumbnailUtils {
             exif = new ExifInterface(filePath);
             thumbData = exif.getThumbnail();
         } catch (IOException ex) {
-            Log.w(TAG, ex);
+            Log.w(TAG, "", ex);
         }
 
         BitmapFactory.Options fullOptions = new BitmapFactory.Options();
@@ -492,14 +528,32 @@ public class ThumbnailUtils {
         if (thumbData != null) {
             exifOptions.inJustDecodeBounds = true;
             BitmapFactory.decodeByteArray(thumbData, 0, thumbData.length, exifOptions);
-            exifOptions.inSampleSize = computeSampleSize(exifOptions, targetSize, maxPixels);
+        /// M: ALPS00136162 begin @{
+//            exifOptions.inSampleSize = computeSampleSize(exifOptions, targetSize, maxPixels);
+            exifOptions.inSampleSize = adustSampleSize(
+                                         computeSampleSize(exifOptions, targetSize, maxPixels),
+                                         exifOptions);
+        /// @}
             exifThumbWidth = exifOptions.outWidth / exifOptions.inSampleSize;
         }
 
         // Compute fullThumbWidth.
         fullOptions.inJustDecodeBounds = true;
         BitmapFactory.decodeFile(filePath, fullOptions);
-        fullOptions.inSampleSize = computeSampleSize(fullOptions, targetSize, maxPixels);
+
+        /// M: if returned width and height of bitmap is invalid, the image source
+        /// should be invalid, no bitmap can be decoded. So return a null Bitmap.
+        if (fullOptions.outWidth == -1 || fullOptions.outHeight == -1) {
+            sizedThumbBitmap.mBitmap = null;
+            return;
+        }
+
+        /// M: ALPS00136162 begin @{
+//        fullOptions.inSampleSize = computeSampleSize(fullOptions, targetSize, maxPixels);
+        fullOptions.inSampleSize = adustSampleSize(
+                                     computeSampleSize(fullOptions, targetSize, maxPixels),
+                                     fullOptions);
+        /// @}
         fullThumbWidth = fullOptions.outWidth / fullOptions.inSampleSize;
 
         // Choose the larger thumbnail as the returning sizedThumbBitmap.
@@ -519,4 +573,216 @@ public class ThumbnailUtils {
             sizedThumbBitmap.mBitmap = BitmapFactory.decodeFile(filePath, fullOptions);
         }
     }
+
+    /// M: the following two methods are added to avoid thumbnail sawtooth
+    /**
+     * Creates a centered bitmap of the desired size.
+     *
+     * @param source original bitmap source buffer
+     * @param srcWidth original width
+     * @param srcHeight original height
+     * @param dstWidth targeted width
+     * @param dstHeight targeted height
+     * @param options options used during thumbnail extraction
+     * @hide
+     */
+    public static Bitmap extractBufferThumbnail(byte [] source,
+             int srcWidth, int srcHeight,
+             int dstWidth, int dstHeight, int options) {
+        if (source == null) {
+            return null;
+        }
+
+        float scale;
+        if (srcWidth < srcHeight) {
+            scale = dstWidth / (float) srcWidth;
+        } else {
+            scale = dstHeight / (float) srcHeight;
+        }
+        Matrix matrix = new Matrix();
+        matrix.setScale(scale, scale);
+
+        Bitmap thumbnail = null;
+        /// M: check the bitmap size to avoid out of memory exception.
+        RectF srcR = new RectF(0, 0, srcWidth, srcHeight);
+        RectF deviceR = new RectF();
+        matrix.mapRect(deviceR, srcR);
+        if ((deviceR.width() * deviceR.height()) >= (1024 * 1024)) {
+            thumbnail = transformBuffer(matrix, source, srcWidth, srcHeight,
+                                  dstWidth, dstHeight, options);
+        } else {
+            thumbnail = transformBuffer(matrix, source, srcWidth, srcHeight,
+                                  dstWidth, dstHeight, OPTIONS_SCALE_UP | options);
+        }
+
+        return thumbnail;
+    }
+
+    /**
+     * M: Transform source Bitmap buffer to targeted width and height.
+     */
+    private static Bitmap transformBuffer(Matrix scaler,
+            byte [] source,
+            int srcWidth,
+            int srcHeight,
+            int targetWidth,
+            int targetHeight,
+            int options) {
+        boolean scaleUp = (options & OPTIONS_SCALE_UP) != 0;
+        /// M: as source is just buffer, no recycle is needed.
+        //boolean recycle = (options & OPTIONS_RECYCLE_INPUT) != 0;
+
+        int deltaX = srcWidth - targetWidth;
+        int deltaY = srcHeight - targetHeight;
+        if (!scaleUp && (deltaX < 0 || deltaY < 0)) {
+            /*
+            * M: In this case the bitmap is smaller, at least in one dimension,
+            * than the target.  Transform it by placing as much of the image
+            * as possible into the target and leaving the top/bottom or
+            * left/right (or both) black.
+            */
+            Bitmap b2 = Bitmap.createBitmap(targetWidth, targetHeight,
+            Bitmap.Config.ARGB_8888);
+            Canvas c = new Canvas(b2);
+
+            int deltaXHalf = Math.max(0, deltaX / 2);
+            int deltaYHalf = Math.max(0, deltaY / 2);
+            Rect src = new Rect(
+            deltaXHalf,
+            deltaYHalf,
+            deltaXHalf + Math.min(targetWidth, srcWidth),
+            deltaYHalf + Math.min(targetHeight, srcHeight));
+            int dstX = (targetWidth  - src.width())  / 2;
+            int dstY = (targetHeight - src.height()) / 2;
+            Rect dst = new Rect(
+                                dstX,
+                                dstY,
+                                targetWidth - dstX,
+                                targetHeight - dstY);
+
+            /// M: create BitmapFactory.Options to decode a ARGB8888 Bitmap without scaling.
+            android.graphics.BitmapFactory.Options Options =
+                      new android.graphics.BitmapFactory.Options();
+            Options.inDither = false;
+            Options.inSampleSize = 1; /// M: no scaling
+            Options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+            /// M: decode bitmap
+            Bitmap b1 = null;
+            if (source != null) {
+                b1 = BitmapFactory.decodeByteArray(source, 0, source.length, Options);
+            }
+            if (null == b1) {
+                return null;
+            }
+            /// M: crop decoded bitmap to b2
+            c.drawBitmap(b1, src, dst, null);
+            b1.recycle();
+            return b2;
+        }
+        float bitmapWidthF = srcWidth;
+        float bitmapHeightF = srcHeight;
+
+        float bitmapAspect = bitmapWidthF / bitmapHeightF;
+        float viewAspect   = (float) targetWidth / targetHeight;
+
+        float finalScale = 1.0f;
+
+        if (bitmapAspect > viewAspect) {
+            float scale = targetHeight / bitmapHeightF;
+            if (scale < .9F || scale > 1F) {
+                scaler.setScale(scale, scale);
+                /// M: record calculated scale
+                finalScale = scale;
+            } else {
+                scaler = null;
+            }
+        } else {
+            float scale = targetWidth / bitmapWidthF;
+            if (scale < .9F || scale > 1F) {
+                scaler.setScale(scale, scale);
+                /// M: record calculated scale
+                finalScale = scale;
+            } else {
+                scaler = null;
+            }
+        }
+
+        Bitmap b1 = null;
+
+        android.graphics.BitmapFactory.Options Options =
+                  new android.graphics.BitmapFactory.Options();
+        Options.inDither = false;
+        Options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+        /// M: create a Bitmap no longer need scaling in crop step.
+        int inPreferSize = (int) Math.max(srcWidth * finalScale, srcHeight * finalScale);
+//        Options.inPreferSize = inPreferSize;
+
+        if (source != null) {
+            b1 = BitmapFactory.decodeByteArray(source, 0, source.length, Options);
+        }
+        if (null == b1) {
+            return null;
+        }
+        int scaledBitmapWidth = b1.getWidth();
+        int scaledBitmapHeight = b1.getHeight();
+
+        Bitmap b2 = Bitmap.createBitmap(targetWidth, targetHeight,
+                                        Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(b2);
+
+        RectF dst = new RectF(0.0f, 0.0f, (float) targetWidth, (float) targetHeight);
+        Rect src = null;
+        int maxSize = scaledBitmapWidth > scaledBitmapHeight ?
+                      scaledBitmapWidth : scaledBitmapHeight;
+        if (maxSize == inPreferSize) {
+            /// M: bitmap scaled as wished
+            int croppedX = Math.max(0, (scaledBitmapWidth - targetWidth) / 2);
+            int croppedY = Math.max(0, (scaledBitmapHeight - targetHeight) / 2);
+            src = new Rect(croppedX,
+                           croppedY,
+                           Math.min(croppedX + targetWidth, scaledBitmapWidth),
+                           Math.min(croppedY + targetHeight, scaledBitmapHeight)
+                           );
+        } else {
+            /// M: seems bitmap is a small sized bitmap, scale up
+            int croppedX = Math.max(0, (srcWidth - (int) (targetWidth / finalScale)) / 2);
+            int croppedY = Math.max(0, (srcHeight - (int) (targetHeight / finalScale)) / 2);
+            src = new Rect(croppedX,
+                           croppedY,
+                           Math.min(croppedX + (int) (targetWidth / finalScale), srcWidth),
+                           Math.min(croppedY + (int) (targetHeight / finalScale), srcHeight)
+                           );
+        }
+
+//        c.drawBitmap(b1, src, dst, null);
+        /// M: for better image quality, we filter bitmap when drawing
+        android.graphics.Paint paint = new android.graphics.Paint();
+        paint.setFilterBitmap(true);
+        c.drawBitmap(b1, src, dst, paint);
+
+        b1.recycle();
+        return b2;
+    }
+
+  // M: ALPS00136162 computeSamplesSize may cause the decode bitmap's
+  //  one dimension to be less than TARGET_SIZE_MICRO_THUMBNAIL.
+  //  This may cause a blured MICRO_KIND thumbnail in ImageGallery,
+  //  because the MICRO_KIND thumbnail's size is
+  //  (TARGET_SIZE_MICRO_THUMBNAIL x TARGET_SIZE_MICRO_THUMBNAIL)
+  //  To correct this issue, we recalculate the sample size, divide
+  //  it by 2 until the output bitmap's shorter dimension is bigger
+  //  than TARGET_SIZE_MICRO_THUMBNAIL, or sample size is 1. Since
+  //  the smallest sample size is 1 and no scale up is applied,
+  //  there should be no extremely large output bitmap that cause
+  //  Java Exception.
+      private static int adustSampleSize(int inSampleSize, BitmapFactory.Options options) {
+          if (inSampleSize < 1 || options == null) return 1;
+          int imageShortterDimension = options.outWidth < options.outHeight ?
+                                       options.outWidth : options.outHeight ;
+          while ((inSampleSize > 1) &&
+                  (imageShortterDimension / inSampleSize < TARGET_SIZE_MICRO_THUMBNAIL)) {
+              inSampleSize >>= 1;
+          }
+          return inSampleSize;
+      }
 }

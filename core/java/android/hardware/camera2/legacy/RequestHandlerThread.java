@@ -38,6 +38,10 @@ public class RequestHandlerThread extends HandlerThread {
     private volatile Handler mHandler;
 
     public RequestHandlerThread(String name, Handler.Callback callback) {
+        /* M: remove the thread priority mapping error
+         * Thread.MAX_PRIORITY --> Process.THREAD_PRIORITY_BACKGROUND here.
+         * super(name, Thread.MAX_PRIORITY);
+        */
         super(name, Thread.MAX_PRIORITY);
         mCallback = callback;
     }

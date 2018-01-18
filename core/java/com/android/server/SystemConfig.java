@@ -212,6 +212,12 @@ public class SystemConfig {
                 Environment.getOemDirectory(), "etc", "sysconfig"), ALLOW_FEATURES);
         readPermissions(Environment.buildPath(
                 Environment.getOemDirectory(), "etc", "permissions"), ALLOW_FEATURES);
+
+        /// M: Only allow libraries
+        readPermissions(Environment.buildPath(
+                Environment.getVendorDirectory(), "etc", "sysconfig"), ALLOW_LIBS);
+        readPermissions(Environment.buildPath(
+                Environment.getVendorDirectory(), "etc", "permissions"), ALLOW_LIBS);
     }
 
     void readPermissions(File libraryDir, int permissionFlag) {

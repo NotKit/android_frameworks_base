@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -110,7 +115,8 @@ public class DialerKeyListener extends NumberKeyListener
      */
     public static final char[] CHARACTERS = new char[] {
             '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '#', '*',
-            '+', '-', '(', ')', ',', '/', 'N', '.', ' ', ';'
+            /// M: add the 'p' and 'w' character. CR: ALPS00252712
+            '+', '-', '(', ')', ',', '/', 'N', '.', ' ', ';', 'P', 'W', 'p', 'w'
         };
 
     private static DialerKeyListener sInstance;

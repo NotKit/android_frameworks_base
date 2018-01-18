@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,13 +22,20 @@
 package com.android.externalstorage;
 
 import android.content.ContentResolver;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.res.AssetFileDescriptor;
 import android.database.Cursor;
 import android.database.MatrixCursor;
 import android.database.MatrixCursor.RowBuilder;
+import android.database.sqlite.SQLiteException;
+import android.database.sqlite.SQLiteFullException;
 import android.graphics.Point;
+import android.media.MediaFile;
+import android.media.MediaScannerConnection;
+import android.media.MediaScannerConnection.OnScanCompletedListener;
+
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.CancellationSignal;
@@ -37,6 +49,8 @@ import android.os.UserHandle;
 import android.os.storage.DiskInfo;
 import android.os.storage.StorageManager;
 import android.os.storage.VolumeInfo;
+import android.os.storage.StorageVolume;
+import android.os.SystemProperties;
 import android.provider.DocumentsContract;
 import android.provider.DocumentsContract.Document;
 import android.provider.DocumentsContract.Root;
@@ -58,6 +72,7 @@ import java.io.FileDescriptor;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -82,6 +97,10 @@ public class ExternalStorageProvider extends DocumentsProvider {
     private static final String[] DEFAULT_DOCUMENT_PROJECTION = new String[] {
             Document.COLUMN_DOCUMENT_ID, Document.COLUMN_MIME_TYPE, Document.COLUMN_DISPLAY_NAME,
             Document.COLUMN_LAST_MODIFIED, Document.COLUMN_FLAGS, Document.COLUMN_SIZE,
+            /// M: add to support drm
+            MediaStore.MediaColumns.DATA,
+            MediaStore.MediaColumns.IS_DRM,
+            MediaStore.MediaColumns.DRM_METHOD
     };
 
     private static class RootInfo {
@@ -197,8 +216,10 @@ public class ExternalStorageProvider extends DocumentsProvider {
             if (volume.isPrimary()) {
                 // save off the primary volume for subsequent "Home" dir initialization.
                 primaryVolume = volume;
-                root.flags |= Root.FLAG_ADVANCED;
             }
+            /// M: flag advanced is for both internal and external storage.
+            /// Legacy design
+                root.flags |= Root.FLAG_ADVANCED;
             // Dunno when this would NOT be the case, but never hurts to be correct.
             if (volume.isMountedWritable()) {
                 root.flags |= Root.FLAG_SUPPORTS_CREATE;
@@ -346,10 +367,45 @@ public class ExternalStorageProvider extends DocumentsProvider {
         return target;
     }
 
+    private File getFileFromDocIdMediaHelper(String docId, boolean visible) {
+        final int splitIndex = docId.indexOf(':', 1);
+        final String tag = docId.substring(0, splitIndex);
+        final String path = docId.substring(splitIndex + 1);
+        Log.d(TAG, "getFileFromDocIdMediaHelper docId: " + docId);
+
+        RootInfo root;
+        synchronized (mRootsLock) {
+            root = mRoots.get(tag);
+        }
+        if (root == null) {
+            return null;
+        }
+
+        Log.d(TAG, " getFileFromDocIdMediaHelper target root.visiblePath: " + root.visiblePath);
+        Log.d(TAG, " getFileFromDocIdMediaHelper target root.path: " + root.path);
+
+        File target = visible ? root.visiblePath : root.path;
+        Log.d(TAG, " getFileFromDocIdMediaHelper target docId: " + target);
+        if (target == null) {
+            return null;
+        }
+        if (!target.exists()) {
+            Log.d(TAG, " getFileFromDocIdMediaHelper target not exist");
+            target.mkdirs();
+        }
+        Log.d(TAG, " getFileFromDocIdMediaHelper path " + path);
+        target = new File(target, path);
+
+        Log.d(TAG, " getFileFromDocIdMediaHelper target " + target);
+        return target;
+
+    }
+
     private void includeFile(MatrixCursor result, String docId, File file)
             throws FileNotFoundException {
         if (docId == null) {
             docId = getDocIdForFile(file);
+            if (DEBUG) Log.d(TAG, "includeFile docId: " + docId);
         } else {
             file = getFileForDocId(docId);
         }
@@ -370,7 +426,8 @@ public class ExternalStorageProvider extends DocumentsProvider {
             }
         }
 
-        final String mimeType = getTypeForFile(file);
+        String mimeType = getTypeForFile(file);
+        if (DEBUG) Log.d(TAG, "includeFile mimeType " + mimeType);
         if (mArchiveHelper.isSupportedArchiveType(mimeType)) {
             flags |= Document.FLAG_ARCHIVE;
         }
@@ -393,6 +450,53 @@ public class ExternalStorageProvider extends DocumentsProvider {
         if (lastModified > 31536000000L) {
             row.add(Document.COLUMN_LAST_MODIFIED, lastModified);
         }
+
+        /// M: add to support drm
+        if (isMtkDrmApp() && !file.isDirectory()) {
+            final int lastDot = displayName.lastIndexOf('.');
+            String extension = null;
+            if (lastDot >= 0) {
+                extension = displayName.substring(lastDot + 1).toLowerCase();
+            }
+            if (DEBUG) Log.d(TAG, "includeFile extension = " + extension);
+            if (extension != null && extension.equalsIgnoreCase("dcf")) {
+                // query drm info from file table of media provider
+                Uri fileUri = MediaStore.Files.getContentUri("external");
+                if (DEBUG) Log.d(TAG, "includeFile fileUri = " + fileUri);
+                String whereClause = MediaStore.MediaColumns.DATA + " = ?";
+                String[] projection = new String[] {MediaStore.MediaColumns.IS_DRM, MediaStore.MediaColumns.DRM_METHOD,
+                        MediaStore.MediaColumns.MIME_TYPE};
+                Cursor drmCursor = null;
+
+                try {
+                    /// M: get visible path for DRM files (new in N)
+                    file = getFileForDocId(docId, true);
+                    if (DEBUG) Log.d(TAG, "includeFile file.getAbsolutePath() = " +
+                     file.getAbsolutePath());
+                    drmCursor = getContext().getContentResolver().query(fileUri, projection,
+                            whereClause, new String[]{file.getAbsolutePath()}, null);
+
+                    if (drmCursor != null && drmCursor.moveToFirst()) {
+                        int isDrm = drmCursor.getInt(drmCursor.getColumnIndex(MediaStore.MediaColumns.IS_DRM));
+                        int drmMethod = drmCursor.getInt(drmCursor.getColumnIndex(MediaStore.MediaColumns.DRM_METHOD));
+                        mimeType = drmCursor.getString(drmCursor.getColumnIndex(MediaStore.MediaColumns.MIME_TYPE));
+                        row.add(MediaStore.MediaColumns.IS_DRM, isDrm);
+                        row.add(MediaStore.MediaColumns.DRM_METHOD, drmMethod);
+                        if (DEBUG) Log.d(TAG, "includeFile " + file.getAbsolutePath() +
+                         ", isDrm: " + isDrm + ", drmMethod: " + drmMethod);
+                    }
+                } catch (IllegalStateException e) {
+                    if (DEBUG) Log.d(TAG, "includeFile " + file.getAbsolutePath() +
+                     "query media occur error.");
+                } finally {
+                    if (drmCursor != null) {
+                        drmCursor.close();
+                    }
+                }
+            }
+        }
+        row.add(Document.COLUMN_MIME_TYPE, mimeType);
+        row.add(MediaStore.MediaColumns.DATA, file.getAbsolutePath());
     }
 
     @Override
@@ -462,6 +566,7 @@ public class ExternalStorageProvider extends DocumentsProvider {
 
     @Override
     public String renameDocument(String docId, String displayName) throws FileNotFoundException {
+        int rows_updated = 0;
         // Since this provider treats renames as generating a completely new
         // docId, we're okay with letting the MIME type change.
         displayName = FileUtils.buildValidFatFilename(displayName);
@@ -471,18 +576,112 @@ public class ExternalStorageProvider extends DocumentsProvider {
         if (!before.renameTo(after)) {
             throw new IllegalStateException("Failed to rename to " + after);
         }
+
+        if (isSamePathAndVisiblePath(docId)) {
+            rows_updated = updateMediaStore(before, after);
+            Log.d(TAG, "renameDocument same path and visiblePath rows_updated = " + rows_updated);
+        }
+        else {
+            final File before_visible = getFileFromDocIdMediaHelper(docId, true);
+            final File after_visible = new File(before_visible.getParentFile(), displayName);
+            rows_updated = updateMediaStore(before_visible, after_visible);
+            Log.d(TAG, "renameDocument diff path and visiblePath rows_updated = " + rows_updated);
+        }
         final String afterDocId = getDocIdForFile(after);
         if (!TextUtils.equals(docId, afterDocId)) {
+            Log.d(TAG, "renameDocument afterDocId = " + after);
             return afterDocId;
         } else {
             return null;
         }
+
     }
+
+    private boolean isSamePathAndVisiblePath(String docId) {
+        final int splitIndex = docId.indexOf(':', 1);
+        final String tag = docId.substring(0, splitIndex);
+        final String path = docId.substring(splitIndex + 1);
+        Log.d(TAG, "isSamePathAndVisiblePath docId: " + docId);
+
+        RootInfo root;
+        synchronized (mRootsLock) {
+            root = mRoots.get(tag);
+        }
+        if (root == null) {
+            Log.d(TAG, "isSamePathAndVisiblePath root is null");
+            return false;
+        }
+        Log.d(TAG, "isSamePathAndVisiblePath root.visiblePath = " + root.visiblePath);
+        Log.d(TAG, "isSamePathAndVisiblePath root.path = " + root.path);
+        if (root.visiblePath.toString().equals(root.path.toString()))
+            return true;
+        return false;
+    }
+
+    private int updateMediaStore(File before, File after) {
+        int ret = 0;
+        String oldFilePath = before.getAbsolutePath();
+        Log.d(TAG, "updateMediaStore oldFilePath = " + oldFilePath);
+        String newFilePath = after.getAbsolutePath();
+        Log.d(TAG, "updateMediaStore newFilePath = " + newFilePath);
+
+        String where = MediaStore.Files.FileColumns.DATA + "=?";
+        Log.d(TAG, "updateMediaStore where = " + where);
+        String[] whereArgs = new String[] { oldFilePath };
+        Log.d(TAG, "updateMediaStore whereArgs = " + Arrays.toString(whereArgs));
+
+        final ContentResolver resolver = getContext().getContentResolver();
+        final Uri externalUri = MediaStore.Files.getContentUri("external");
+        Log.d(TAG, "updateMediaStore externalUri = " + externalUri);
+
+        ContentValues values = new ContentValues();
+        values.put(MediaStore.Files.FileColumns.DATA, newFilePath);
+
+        try {
+            ret = resolver.update(externalUri, values, where, whereArgs);
+            Log.d(TAG, "updateMediaStore rows updated = " + ret);
+
+            scanPathMediaStore(newFilePath);
+        } catch (NullPointerException e) {
+            Log.e(TAG, "updateMediaStore update Media DB failed, null");
+            e.printStackTrace();
+        } catch (SQLiteFullException e) {
+            Log.e(TAG, "updateMediaStore update Media DB failed, DB full");
+            e.printStackTrace();
+        } catch (UnsupportedOperationException e) {
+            Log.e(TAG, "updateMediaStore update Media DB failed, DB is closed");
+            e.printStackTrace();
+        }
+
+        return ret;
+    }
+
+    private void scanPathMediaStore(String path) {
+        Log.d(TAG, "scanPathMediaStore.path =" + path);
+        if (getContext() != null && !TextUtils.isEmpty(path)) {
+            String[] paths = { path };
+            Log.d(TAG, "scanPathforMediaStore,scan file .");
+            OnScanCompletedListener obj = new ExternalStorageMediaScanCompleted();
+            MediaScannerConnection.scanFile(getContext(), paths, null, obj);
+        }
+    }
+
+    private class ExternalStorageMediaScanCompleted implements OnScanCompletedListener {
+        @Override
+        public void onScanCompleted(String path, Uri uri) {
+            Log.d(TAG, "onScanCompleted.path =" + path);
+            Log.d(TAG, "onScanCompleted.uri =" + uri);
+            getContext().getContentResolver().notifyChange(BASE_URI, null, false);
+        }
+    }
+
 
     @Override
     public void deleteDocument(String docId) throws FileNotFoundException {
+
         final File file = getFileForDocId(docId);
         final File visibleFile = getFileForDocId(docId, true);
+        Log.d(TAG, "deleteDocument file to be deleted = "+file);
 
         final boolean isDirectory = file.isDirectory();
         if (isDirectory) {
@@ -495,7 +694,6 @@ public class ExternalStorageProvider extends DocumentsProvider {
         if (visibleFile != null) {
             final ContentResolver resolver = getContext().getContentResolver();
             final Uri externalUri = MediaStore.Files.getContentUri("external");
-
             // Remove media store entries for any files inside this directory, using
             // path prefix match. Logic borrowed from MtpDatabase.
             if (isDirectory) {
@@ -707,6 +905,14 @@ public class ExternalStorageProvider extends DocumentsProvider {
             }
         }
 
+        /// M: Try Media mime if upper fails
+        final String mime = MediaFile.getMimeTypeForFile(name);
+        Log.d(TAG, "getTypeForName: mime " + mime);
+        Log.d(TAG, "getTypeForName: name " + name);
+        if (mime != null) {
+            return mime;
+        }
+
         return "application/octet-stream";
     }
 
@@ -790,5 +996,18 @@ public class ExternalStorageProvider extends DocumentsProvider {
             super.close();
             stopObserving(mFile);
         }
+    }
+
+    /// M: add to support drm
+    /**
+     *
+     * @return is MtkDrmApp, or not.
+     */
+    public static boolean isMtkDrmApp() {
+        return SystemProperties.getBoolean("ro.mtk_oma_drm_support", false);
+    }
+
+    private static boolean isMtkSdSwap() {
+        return SystemProperties.getBoolean("ro.mtk_2sdcard_swap", false);
     }
 }

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2012 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -106,11 +111,11 @@ public final class WifiDisplaySessionInfo implements Parcelable {
     @Override
     public String toString() {
         return "WifiDisplaySessionInfo:"
-                +"\n    Client/Owner: " + (mClient ? "Client":"Owner")
-                +"\n    GroupId: " + mGroupId
-                +"\n    Passphrase: " + mPassphrase
-                +"\n    SessionId: " + mSessionId
-                +"\n    IP Address: " + mIP
+                + " C/O:" + (mClient ? "Client" : "Owner")
+                + ",GId:" + mGroupId
+                + ",Pp:" + mPassphrase
+                + ",SId:" + mSessionId
+                + ",IP:" + mIP
                 ;
     }
 }

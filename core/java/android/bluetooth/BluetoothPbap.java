@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2008 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -51,7 +56,7 @@ public class BluetoothPbap {
 
     private static final String TAG = "BluetoothPbap";
     private static final boolean DBG = true;
-    private static final boolean VDBG = false;
+    private static final boolean VDBG = true;
 
     /** int extra for PBAP_STATE_CHANGED_ACTION */
     public static final String PBAP_STATE =
@@ -148,6 +153,8 @@ public class BluetoothPbap {
         IBluetoothManager mgr = mAdapter.getBluetoothManager();
         if (mgr != null) {
             try {
+                if (VDBG) Log.d(TAG,
+                    "Register mBluetoothStateChangeCallback = " + mBluetoothStateChangeCallback);
                 mgr.registerStateChangeCallback(mBluetoothStateChangeCallback);
             } catch (RemoteException e) {
                 Log.e(TAG,"",e);
@@ -186,6 +193,8 @@ public class BluetoothPbap {
         IBluetoothManager mgr = mAdapter.getBluetoothManager();
         if (mgr != null) {
             try {
+                if (VDBG) Log.d(TAG,
+                    "Unregister mBluetoothStateChangeCallback = " + mBluetoothStateChangeCallback);
                 mgr.unregisterStateChangeCallback(mBluetoothStateChangeCallback);
             } catch (Exception e) {
                 Log.e(TAG,"",e);
@@ -301,17 +310,21 @@ public class BluetoothPbap {
 
     private final ServiceConnection mConnection = new ServiceConnection() {
         public void onServiceConnected(ComponentName className, IBinder service) {
-            if (DBG) log("Proxy object connected");
-            mService = IBluetoothPbap.Stub.asInterface(service);
-            if (mServiceListener != null) {
-                mServiceListener.onServiceConnected(BluetoothPbap.this);
+            synchronized (mConnection) {
+                if (DBG) log("Proxy object connected");
+                mService = IBluetoothPbap.Stub.asInterface(service);
+                if (mServiceListener != null) {
+                    mServiceListener.onServiceConnected(BluetoothPbap.this);
+                }
             }
         }
         public void onServiceDisconnected(ComponentName className) {
-            if (DBG) log("Proxy object disconnected");
-            mService = null;
-            if (mServiceListener != null) {
-                mServiceListener.onServiceDisconnected();
+            synchronized (mConnection) {
+                if (DBG) log("Proxy object disconnected");
+                mService = null;
+                if (mServiceListener != null) {
+                    mServiceListener.onServiceDisconnected();
+                }
             }
         }
     };

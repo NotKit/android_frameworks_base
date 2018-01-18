@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -183,6 +188,9 @@ public class InputManagerService extends IInputManager.Stub
     final Object mInputFilterLock = new Object();
     IInputFilter mInputFilter; // guarded by mInputFilterLock
     InputFilterHost mInputFilterHost; // guarded by mInputFilterLock
+
+    ///M:[ALPS01762006]Delay the keyboard change notification until NotificationBar is ready
+    ArrayList<Message> mPendingMessages = new ArrayList<Message>();
 
     private static native long nativeInit(InputManagerService service,
             Context context, MessageQueue messageQueue);
@@ -385,6 +393,18 @@ public class InputManagerService extends IInputManager.Stub
         if (mWiredAccessoryCallbacks != null) {
             mWiredAccessoryCallbacks.systemReady();
         }
+
+        ///M:[ALPS01762006]Delay the keyboard change notification until NotificationBar is ready @{
+        synchronized (mInputDevicesLock) {
+            if (!mPendingMessages.isEmpty()) {
+                Slog.d(TAG, "Input Manager has " + mPendingMessages.size() + " pending messages");
+                for (int i = 0 ; i < mPendingMessages.size() ; i++) {
+                    mPendingMessages.get(i).sendToTarget();
+                }
+                mPendingMessages.clear();
+            }
+        }
+        /// @}
     }
 
     private void reloadKeyboardLayouts() {
@@ -1799,8 +1819,18 @@ public class InputManagerService extends IInputManager.Stub
         synchronized (mInputDevicesLock) {
             if (!mInputDevicesChangedPending) {
                 mInputDevicesChangedPending = true;
-                mHandler.obtainMessage(MSG_DELIVER_INPUT_DEVICES_CHANGED,
-                        mInputDevices).sendToTarget();
+                ///M:[ALPS01762006]Delay the keyboard change notification
+                ///   until NotificationBar is ready @{
+                if (mNotificationManager != null) {
+                    mHandler.obtainMessage(MSG_DELIVER_INPUT_DEVICES_CHANGED,
+                            mInputDevices).sendToTarget();
+                } else {
+                    Slog.d(TAG, "Notification manager is not ready, set message pending");
+                    Message msg = mHandler.obtainMessage(MSG_DELIVER_INPUT_DEVICES_CHANGED,
+                            mInputDevices);
+                    mPendingMessages.add(msg);
+                }
+                /// @}
             }
 
             mInputDevices = inputDevices;
@@ -1843,6 +1873,14 @@ public class InputManagerService extends IInputManager.Stub
     private void notifyInputChannelBroken(InputWindowHandle inputWindowHandle) {
         mWindowManagerCallbacks.notifyInputChannelBroken(inputWindowHandle);
     }
+
+    /// M: KeyDispatchingTimeout predump mechanism @{
+    private void notifyPredump(InputApplicationHandle inputApplicationHandle,
+            InputWindowHandle inputWindowHandle, int pid, int message) {
+        mWindowManagerCallbacks.notifyPredump(inputApplicationHandle,
+            inputWindowHandle, pid, message);
+    }
+    /// KeyDispatchingTimeout predump mechanism @}
 
     // Native callback.
     private long notifyANR(InputApplicationHandle inputApplicationHandle,
@@ -2046,6 +2084,10 @@ public class InputManagerService extends IInputManager.Stub
                 KeyEvent event, int policyFlags);
 
         public int getPointerLayer();
+
+        /// M: KeyDispatchingTimeout predump mechanism
+        public void notifyPredump(InputApplicationHandle inputApplicationHandle,
+                InputWindowHandle inputWindowHandle, int pid, int message);
     }
 
     /**
@@ -2306,6 +2348,17 @@ public class InputManagerService extends IInputManager.Stub
                     IoUtils.closeQuietly(writer);
                 }
             }
+        }
+    }
+
+    /**
+    * @hide
+    * M: Check if there is an existing inputFilter.
+    * @return : true if there is an existing inputFilter.
+    */
+    public boolean alreadyHasInputFilter() {
+        synchronized (mInputFilterLock) {
+            return mInputFilter != null;
         }
     }
 }

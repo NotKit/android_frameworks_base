@@ -62,9 +62,14 @@ public abstract class AuthenticationClient extends ClientMonitor {
                         Slog.v(TAG, "onAuthenticated(owner=" + getOwnerString()
                                 + ", id=" + fingerId + ", gp=" + groupId + ")");
                     }
+                    /// M: Soter support @{
                     Fingerprint fp = !getIsRestricted()
-                            ? new Fingerprint("" /* TODO */, groupId, fingerId, getHalDeviceId())
+                            ? new Fingerprint("" /* TODO */, groupId, fingerId,
+                                    FingerprintUtils.isSoterSimulated() ?
+                                            548398617248L : getHalDeviceId())
                             : null;
+                    addAuthTokenToKeyStore();
+                    /// M: Soter support @}
                     receiver.onAuthenticationSucceeded(getHalDeviceId(), fp, getTargetUserId());
                 }
             } catch (RemoteException e) {
@@ -129,6 +134,9 @@ public abstract class AuthenticationClient extends ClientMonitor {
 
     @Override
     public int stop(boolean initiatedByClient) {
+        /// M: Soter support @{
+        if (FingerprintUtils.isSoterSimulated()) return 0;
+        /// M: Soter support @}
         IFingerprintDaemon daemon = getFingerprintDaemon();
         if (daemon == null) {
             Slog.w(TAG, "stopAuthentication: no fingeprintd!");
@@ -165,4 +173,21 @@ public abstract class AuthenticationClient extends ClientMonitor {
         if (DEBUG) Slog.w(TAG, "onEnumerationResult() called for authenticate!");
         return true; // Invalid for Authenticate
     }
+
+    /// M: Soter support @{
+    private void addAuthTokenToKeyStore() {
+        if (!FingerprintUtils.isSoterSimulated()) return;
+        java.nio.ByteBuffer bb = java.nio.ByteBuffer.allocate(37 + 32);
+        bb.order(java.nio.ByteOrder.nativeOrder());
+        bb.put((byte) 0);
+        bb.putLong(mOpId);
+        bb.putLong(0L);
+        bb.putLong(295219575L);
+        bb.putInt(0x2000000);
+        bb.putLong(0);
+        for (int i = 0; i < 8; i++)
+            bb.putInt(0xdeadbeef);
+        android.security.KeyStore.getInstance().addAuthToken(bb.array());
+    }
+    /// M: Soter support @}
 }

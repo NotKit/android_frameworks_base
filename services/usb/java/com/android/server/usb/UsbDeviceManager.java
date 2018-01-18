@@ -47,6 +47,7 @@ import android.os.storage.StorageVolume;
 import android.provider.Settings;
 import android.util.Pair;
 import android.util.Slog;
+import android.net.ConnectivityManager;
 
 import com.android.internal.annotations.GuardedBy;
 import com.android.internal.os.SomeArgs;
@@ -54,8 +55,10 @@ import com.android.internal.util.IndentingPrintWriter;
 import com.android.server.FgThread;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -70,7 +73,7 @@ import java.util.Set;
 public class UsbDeviceManager {
 
     private static final String TAG = "UsbDeviceManager";
-    private static final boolean DEBUG = false;
+    private static final boolean DEBUG = true;
 
     /**
      * The persistent property which stores whether adb is enabled or not.
@@ -102,6 +105,10 @@ public class UsbDeviceManager {
             "/sys/class/android_usb/android0/f_audio_source/pcm";
     private static final String MIDI_ALSA_PATH =
             "/sys/class/android_usb/android0/f_midi/alsa";
+    private static final String ACM_PORT_INDEX_PATH =
+            "/sys/class/android_usb/android0/f_acm/port_index";
+    private static final String MTP_STATE_MATCH =
+            "DEVPATH=/devices/virtual/misc/mtp_usb";
 
     private static final int MSG_UPDATE_STATE = 0;
     private static final int MSG_ENABLE_ADB = 1;
@@ -112,6 +119,16 @@ public class UsbDeviceManager {
     private static final int MSG_SET_USB_DATA_UNLOCKED = 6;
     private static final int MSG_UPDATE_USER_RESTRICTIONS = 7;
     private static final int MSG_UPDATE_HOST_STATE = 8;
+
+    // For MTK use, number shall be 101 up -- START
+    private static final int MSG_ENABLE_ACM = 101;
+
+    // C2K-BYPASS-START
+    private static final int MSG_SET_BYPASS_MODE = 102;
+    private static final int MSG_SET_BYPASS = 103;
+    private static final boolean bEvdoDtViaSupport =
+        SystemProperties.get("ro.boot.opt_c2k_support").equals("1");
+    // C2K-BYPASS-END
 
     private static final int AUDIO_MODE_SOURCE = 1;
 
@@ -151,6 +168,13 @@ public class UsbDeviceManager {
     private UsbDebuggingManager mDebuggingManager;
     private final UsbAlsaManager mUsbAlsaManager;
     private Intent mBroadcastedIntent;
+    private String mUsbStorageType;
+    private boolean mAcmEnabled;
+    private String mAcmPortIdx;
+    private boolean mIsUsbSimSecurity;
+    private boolean mHwDisconnected = true;
+    private boolean mUsbConfigured = false;
+    private boolean mMtpAskDisconnect;
 
     private class AdbSettingsObserver extends ContentObserver {
         public AdbSettingsObserver() {
@@ -161,6 +185,21 @@ public class UsbDeviceManager {
             boolean enable = (Settings.Global.getInt(mContentResolver,
                     Settings.Global.ADB_ENABLED, 0) > 0);
             mHandler.sendMessage(MSG_ENABLE_ADB, enable);
+        }
+    }
+
+    /**
+     * Observer the acm value at the setting.
+     */
+    private class AcmSettingsObserver extends ContentObserver {
+        public AcmSettingsObserver() {
+            super(null);
+        }
+        @Override
+        public void onChange(boolean selfChange) {
+            int portNum = Settings.Global.getInt(mContentResolver,
+                    Settings.Global.ACM_ENABLED, 0);
+            mHandler.sendMessage(MSG_ENABLE_ACM, portNum);
         }
     }
 
@@ -198,9 +237,19 @@ public class UsbDeviceManager {
         mContentResolver = context.getContentResolver();
         PackageManager pm = mContext.getPackageManager();
         mHasUsbAccessory = pm.hasSystemFeature(PackageManager.FEATURE_USB_ACCESSORY);
+        mIsUsbSimSecurity = false;
+        mMtpAskDisconnect = false;
+
         initRndisAddress();
 
         readOemUsbOverrideConfig();
+
+        if ("1".equals(SystemProperties.get("ro.mtk_usb_cba_support"))) {
+            if ("OP01".equals(SystemProperties.get("persist.operator.optr"))) {
+                Slog.d(TAG, "Have USB SIM Security!!");
+                mIsUsbSimSecurity = true;
+            }
+        }
 
         mHandler = new UsbHandler(FgThread.get().getLooper());
 
@@ -230,6 +279,11 @@ public class UsbDeviceManager {
         mNotificationManager = (NotificationManager)
                 mContext.getSystemService(Context.NOTIFICATION_SERVICE);
 
+        String config = SystemProperties.get("persist.sys.usb.config", UsbManager.USB_FUNCTION_MTP);
+        mUsbStorageType = SystemProperties.get("ro.sys.usb.storage.type",
+                UsbManager.USB_FUNCTION_MTP);
+        Slog.d(TAG, "systemReady - mUsbStorageType: " + mUsbStorageType + ", config: " + config);
+
         // We do not show the USB notification if the primary volume supports mass storage.
         // The legacy mass storage UI will be used instead.
         boolean massStorageSupported = false;
@@ -238,6 +292,24 @@ public class UsbDeviceManager {
         massStorageSupported = primary != null && primary.allowMassStorage();
         mUseUsbNotification = !massStorageSupported && mContext.getResources().getBoolean(
                 com.android.internal.R.bool.config_usbChargingMessage);
+
+        if (mUsbStorageType.equals(UsbManager.USB_FUNCTION_MASS_STORAGE)) {
+            final StorageVolume[] volumes = storageManager.getVolumeList();
+
+            if (volumes != null) {
+                for (int i = 0; i < volumes.length; i++) {
+                    if (volumes[i].allowMassStorage()) {
+                        Slog.d(TAG, "systemReady - massStorageSupported: " + massStorageSupported);
+                        massStorageSupported = true;
+                        break;
+                    }
+                }
+            }
+            mUseUsbNotification = !massStorageSupported;
+        } else {
+            Slog.d(TAG, "systemReady - MTP(+UMS)");
+            mUseUsbNotification = true;
+        }
 
         // make sure the ADB_ENABLED setting value matches the current state
         try {
@@ -315,6 +387,66 @@ public class UsbDeviceManager {
         }
     }
 
+    private static String addFunction(String functions, String function) {
+         if ("none".equals(functions)) {
+             return function;
+         }
+
+         if (DEBUG) {
+         Slog.d(TAG, "Add " + function + " into " + functions);
+         }
+
+        if (!containsFunction(functions, function)) {
+
+        if ((function.equals(UsbManager.USB_FUNCTION_ADB)
+ || function.equals(UsbManager.USB_FUNCTION_RNDIS) ||
+ function.equals(UsbManager.USB_FUNCTION_EEM))&&
+containsFunction(functions, UsbManager.USB_FUNCTION_ACM)) {
+functions = removeFunction(functions, UsbManager.USB_FUNCTION_ACM);
+            }
+
+            if (functions.length() > 0) {
+                functions += ",";
+            }
+            functions += function;
+
+            if ((function.equals(UsbManager.USB_FUNCTION_ADB)
+                 || function.equals(UsbManager.USB_FUNCTION_RNDIS) ||
+function.equals(UsbManager.USB_FUNCTION_EEM))
+&& containsFunction(functions, UsbManager.USB_FUNCTION_ACM)) {
+functions = addFunction(functions, UsbManager.USB_FUNCTION_ACM);
+            }
+        }
+        return functions;
+    }
+
+    private static String removeFunction(String functions, String function) {
+        String[] split = functions.split(",");
+        for (int i = 0; i < split.length; i++) {
+            if (function.equals(split[i])) {
+                split[i] = null;
+            }
+        }
+        if (split.length == 1 && split[0] == null) {
+            return "none";
+        }
+        StringBuilder builder = new StringBuilder();
+         for (int i = 0; i < split.length; i++) {
+            String s = split[i];
+            if (s != null) {
+                if (builder.length() > 0) {
+                    builder.append(",");
+                }
+                builder.append(s);
+            }
+        }
+        return builder.toString();
+    }
+
+        private static boolean containsFunction(String functions, String function) {
+        return Arrays.asList(functions.split(",")).contains(function);
+    }
+
     private final class UsbHandler extends Handler {
 
         // current USB state
@@ -325,15 +457,324 @@ public class UsbDeviceManager {
         private boolean mConfigured;
         private boolean mUsbDataUnlocked;
         private String mCurrentFunctions;
+        private String mDefaultFunctions;
         private boolean mCurrentFunctionsApplied;
         private UsbAccessory mCurrentAccessory;
         private int mUsbNotificationId;
         private boolean mAdbNotificationShown;
         private int mCurrentUser = UserHandle.USER_NULL;
 
+        // C2K-BYPASS-START
+        private Bypass mBypass;
+        private boolean mUsbSetBypassWithTether = false;
+        private final class Bypass {
+        private static final String ACTION_USB_BYPASS_SETFUNCTION =
+            "com.via.bypass.action.setfunction";
+        private static final String ACTION_USB_BYPASS_SETTETHERFUNCTION =
+            "com.via.bypass.action.settetherfunction";
+        private static final String VALUE_ENABLE_BYPASS =
+            "com.via.bypass.enable_bypass";
+        private static final String ACTION_USB_BYPASS_SETBYPASS =
+            "com.via.bypass.action.setbypass";
+        private static final String ACTION_USB_BYPASS_SETBYPASS_RESULT =
+            "com.via.bypass.action.setbypass_result";
+        private static final String VALUE_ISSET_BYPASS =
+            "com.via.bypass.isset_bypass";
+        private static final String ACTION_USB_BYPASS_GETBYPASS =
+                "com.via.bypass.action.getbypass";
+        private static final String ACTION_USB_BYPASS_GETBYPASS_RESULT =
+            "com.via.bypass.action.getbypass_result";
+        private static final String VALUE_BYPASS_CODE =
+            "com.via.bypass.bypass_code";
+        private static final String ACTION_VIA_ETS_DEV_CHANGED =
+            "via.cdma.action.ets.dev.changed";
+        private static final String ACTION_RADIO_AVAILABLE =
+            "android.intent.action.RADIO_AVAILABLE";
+
+        private static final String ACTION_VIA_SET_ETS_DEV =
+            "via.cdma.action.set.ets.dev";
+        private static final String EXTRAL_VIA_ETS_DEV =
+            "via.cdma.extral.ets.dev";
+
+        private static final String USB_FUNCTION_BYPASS = "via_bypass";
+
+        /*Bypass function values*/
+        private File[] mBypassFiles;
+        private final int[] mBypassCodes = new int[]{1, 2, 4, 8, 16};
+        private final String[] mBypassName = new String[]{"gps", "pcv", "atc", "ets", "data"};
+        private int mBypassAll = 0;
+        private int mBypassToSet;
+        private boolean mEtsDevInUse = false;
+
+        private final BroadcastReceiver mBypassReceiver = new BroadcastReceiver()
+        {
+            @Override
+                public void onReceive(Context context, Intent intent) {
+                    if (DEBUG) { Slog.i(TAG, "onReceive=" + intent.getAction()) ; }
+                    if (intent.getAction() != null) {
+                        if (intent.getAction().equals(ACTION_USB_BYPASS_SETFUNCTION)) {
+                            Boolean enablebypass =
+                                intent.getBooleanExtra(VALUE_ENABLE_BYPASS, false);
+                            if (enablebypass) {
+                                setCurrentFunctions(USB_FUNCTION_BYPASS);
+                            } else {
+                                closeBypassFunction();
+                            }
+                        } else if (intent.getAction().equals(ACTION_USB_BYPASS_SETTETHERFUNCTION)) {
+                            Boolean enablebypass =
+                                intent.getBooleanExtra(VALUE_ENABLE_BYPASS, false);
+                            ConnectivityManager cm =
+                                (ConnectivityManager)
+                                context.getSystemService(Context.CONNECTIVITY_SERVICE);
+
+                            if (enablebypass) {
+                                Slog.i(TAG, "Enable the byass with Tethering");
+                                mUsbSetBypassWithTether = true ;
+                                cm.setUsbTethering(true) ;
+                            } else {
+                                Slog.i(TAG, "disable the byass with Tethering");
+                                updateBypassMode(0);
+                                cm.setUsbTethering(false) ;
+                            }
+                        } else if (intent.getAction().equals(ACTION_USB_BYPASS_SETBYPASS)) {
+                            int bypasscode = intent.getIntExtra(VALUE_BYPASS_CODE, -1);
+                            if (bypasscode >= 0 && bypasscode <= mBypassAll) {
+                                setBypassMode(bypasscode);
+                            } else {
+                                notifySetBypassResult(false, getCurrentBypassMode());
+                            }
+                        } else if (intent.getAction().equals(ACTION_USB_BYPASS_GETBYPASS)) {
+                            Intent reintent = new Intent(ACTION_USB_BYPASS_GETBYPASS_RESULT);
+                            reintent.putExtra(VALUE_BYPASS_CODE, getCurrentBypassMode());
+                            mContext.sendBroadcast(reintent);
+                        } else if (intent.getAction().equals(ACTION_VIA_ETS_DEV_CHANGED)) {
+                            boolean result = intent.getBooleanExtra("set.ets.dev.result", false);
+                            int bypass;
+                            if (result) {
+                                //setBypass(mBypassToSet);
+                                bypass = mBypassToSet;
+                            } else {
+                                //setBypass(currentBypass);
+                                bypass = getCurrentBypassMode();
+                            }
+                            Message m = Message.obtain(mHandler, MSG_SET_BYPASS);
+                            m.arg1 = bypass;
+                            sendMessage(m);
+                        } else if (intent.getAction().equals(ACTION_RADIO_AVAILABLE)) {
+                            if (mEtsDevInUse) {
+                                Intent reintent = new Intent(ACTION_VIA_SET_ETS_DEV);
+                                reintent.putExtra(EXTRAL_VIA_ETS_DEV, 1);
+                                mContext.sendBroadcast(reintent);
+                            }
+                        }
+                    }
+                }
+        };
+
+        public Bypass() {
+
+            mBypassFiles = new File[mBypassName.length];
+            for (int i = 0; i < mBypassName.length; i++) {
+                final String path = "/sys/class/usb_rawbulk/" + mBypassName[i] + "/enable" ;
+                //if (DEBUG) Slog.d(TAG, "bypass mode file path="+path);
+                mBypassFiles[i] = new File(path);
+                mBypassAll += mBypassCodes[i];
+            }
+            if (bEvdoDtViaSupport == true) {
+                //register bypass receiver
+                IntentFilter intent = new IntentFilter(ACTION_USB_BYPASS_SETFUNCTION);
+                intent.addAction(ACTION_USB_BYPASS_SETTETHERFUNCTION);
+                intent.addAction(ACTION_USB_BYPASS_SETBYPASS);
+                intent.addAction(ACTION_USB_BYPASS_GETBYPASS);
+                intent.addAction(ACTION_VIA_ETS_DEV_CHANGED);
+                intent.addAction(ACTION_RADIO_AVAILABLE);
+                mContext.registerReceiver(mBypassReceiver, intent);
+            }
+        }
+        private int getCurrentBypassMode() {
+            int bypassmode = 0;
+            try {
+                for (int i = 0; i < mBypassCodes.length; i++) {
+                    String code;
+                    if (i == 2) {
+                        code = SystemProperties.get("sys.cp.bypass.at", "0");
+                    } else {
+                        code = FileUtils.readTextFile(mBypassFiles[i], 0, null);
+                    }
+                    if (DEBUG) {
+                        Slog.d(TAG, "'" + mBypassFiles[i].getAbsolutePath() + "' value is " + code);
+                    }
+                    if (code != null && code.trim().equals("1")) {
+                        bypassmode |= mBypassCodes[i];
+                    }
+                }
+                if (DEBUG) { Slog.d(TAG, "getCurrentBypassMode()=" + bypassmode); }
+            } catch (IOException e) {
+                Slog.e(TAG, "failed to read bypass mode code!");
+            }
+            return bypassmode;
+        }
+
+        private void setBypass(int bypassmode) {
+            Slog.d(TAG, "setBypass bypass = " + bypassmode);
+            int bypassResult = getCurrentBypassMode();
+            if (bypassmode == bypassResult) {
+                Slog.d(TAG, "setBypass bypass == oldbypass!!");
+                notifySetBypassResult(true, bypassResult);
+                return;
+            }
+
+            try {
+                for (int i = 0; i < mBypassCodes.length; i++) {
+                    if ((bypassmode & mBypassCodes[i]) != 0) {
+                        if (DEBUG) {
+                            Slog.d(TAG, "Write '" + mBypassFiles[i].getAbsolutePath() + "1");
+                        }
+                        if (i == 2) {
+                            SystemProperties.set("sys.cp.bypass.at", "1");
+                        } else {
+                            FileUtils.stringToFile(mBypassFiles[i].getAbsolutePath(), "1");
+                        }
+                        bypassResult |= mBypassCodes[i];
+                    } else {
+                        if (DEBUG) {
+                            Slog.d(TAG, "Write '" + mBypassFiles[i].getAbsolutePath() + "0");
+                        }
+                        if (i == 2) {
+                            SystemProperties.set("sys.cp.bypass.at", "0");
+                        } else {
+                            FileUtils.stringToFile(mBypassFiles[i].getAbsolutePath(), "0");
+                        }
+                        if ((bypassResult & mBypassCodes[i]) != 0) {
+                            bypassResult ^= mBypassCodes[i];
+                        }
+                    }
+                    if (DEBUG) {
+                        Slog.d(TAG, "Write '" + mBypassFiles[i].getAbsolutePath()
+                                + "' successsfully!");
+                    }
+                }
+                notifySetBypassResult(true, bypassResult);
+                Slog.d(TAG, "setBypass success bypassResult = " + bypassResult);
+            } catch (IOException e) {
+                Slog.e(TAG, "failed to operate bypass!");
+                notifySetBypassResult(false, bypassResult);
+            }
+        }
+
+        void updateBypassMode(int bypassmode) {
+            Slog.d(TAG, "updateBypassMode");
+            //Open/Close ets port for pc
+            if (!setEtsDev(bypassmode)) {
+                //if needn't Open/Close ets port for pc set bypass code now
+                setBypass(bypassmode);
+            } else {
+                Slog.d(TAG, "updateBypassMode mBypassToSet = " + mBypassToSet);
+                mBypassToSet = bypassmode;
+            }
+        }
+
+        private boolean setEtsDev(int bypass) {
+            int oldBypass = getCurrentBypassMode();
+            Slog.d(TAG, "setEtsDev bypass = " + bypass + " oldBypass = " + oldBypass);
+            if ((bypass & mBypassCodes[3]) != 0 && (oldBypass & mBypassCodes[3]) == 0) {
+                Slog.d(TAG, "setEtsDev mEtsDevInUse = true");
+                Intent reintent = new Intent(ACTION_VIA_SET_ETS_DEV);
+                reintent.putExtra(EXTRAL_VIA_ETS_DEV, 1);
+                mContext.sendBroadcast(reintent);
+                mEtsDevInUse = true;
+                return true;
+            } else if ((bypass & mBypassCodes[3]) == 0 &&
+                    (oldBypass & mBypassCodes[3]) != 0) {
+                Slog.d(TAG, "setEtsDev mEtsDevInUse = false");
+                Intent reintent = new Intent(ACTION_VIA_SET_ETS_DEV);
+                reintent.putExtra(EXTRAL_VIA_ETS_DEV, 0);
+                mContext.sendBroadcast(reintent);
+                mEtsDevInUse = false ;
+                return true ;
+            } else {
+                return false ;
+            }
+        }
+
+        /*Set bypass mode*/
+        private void setBypassMode(int bypassmode) {
+            if (DEBUG) { Slog.d(TAG, "setBypassMode()=" + bypassmode); }
+            Message m = Message.obtain(mHandler, MSG_SET_BYPASS_MODE);
+            m.arg1 = bypassmode;
+            sendMessage(m);
+        }
+        private void notifySetBypassResult(Boolean isset, int bypassCode) {
+            if (mBootCompleted) {
+                Intent intent = new Intent(ACTION_USB_BYPASS_SETBYPASS_RESULT);
+                intent.putExtra(VALUE_ISSET_BYPASS, isset);
+                intent.putExtra(VALUE_BYPASS_CODE, bypassCode);
+                mContext.sendBroadcast(intent);
+            }
+        }
+
+        void closeBypassFunction() {
+            if (DEBUG) { Slog.d(TAG, "closeBypassFunction() CurrentFunctions = " +
+                    mCurrentFunctions + ",DefaultFunctions=" + getDefaultFunctions());
+            }
+            updateBypassMode(0);
+            if (mCurrentFunctions.contains(USB_FUNCTION_BYPASS)) {
+                setEnabledFunctions(null, false);
+            }
+        }
+        }
+        // C2K-BYPASS-END
+        // MBIM START
+        private Mbim mMbim;
+        private final class Mbim{
+        private static final String ACTION_USB_MBIM_SETFUNCTION =
+                "com.mbim.action.setfunction";
+        private static final String VALUE_ENABLE_MBIM =
+                "com.mbim.enable";
+        private static final String USB_FUNCTION_MBIM = "mbim_dun";
+        private final BroadcastReceiver mMbimReceiver = new BroadcastReceiver()
+        {
+            @Override
+            public void onReceive(Context context, Intent intent)
+            {
+                if (DEBUG) Slog.i(TAG,"onReceive="+intent.getAction());
+                if (intent.getAction() != null) {
+                    if (intent.getAction().equals(ACTION_USB_MBIM_SETFUNCTION)) {
+                       int enable_mbim = intent.getIntExtra(VALUE_ENABLE_MBIM, 0);
+                        if (enable_mbim == 1) {
+                           setCurrentFunctions(USB_FUNCTION_MBIM);
+                        } else {
+                           closeMbimFunction();
+                        }
+                    }
+                }
+            }
+        };
+
+        public Mbim() {
+            //register mbim receiver
+            IntentFilter intent = new IntentFilter(ACTION_USB_MBIM_SETFUNCTION);
+            mContext.registerReceiver(mMbimReceiver,intent);
+        }
+        void closeMbimFunction(){
+            if (DEBUG) Slog.d(TAG, "closeMbimFunction() CurrentFunctions = " +
+                           mCurrentFunctions+",DefaultFunctions="+getDefaultFunctions());
+            if(mCurrentFunctions.contains(USB_FUNCTION_MBIM)){
+               setEnabledFunctions(null, false);
+            }
+        }
+        }
+        // MBIM END
+
         public UsbHandler(Looper looper) {
             super(looper);
             try {
+                // C2K-BYPASS-START
+                if (bEvdoDtViaSupport == true) {
+                    mBypass = new Bypass();
+                }
+                // C2K-BYPASS-END
+                mMbim = new Mbim();
                 // Restore default functions.
                 mCurrentFunctions = SystemProperties.get(USB_CONFIG_PROPERTY,
                         UsbManager.USB_FUNCTION_NONE);
@@ -344,19 +785,76 @@ public class UsbDeviceManager {
                         SystemProperties.get(USB_STATE_PROPERTY));
                 mAdbEnabled = UsbManager.containsFunction(getDefaultFunctions(),
                         UsbManager.USB_FUNCTION_ADB);
+                mAcmEnabled = UsbManager.containsFunction(getDefaultFunctions(),
+                        UsbManager.USB_FUNCTION_ACM);
+                mAcmPortIdx = "";
+
+                // Don't restore default functions when acm enable
+                if (mAcmEnabled) {
+                    Slog.d(TAG, "keep persist usb fucntion " + mCurrentFunctions);
+                } else {
                 setEnabledFunctions(null, false);
+
+                    String value = SystemProperties.get("persist.service.acm.enable", "");
+                    Slog.d(TAG, "persist.service.acm.enable:" + value);
+                    if (value != null && !value.isEmpty()) {
+                        if (validPortNum(value) > 0) {
+                            mAcmPortIdx = value;
+                            setAcmEnabled(true);
+                        } else if (value.charAt(0) == '0') {
+                            setAcmEnabled(false);
+                        }
+                    }
+                }
 
                 String state = FileUtils.readTextFile(new File(STATE_PATH), 0, null).trim();
                 updateState(state);
+
+                /*mark this, port_index for acm is not used currently
+                String value = SystemProperties.get("persist.sys.port_index", "");
+                if (DEBUG) Slog.d(TAG, "persist.sys.port_index:" + value);
+                if (value != null && !value.isEmpty() && validPortNum(value) > 0) {
+                    int port_num = validPortNum(value);
+                    mAcmPortIdx = value;
+                    writeFile(ACM_PORT_INDEX_PATH, mAcmPortIdx);
+
+                    // Add ACM or Dual ACM at the tail. Even with ADB.
+                mDefaultFunctions = removeFunction(mDefaultFunctions, UsbManager.USB_FUNCTION_ACM);
+            mDefaultFunctions = removeFunction(mDefaultFunctions, UsbManager.USB_FUNCTION_DUAL_ACM);
+
+   String tmp = ( (port_num == 2) ? UsbManager.USB_FUNCTION_DUAL_ACM : UsbManager.USB_FUNCTION_ACM);
+                    String tmp_acm = ( (value.equals("4")) ? "gs3" : UsbManager.USB_FUNCTION_ACM);
+                    if(value.equals("4")){
+                    mDefaultFunctions = addFunction(mDefaultFunctions, tmp_acm);
+                    }
+                    else
+                    mDefaultFunctions = addFunction(mDefaultFunctions, tmp);
+
+                    SystemProperties.set("sys.usb.config", mDefaultFunctions);
+                }*/
+
+                String value = SystemProperties.get("persist.radio.port_index", "");
+                if (DEBUG) Slog.d(TAG, "persist.radio.port_index:" + value);
+                if (value != null && !value.isEmpty() && validPortNum(value) > 0) {
+                    mAcmPortIdx = value;
+                    writeFile(ACM_PORT_INDEX_PATH, mAcmPortIdx);
+                    mDefaultFunctions = addFunction(mCurrentFunctions, "acm");
+                    SystemProperties.set("sys.usb.config", mDefaultFunctions);
+                }
 
                 // register observer to listen for settings changes
                 mContentResolver.registerContentObserver(
                         Settings.Global.getUriFor(Settings.Global.ADB_ENABLED),
                                 false, new AdbSettingsObserver());
 
+                mContentResolver.registerContentObserver(
+                        Settings.Global.getUriFor(Settings.Global.ACM_ENABLED),
+                                false, new AcmSettingsObserver());
+
                 // Watch for USB configuration changes
                 mUEventObserver.startObserving(USB_STATE_MATCH);
                 mUEventObserver.startObserving(ACCESSORY_START_MATCH);
+                mUEventObserver.startObserving(MTP_STATE_MATCH);
             } catch (Exception e) {
                 Slog.e(TAG, "Error initializing UsbHandler", e);
             }
@@ -379,15 +877,27 @@ public class UsbDeviceManager {
         public void updateState(String state) {
             int connected, configured;
 
-            if ("DISCONNECTED".equals(state)) {
+            if ("HWDISCONNECTED".equals(state)) {
                 connected = 0;
                 configured = 0;
+                mHwDisconnected = true;
+            } else if ("DISCONNECTED".equals(state)) {
+                connected = 0;
+                configured = 0;
+                mHwDisconnected = false;
             } else if ("CONNECTED".equals(state)) {
                 connected = 1;
                 configured = 0;
+                mHwDisconnected = false;
             } else if ("CONFIGURED".equals(state)) {
                 connected = 1;
                 configured = 1;
+                mHwDisconnected = false;
+            } else if ("MTPASKDISCONNECT".equals(state)) {
+                Slog.w(TAG, "MTPASKDISCONNECT");
+                mMtpAskDisconnect = true;;
+                setCurrentFunctions(mCurrentFunctions);
+                return;
             } else {
                 Slog.e(TAG, "unknown state " + state);
                 return;
@@ -443,8 +953,13 @@ public class UsbDeviceManager {
         private void setUsbDataUnlocked(boolean enable) {
             if (DEBUG) Slog.d(TAG, "setUsbDataUnlocked: " + enable);
             mUsbDataUnlocked = enable;
-            updateUsbNotification();
-            updateUsbStateBroadcastIfNeeded();
+            /*No need to update the USB notification and broadcast USB state
+              at this moment. After calling setEnabledFunctions(), the device
+              will do enum again, and receive UEvent - CONNECTED, CONFIGURED.
+              then the USB device manager will update the USB info including
+              USB_DATA_UNLOCKED.*/
+            /*updateUsbNotification();*/
+            /*updateUsbStateBroadcastIfNeeded();*/
             setEnabledFunctions(mCurrentFunctions, true);
         }
 
@@ -471,12 +986,56 @@ public class UsbDeviceManager {
             }
         }
 
+        private void setAcmEnabled(boolean enable) {
+            if (DEBUG) { Slog.d(TAG, "setAcmEnabled: " + enable); }
+            if (enable != mAcmEnabled) {
+                mAcmEnabled = enable;
+                setEnabledFunctions(mCurrentFunctions, true);
+            }
+        }
+
+        private void writeFile(String path, String data) {
+            FileOutputStream fos = null;
+            try {
+                fos = new FileOutputStream(path);
+                fos.write(data.getBytes());
+            } catch (IOException e) {
+                Slog.w(TAG, "Unable to write " + path);
+            } finally {
+                if (fos != null) {
+                    try {
+                        fos.close();
+                    } catch (IOException e) {
+                        Slog.w(TAG, "Unable to close fos at path: " + path);
+                    }
+                }
+            }
+        }
+
         /**
          * Evaluates USB function policies and applies the change accordingly.
          */
         private void setEnabledFunctions(String functions, boolean forceRestart) {
             if (DEBUG) Slog.d(TAG, "setEnabledFunctions functions=" + functions + ", "
                     + "forceRestart=" + forceRestart);
+
+            /* When enable Usb Sim Security, can not enable ADB from setting. */
+            if (mIsUsbSimSecurity) {
+                String value = SystemProperties.get("persist.sys.usb.activation", "no");
+                if (value.equals("no")) {
+                    Slog.d(TAG, "Usb is non-activated! Not allowed to set USB func.");
+                    return;
+                }
+            }
+
+            if (UsbManager.containsFunction(mCurrentFunctions, UsbManager.USB_FUNCTION_BICR)) {
+                if (mCurrentFunctions.equals(functions)) {
+                    forceRestart = false;
+                } else {
+                    Slog.d(TAG, "setEnabledFunctions - [CLEAN USB BICR SETTING]");
+                    SystemProperties.set("sys.usb.bicr","no");
+                }
+            }
 
             // Try to set the enabled functions.
             final String oldFunctions = mCurrentFunctions;
@@ -515,10 +1074,38 @@ public class UsbDeviceManager {
 
         private boolean trySetEnabledFunctions(String functions, boolean forceRestart) {
             if (functions == null) {
+                // C2K-BYPASS-START
+                mUsbSetBypassWithTether = false ;
+                // C2K-BYPASS-END
                 functions = getDefaultFunctions();
             }
+            // C2K-BYPASS-START
+            if (bEvdoDtViaSupport == true) {
+                if ((UsbManager.containsFunction(functions, UsbManager.USB_FUNCTION_RNDIS)
+                            || UsbManager.containsFunction(functions,
+                                UsbManager.USB_FUNCTION_EEM))
+                        && mUsbSetBypassWithTether) {
+                    functions = UsbManager.addFunction(functions, Bypass.USB_FUNCTION_BYPASS);
+                    Slog.d(TAG, "add the bypass functions to tethering : " + functions);
+                }
+                mUsbSetBypassWithTether = false;
+            }
+            // C2K-BYPASS-END
             functions = applyAdbFunction(functions);
+            functions = applyAcmFunction(functions);
             functions = applyOemOverrideFunction(functions);
+
+            /* When enable Usb Sim Security, can not enable ADB from setting. */
+            if (mIsUsbSimSecurity) {
+                String value = SystemProperties.get("persist.sys.usb.activation", "no");
+                if (value.equals("no")) {
+                    Slog.d(TAG, "Usb is non-activated!");
+                    functions = UsbManager.removeFunction(functions, UsbManager.USB_FUNCTION_ADB);
+                    functions = UsbManager.removeFunction(functions, UsbManager.USB_FUNCTION_ACM);
+                    functions = UsbManager.removeFunction(functions,
+                                                                UsbManager.USB_FUNCTION_DUAL_ACM);
+                }
+            }
 
             if (!mCurrentFunctions.equals(functions) || !mCurrentFunctionsApplied
                     || forceRestart) {
@@ -526,8 +1113,14 @@ public class UsbDeviceManager {
                 mCurrentFunctions = functions;
                 mCurrentFunctionsApplied = false;
 
+                // Add delay to confirm execution sequence
+                SystemClock.sleep(100);
+
                 // Kick the USB stack to close existing connections.
                 setUsbConfig(UsbManager.USB_FUNCTION_NONE);
+
+                // Add delay to confirm execution sequence
+                SystemClock.sleep(100);
 
                 // Set the new USB configuration.
                 if (!setUsbConfig(functions)) {
@@ -549,6 +1142,59 @@ public class UsbDeviceManager {
             return functions;
         }
 
+        private int validPortNum(String port) {
+            String[] tmp = port.split(",");
+            int portNum = 0;
+            for (int i = 0; i < tmp.length; i++) {
+                if (Integer.valueOf(tmp[i]) > 0 && Integer.valueOf(tmp[i]) < 5) {
+                    portNum++;
+                }
+            }
+            return ((portNum == tmp.length) ? portNum : 0);
+        }
+
+        private String applyAcmFunction(String functions) {
+            String acmIdx = SystemProperties.get("sys.usb.acm_idx", "");
+            Slog.d(TAG, "applyAcmFunction - sys.usb.acm_idx=" + acmIdx +
+                       ",mAcmPortIdx=" + mAcmPortIdx);
+            if ((mAcmEnabled || ((acmIdx != null) && !acmIdx.isEmpty()) ||
+                    ((mAcmPortIdx != null) && !mAcmPortIdx.isEmpty()))) {
+                int portNum = 0;
+                String portStr = "";
+                if (!acmIdx.isEmpty()) {
+                    portNum = validPortNum(acmIdx);
+                    if (portNum > 0) {
+                        portStr = acmIdx;
+                        mAcmPortIdx = acmIdx;
+                    }
+                } else if (!mAcmPortIdx.isEmpty()) {
+                    portNum = validPortNum(mAcmPortIdx);
+                    if (portNum > 0) {
+                        portStr = mAcmPortIdx;
+                    }
+                }
+
+                Slog.d(TAG, "applyAcmFunction - port_num=" + portNum);
+                if (portNum > 0) {
+                    Slog.d(TAG, "applyAcmFunction - Write port_str=" + portStr);
+                    writeFile(ACM_PORT_INDEX_PATH, portStr);
+                }
+
+                /*Add ACM or Dual ACM at the tail. Even with ADB.*/
+                functions = UsbManager.removeFunction(functions, UsbManager.USB_FUNCTION_ACM);
+                functions = UsbManager.removeFunction(functions, UsbManager.USB_FUNCTION_DUAL_ACM);
+
+                String tmp = ((portNum == 2) ?
+                                  UsbManager.USB_FUNCTION_DUAL_ACM : UsbManager.USB_FUNCTION_ACM);
+                functions = UsbManager.addFunction(functions, tmp);
+            } else {
+                functions = UsbManager.removeFunction(functions, UsbManager.USB_FUNCTION_ACM);
+                functions = UsbManager.removeFunction(functions, UsbManager.USB_FUNCTION_DUAL_ACM);
+            }
+            Slog.d(TAG, "applyAcmFunction - functions: " + functions);
+            return functions;
+        }
+
         private boolean isUsbTransferAllowed() {
             UserManager userManager = (UserManager) mContext.getSystemService(Context.USER_SERVICE);
             return !userManager.hasUserRestriction(UserManager.DISALLOW_USB_FILE_TRANSFER);
@@ -561,8 +1207,11 @@ public class UsbDeviceManager {
                     mAccessoryModeRequestTime > 0 &&
                         SystemClock.elapsedRealtime() <
                             mAccessoryModeRequestTime + ACCESSORY_REQUEST_TIMEOUT;
+            Slog.d(TAG, "updateCurrentAccessory: enteringAccessoryMode = " + enteringAccessoryMode +
+                        ", mAccessoryModeRequestTime = " + mAccessoryModeRequestTime +
+                        ", mConfigured = " + mConfigured);
 
-            if (mConfigured && enteringAccessoryMode) {
+             if (mConfigured && enteringAccessoryMode) {
                 // successfully entered accessory mode
 
                 if (mAccessoryStrings != null) {
@@ -571,6 +1220,10 @@ public class UsbDeviceManager {
                     // defer accessoryAttached if system is not ready
                     if (mBootCompleted) {
                         getCurrentSettings().accessoryAttached(mCurrentAccessory);
+                        //After EnterAccessoryMode, reset the mAccessoryModeRequestTime
+                        //to prevent wrong start if disconnecting in 10 seconds
+                        mAccessoryModeRequestTime = 0;
+                        //
                     } // else handle in boot completed
                 } else {
                     Slog.e(TAG, "nativeGetAccessoryStrings failed");
@@ -589,6 +1242,11 @@ public class UsbDeviceManager {
                     mAccessoryStrings = null;
                 }
             }
+            //Wrong state and need to FIXME
+            else{
+                Slog.d(TAG, "USB Accessory Wrong state!!, need to FIXME");
+            }
+            //Wrong state and need to FIXME
         }
 
         private boolean isUsbStateChanged(Intent intent) {
@@ -626,6 +1284,7 @@ public class UsbDeviceManager {
             intent.putExtra(UsbManager.USB_HOST_CONNECTED, mHostConnected);
             intent.putExtra(UsbManager.USB_CONFIGURED, mConfigured);
             intent.putExtra(UsbManager.USB_DATA_UNLOCKED, isUsbTransferAllowed() && mUsbDataUnlocked);
+            intent.putExtra("USB_HW_DISCONNECTED", mHwDisconnected);
 
             if (mCurrentFunctions != null) {
                 String[] functions = mCurrentFunctions.split(",");
@@ -712,6 +1371,7 @@ public class UsbDeviceManager {
                 case MSG_UPDATE_STATE:
                     mConnected = (msg.arg1 == 1);
                     mConfigured = (msg.arg2 == 1);
+                    mUsbConfigured = mConfigured;
                     if (!mConnected) {
                         // When a disconnect occurs, relock access to sensitive user data
                         mUsbDataUnlocked = false;
@@ -729,6 +1389,15 @@ public class UsbDeviceManager {
                         updateUsbStateBroadcastIfNeeded();
                         updateUsbFunctions();
                     }
+
+                    // C2K-BYPASS-START
+                    if (bEvdoDtViaSupport == true) {
+                        if (!mConnected) {
+                            //set bypass mode to 0
+                            mBypass.updateBypassMode(0);
+                        }
+                    }
+                    // C2K-BYPASS-END
                     break;
                 case MSG_UPDATE_HOST_STATE:
                     SomeArgs args = (SomeArgs) msg.obj;
@@ -744,9 +1413,26 @@ public class UsbDeviceManager {
                 case MSG_ENABLE_ADB:
                     setAdbEnabled(msg.arg1 == 1);
                     break;
+                case MSG_ENABLE_ACM:
+                    int portNum = (Integer) msg.obj;
+                    if (portNum >= 1 && portNum <= 4) {
+                        mAcmPortIdx = String.valueOf(portNum);
+                    } else if (portNum == 5) {
+                        mAcmPortIdx = "1,3";
+                    } else {
+                        mAcmPortIdx = "";
+                    }
+                    Slog.d(TAG, "mAcmPortIdx=" + mAcmPortIdx);
+                    setAcmEnabled(!mAcmPortIdx.isEmpty());
+                    break;
                 case MSG_SET_CURRENT_FUNCTIONS:
                     String functions = (String)msg.obj;
-                    setEnabledFunctions(functions, false);
+                    if (mMtpAskDisconnect) {
+                        setEnabledFunctions(functions, true);
+                        mMtpAskDisconnect = false;
+                    } else {
+                        setEnabledFunctions(functions, false);
+                    }
                     break;
                 case MSG_UPDATE_USER_RESTRICTIONS:
                     setEnabledFunctions(mCurrentFunctions, false);
@@ -787,6 +1473,20 @@ public class UsbDeviceManager {
                     }
                     break;
                 }
+
+
+                // C2K-BYPASS-START
+                case MSG_SET_BYPASS_MODE:
+                    if (bEvdoDtViaSupport == true) {
+                        mBypass.updateBypassMode(msg.arg1);
+                    }
+                    break;
+                case MSG_SET_BYPASS:
+                    if (bEvdoDtViaSupport == true) {
+                        mBypass.setBypass(msg.arg1);
+                    }
+                    break;
+                // C2K-BYPASS-END
             }
         }
 
@@ -797,6 +1497,14 @@ public class UsbDeviceManager {
         private void updateUsbNotification() {
             if (mNotificationManager == null || !mUseUsbNotification
                     || ("0".equals(SystemProperties.get("persist.charging.notify")))) return;
+
+            if (mIsUsbSimSecurity) {
+                String value = SystemProperties.get("persist.sys.usb.activation", "no");
+                if (value.equals("no")) {
+                    return;
+                }
+            }
+
             int id = 0;
             Resources r = mContext.getResources();
             if (mConnected) {
@@ -818,6 +1526,12 @@ public class UsbDeviceManager {
                 } else if (UsbManager.containsFunction(mCurrentFunctions,
                         UsbManager.USB_FUNCTION_ACCESSORY)) {
                     id = com.android.internal.R.string.usb_accessory_notification_title;
+                } else if (UsbManager.containsFunction(mCurrentFunctions,
+                        UsbManager.USB_FUNCTION_MASS_STORAGE)) {
+                    id = com.mediatek.internal.R.string.usb_ums_notification_title;
+                } else if (UsbManager.containsFunction(mCurrentFunctions,
+                        UsbManager.USB_FUNCTION_BICR)) {
+                    id = com.mediatek.internal.R.string.usb_cd_installer_notification_title;
                 } else if (mSourcePower) {
                     id = com.android.internal.R.string.usb_supplying_notification_title;
                 } else {
@@ -870,6 +1584,14 @@ public class UsbDeviceManager {
         private void updateAdbNotification() {
             if (mNotificationManager == null) return;
             final int id = com.android.internal.R.string.adb_active_notification_title;
+
+            if (mIsUsbSimSecurity) {
+                String value = SystemProperties.get("persist.sys.usb.activation", "no");
+                if (value.equals("no")) {
+                    return;
+                }
+            }
+
             if (mAdbEnabled && mConnected) {
                 if ("0".equals(SystemProperties.get("persist.adb.notify"))) return;
 
@@ -968,6 +1690,13 @@ public class UsbDeviceManager {
     public void setCurrentFunctions(String functions) {
         if (DEBUG) Slog.d(TAG, "setCurrentFunctions(" + functions + ")");
         mHandler.sendMessage(MSG_SET_CURRENT_FUNCTIONS, functions);
+    }
+
+    public int getCurrentState() {
+        int state = 0;
+        if (mUsbConfigured) { state = 1 ; }
+        if (DEBUG) { Slog.d(TAG, "getCurrentState - " + state) ; }
+        return state;
     }
 
     public void setUsbDataUnlocked(boolean unlocked) {

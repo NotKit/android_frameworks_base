@@ -50,6 +50,7 @@ public class FindActionModeCallback implements ActionMode.Callback, TextWatcher,
     private int mNumberOfMatches;
     private int mActiveMatchIndex;
     private ActionMode mActionMode;
+    private String mFindText;
 
     public FindActionModeCallback(Context context) {
         mCustomView = LayoutInflater.from(context).inflate(
@@ -57,6 +58,7 @@ public class FindActionModeCallback implements ActionMode.Callback, TextWatcher,
         mEditText = (EditText) mCustomView.findViewById(
                 com.android.internal.R.id.edit);
         mEditText.setCustomSelectionActionModeCallback(new NoAction());
+        mEditText.setCustomInsertionActionModeCallback(new NoAction());
         mEditText.setOnClickListener(this);
         setText("");
         mMatches = (TextView) mCustomView.findViewById(
@@ -154,7 +156,10 @@ public class FindActionModeCallback implements ActionMode.Callback, TextWatcher,
 
     public void showSoftInput() {
         if (mEditText.requestFocus()) {
+            mInput.onPreWindowFocus(mEditText.getRootView(), true);
+            mInput.focusIn(mEditText);
             mInput.showSoftInput(mEditText, 0);
+            mFindText = "";
         }
     }
 
@@ -264,6 +269,11 @@ public class FindActionModeCallback implements ActionMode.Callback, TextWatcher,
                               int start,
                               int before,
                               int count) {
+        String input = s.toString();
+        if (input.equals(mFindText)) {
+            return;
+        }
+        mFindText = input;
         findAll();
     }
 

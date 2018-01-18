@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,6 +32,8 @@ import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
+/// M: CC: Query geo description in worker thread
+import android.os.SystemClock;
 import android.os.UserHandle;
 import android.os.UserManager;
 import android.provider.ContactsContract.PhoneLookup;
@@ -34,6 +41,11 @@ import android.telephony.PhoneNumberUtils;
 import android.text.TextUtils;
 import android.telephony.Rlog;
 import android.telephony.SubscriptionManager;
+import android.telephony.TelephonyManager;
+
+
+/// M: CC: CallerInfo For phone number attribution of China
+import android.os.SystemProperties;
 
 /**
  * Helper class to make it easier to run asynchronous caller-id lookup queries.
@@ -42,7 +54,7 @@ import android.telephony.SubscriptionManager;
  * {@hide}
  */
 public class CallerInfoAsyncQuery {
-    private static final boolean DBG = false;
+    private static final boolean DBG = true;
     private static final String LOG_TAG = "CallerInfoAsyncQuery";
 
     private static final int EVENT_NEW_QUERY = 1;
@@ -50,6 +62,9 @@ public class CallerInfoAsyncQuery {
     private static final int EVENT_END_OF_QUEUE = 3;
     private static final int EVENT_EMERGENCY_NUMBER = 4;
     private static final int EVENT_VOICEMAIL_NUMBER = 5;
+
+    /// M: CC: Query geo description in worker thread
+    private static final int EVENT_GET_GEO_DESCRIPTION = 100;
 
     private CallerInfoAsyncQueryHandler mHandler;
 
@@ -79,6 +94,8 @@ public class CallerInfoAsyncQuery {
         public Object cookie;
         public int event;
         public String number;
+        /// M: CC: Query geo description in worker thread
+        public String geoDescription;
 
         public int subId;
     }
@@ -207,10 +224,40 @@ public class CallerInfoAsyncQuery {
                             reply.sendToTarget();
 
                             break;
+                        /// M: CC: Query geo description in worker thread @{
+                        case EVENT_GET_GEO_DESCRIPTION:
+                            handleGeoDescription(msg);
+                            break;
+                        /// @}
                         default:
                     }
                 }
             }
+
+            /// M: CC: Query geo description in worker thread @{
+            /**
+             * TODO: the CallerInfo.getGeoDescription() should be moved out of CallerInfo class.
+             * @param msg The message to be handled.
+             */
+            private void handleGeoDescription(Message msg) {
+                WorkerArgs args = (WorkerArgs) msg.obj;
+                CookieWrapper cw = (CookieWrapper) args.cookie;
+                if (!TextUtils.isEmpty(cw.number) && cw.cookie != null && mContext != null) {
+                    final long startTimeMillis = SystemClock.elapsedRealtime();
+                    cw.geoDescription = CallerInfo.getGeoDescription(mContext, cw.number);
+                    final long duration = SystemClock.elapsedRealtime() - startTimeMillis;
+                    if (duration > 500) {
+                        if (DBG) Rlog.d(LOG_TAG, "[handleGeoDescription]" +
+                                "Spends long time to retrieve Geo description: " + duration);
+                    }
+                }
+                Message reply = args.handler.obtainMessage(msg.what);
+                reply.obj = args;
+                reply.arg1 = msg.arg1;
+                reply.sendToTarget();
+            }
+            /// @}
+
         }
 
 
@@ -263,6 +310,22 @@ public class CallerInfoAsyncQuery {
                 return;
             }
 
+
+            /// M: CC: Query geo description in worker thread @{
+            /// If the cw.event == EVENT_GET_GEO_DESCRIPTION, means it would not be the 1st
+            /// time entering the onQueryComplete(), mCallerInfo should not be null. @{
+            if (cw.event == EVENT_GET_GEO_DESCRIPTION) {
+                if (mCallerInfo != null) {
+                    mCallerInfo.geoDescription = cw.geoDescription;
+                }
+                //notify that we can clean up the queue after this.
+                CookieWrapper endMarker = new CookieWrapper();
+                endMarker.event = EVENT_END_OF_QUEUE;
+                startQuery(token, endMarker, null, null, null, null, null);
+            }
+            /// @}
+
+
             // check the token and if needed, create the callerinfo object.
             if (mCallerInfo == null) {
                 if ((mContext == null) || (mQueryUri == null)) {
@@ -282,7 +345,11 @@ public class CallerInfoAsyncQuery {
                 } else if (cw.event == EVENT_VOICEMAIL_NUMBER) {
                     mCallerInfo = new CallerInfo().markAsVoiceMail(cw.subId);
                 } else {
-                    mCallerInfo = CallerInfo.getCallerInfo(mContext, mQueryUri, cursor);
+                    /// M: CC: CallerInfo OP Plugin @{
+                    //According to CallerInfoExt implementation on L, subId is requested for USIM AAS feature.
+                    //mCallerInfo = CallerInfo.getCallerInfo(mContext, mQueryUri, cursor);
+                    mCallerInfo = CallerInfo.getCallerInfo(mContext, mQueryUri, cursor, cw.subId);
+                    /// @}
                     if (DBG) Rlog.d(LOG_TAG, "==> Got mCallerInfo: " + mCallerInfo);
 
                     CallerInfo newCallerInfo = CallerInfo.doSecondaryLookupIfNecessary(
@@ -293,6 +360,14 @@ public class CallerInfoAsyncQuery {
                                 + mCallerInfo);
                     }
 
+                    /// M: CC: Query geo description in worker thread @{
+                    /**
+                         * M: [Geo optimization] this part would be time consuming.
+                         * So it is a bad idea to place it in the main thread which would
+                         * reduce the launch performance of InCallUI.
+                         * We moved it to the worker thread.
+                         */
+                    /*
                     // Final step: look up the geocoded description.
                     if (ENABLE_UNKNOWN_NUMBER_GEO_DESCRIPTION) {
                         // Note we do this only if we *don't* have a valid name (i.e. if
@@ -306,7 +381,10 @@ public class CallerInfoAsyncQuery {
                         // new parameter to CallerInfoAsyncQuery.startQuery() to force
                         // the geoDescription field to be populated.)
 
-                        if (TextUtils.isEmpty(mCallerInfo.name)) {
+                        if (TextUtils.isEmpty(mCallerInfo.name) ||
+                            /// M: CC: CallerInfo For phone number attribution of China @{
+                            (SystemProperties.get("ro.mtk_phone_number_geo").equals("1"))) {
+                            /// @}
                             // Actually when no contacts match the incoming phone number,
                             // the CallerInfo object is totally blank here (i.e. no name
                             // *or* phoneNumber).  So we need to pass in cw.number as
@@ -314,6 +392,8 @@ public class CallerInfoAsyncQuery {
                             mCallerInfo.updateGeoDescription(mContext, cw.number);
                         }
                     }
+                    */
+                    /// @}
 
                     // Use the number entered by the user for display.
                     if (!TextUtils.isEmpty(cw.number)) {
@@ -321,6 +401,23 @@ public class CallerInfoAsyncQuery {
                                 mCallerInfo.normalizedNumber,
                                 CallerInfo.getCurrentCountryIso(mContext));
                     }
+
+
+                    /// M: CC: Query geo description in worker thread @{
+                    /// This condition refer to the google default code for geo.
+                    /// If the number exists in Contacts, the CallCard would never show
+                    /// the geo description, so it would be unnecessary to query it.
+                    if (ENABLE_UNKNOWN_NUMBER_GEO_DESCRIPTION) {
+                        if (TextUtils.isEmpty(mCallerInfo.name) ||
+                                (SystemProperties.get("ro.mtk_phone_number_geo").equals("1"))) {
+                            if (DBG) Rlog.d(LOG_TAG, "start querying geo description");
+                            cw.event = EVENT_GET_GEO_DESCRIPTION;
+                            startQuery(token, cw, null, null, null, null, null);
+                            return;
+                        }
+                    }
+                    /// @}
+
                 }
 
                 if (DBG) Rlog.d(LOG_TAG, "constructing CallerInfo object for token: " + token);
@@ -436,7 +533,10 @@ public class CallerInfoAsyncQuery {
         cw.subId = subId;
 
         // check to see if these are recognized numbers, and use shortcuts if we can.
-        if (PhoneNumberUtils.isLocalEmergencyNumber(context, number)) {
+        /// M: CC: Query ECC via EmergencyNumberExt @{
+        int phoneType = TelephonyManager.getDefault().getCurrentPhoneType(cw.subId);
+        if (PhoneNumberUtils.isEmergencyNumberExt(number, phoneType)) {
+        /// @}
             cw.event = EVENT_EMERGENCY_NUMBER;
         } else if (PhoneNumberUtils.isVoiceMailNumber(subId, number)) {
             cw.event = EVENT_VOICEMAIL_NUMBER;

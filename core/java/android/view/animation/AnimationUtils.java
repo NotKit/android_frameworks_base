@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,6 +36,11 @@ import android.util.Xml;
 import android.os.SystemClock;
 
 import java.io.IOException;
+
+/// M: For launch time enhancement @{
+import com.mediatek.view.animation.DecelerateInterpolatorEx;
+/// @}
+
 
 /**
  * Defines common utilities for working with animations.
@@ -391,6 +401,10 @@ public class AnimationUtils {
                 interpolator = new AnticipateOvershootInterpolator(res, theme, attrs);
             } else if (name.equals("bounceInterpolator")) {
                 interpolator = new BounceInterpolator();
+            /// M: For launch time enhancement @{
+            } else if (name.equals("decelerateInterpolatorEx")) {
+                interpolator = new DecelerateInterpolatorEx(res, theme, attrs);
+            /// @}
             } else if (name.equals("pathInterpolator")) {
                 interpolator = new PathInterpolator(res, theme, attrs);
             } else {

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2012 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +22,7 @@
 package com.android.server.display;
 
 import android.content.Context;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.PowerManager;
@@ -48,7 +54,7 @@ import java.io.PrintWriter;
 final class DisplayPowerState {
     private static final String TAG = "DisplayPowerState";
 
-    private static boolean DEBUG = false;
+    private static boolean DEBUG = "eng".equals(Build.TYPE);
 
     private final Handler mHandler;
     private final Choreographer mChoreographer;
@@ -67,6 +73,8 @@ final class DisplayPowerState {
     private boolean mColorFadeDrawPending;
 
     private Runnable mCleanListener;
+
+    private int mDelay = 0;
 
     public DisplayPowerState(DisplayBlanker blanker, ColorFade colorFade) {
         mHandler = new Handler(true /*async*/);
@@ -116,6 +124,16 @@ final class DisplayPowerState {
             return object.getScreenBrightness();
         }
     };
+
+    /**
+     * set IPO screen on delay
+     */
+    public void setIPOScreenOnDelay(int delay_msec) {
+        if (DEBUG) {
+            Slog.d(TAG, "setIPOScreenOnDelay: delay_msec=" + delay_msec);
+        }
+        mDelay = delay_msec;
+    }
 
     /**
      * Sets whether the screen is on, off, or dozing.
@@ -308,13 +326,13 @@ final class DisplayPowerState {
             int brightness = mScreenState != Display.STATE_OFF
                     && mColorFadeLevel > 0f ? mScreenBrightness : 0;
             if (mPhotonicModulator.setState(mScreenState, brightness)) {
-                if (DEBUG) {
+                if (false && DEBUG) {
                     Slog.d(TAG, "Screen ready");
                 }
                 mScreenReady = true;
                 invokeCleanListenerIfNeeded();
             } else {
-                if (DEBUG) {
+                if (false && DEBUG) {
                     Slog.d(TAG, "Screen not ready");
                 }
             }
@@ -427,7 +445,8 @@ final class DisplayPowerState {
                 // Apply pending change.
                 if (DEBUG) {
                     Slog.d(TAG, "Updating screen state: state="
-                            + Display.stateToString(state) + ", backlight=" + backlight);
+                            + Display.stateToString(state) + ", backlight=" + backlight
+                            + ", backlightChanged=" + backlightChanged);
                 }
                 mBlanker.requestDisplayState(state, backlight);
             }

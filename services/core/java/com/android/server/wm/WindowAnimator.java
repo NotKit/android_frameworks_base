@@ -37,6 +37,7 @@ import static com.android.server.wm.WindowManagerDebugConfig.DEBUG_WINDOW_TRACE;
 import static com.android.server.wm.WindowManagerDebugConfig.SHOW_TRANSACTIONS;
 import static com.android.server.wm.WindowManagerDebugConfig.TAG_WITH_CLASS_NAME;
 import static com.android.server.wm.WindowManagerDebugConfig.TAG_WM;
+import static com.android.server.wm.WindowManagerService.IS_USER_BUILD;
 import static com.android.server.wm.WindowStateAnimator.READY_TO_SHOW;
 import static com.android.server.wm.WindowStateAnimator.STACK_CLIP_BEFORE_ANIM;
 import static com.android.server.wm.WindowSurfacePlacer.SET_FORCE_HIDING_CHANGED;
@@ -143,7 +144,10 @@ public class WindowAnimator {
             public void doFrame(long frameTimeNs) {
                 synchronized (mService.mWindowMap) {
                     mService.mAnimationScheduled = false;
+                    /// M: add systrace
+                    Trace.traceBegin(Trace.TRACE_TAG_WINDOW_MANAGER, "wmAnimate");
                     animateLocked(frameTimeNs);
+                    Trace.traceEnd(Trace.TRACE_TAG_WINDOW_MANAGER);
                 }
             }
         };
@@ -276,6 +280,19 @@ public class WindowAnimator {
                 && mForceHiding != KEYGUARD_ANIMATING_OUT;
         boolean hideDockDivider = win.mAttrs.type == TYPE_DOCK_DIVIDER
                 && win.getDisplayContent().getDockedStackLocked() == null;
+
+        if (DEBUG_VISIBILITY) Slog.d(TAG, "shouldForceHide: keyguardOn=" + keyguardOn +
+                    ", isKeyguardShowingOrOccluded=" + mPolicy.isKeyguardShowingOrOccluded() +
+                    ", mForceHiding=" + forceHidingToString() +
+                    ", allowWhenLocked=" + allowWhenLocked +
+                    ", hideDockDivider=" + hideDockDivider +
+                    ", appShowWhenLocked=" + appShowWhenLocked +
+                    ", flag=#" + Integer.toHexString(win.mAttrs.flags) +
+                    ", privateFlags=#" + Integer.toHexString(win.mAttrs.privateFlags) +
+                    ", mIsImWindow=" + win.mIsImWindow +
+                    ", mTurnOnScreen=" + win.mTurnOnScreen +
+                    ", w=" + win);
+
         return keyguardOn && !allowWhenLocked && (win.getDisplayId() == Display.DEFAULT_DISPLAY)
                 || hideDockDivider;
     }
@@ -386,7 +403,7 @@ public class WindowAnimator {
                             mForceHiding = win.isDrawnLw() ? KEYGUARD_SHOWN : KEYGUARD_NOT_SHOWN;
                         }
                     }
-                    if (DEBUG_KEYGUARD || DEBUG_VISIBILITY) Slog.v(TAG,
+                    if (!IS_USER_BUILD || (IS_USER_BUILD && DEBUG_VISIBILITY)) Slog.v(TAG,
                             "Force hide " + forceHidingToString()
                             + " hasSurface=" + win.mHasSurface
                             + " policyVis=" + win.mPolicyVisibility
@@ -411,6 +428,10 @@ public class WindowAnimator {
                                 && win.mAttachedWindow == null
                                 && !win.mIsImWindow
                                 && displayId == Display.DEFAULT_DISPLAY;
+
+                        if (DEBUG_VISIBILITY) Slog.v(TAG,
+                                "applyExistingExitAnimation=" + applyExistingExitAnimation
+                                + " isVisibleNow=" + win.isVisibleNow());
 
                         // If the window is already showing and we don't need to apply an existing
                         // Keyguard exit animation, skip.
@@ -787,7 +808,9 @@ public class WindowAnimator {
                 mService.mWatermark.drawIfNeeded();
             }
         } catch (RuntimeException e) {
-            Slog.wtf(TAG, "Unhandled exception in Window Manager", e);
+            /// M: Add protection to avoid exception
+            //Slog.wtf(TAG, "Unhandled exception in Window Manager", e);
+            Slog.d(TAG, "Unhandled exception in Window Manager", e);
         } finally {
             SurfaceControl.closeTransaction();
             if (SHOW_TRANSACTIONS) Slog.i(
@@ -852,7 +875,11 @@ public class WindowAnimator {
                 DisplayContent display = mService.mDisplayContents.valueAt(i);
                 final WindowList windows = mService.getWindowListLocked(display.getDisplayId());
                 for (int j = windows.size() - 1; j >= 0; j--) {
-                    windows.get(j).maybeRemoveReplacedWindow();
+                    /// M:[ALPS02807925] Fix IndexOutOfBounds JE when removing windows @{
+                    if (j < windows.size()) {
+                        windows.get(j).maybeRemoveReplacedWindow();
+                    }
+                    /// @}
                 }
             }
         } finally {

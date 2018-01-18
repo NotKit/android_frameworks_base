@@ -171,7 +171,7 @@ public class AlwaysOnHotwordDetector {
             = SoundTrigger.RECOGNITION_MODE_USER_IDENTIFICATION;
 
     static final String TAG = "AlwaysOnHotwordDetector";
-    static final boolean DBG = false;
+    static final boolean DBG = true;
 
     private static final int STATUS_ERROR = SoundTrigger.STATUS_ERROR;
     private static final int STATUS_OK = SoundTrigger.STATUS_OK;

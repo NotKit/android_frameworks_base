@@ -54,6 +54,9 @@ import android.widget.FrameLayout;
 import android.widget.TextView;
 
 import com.android.internal.widget.LockPatternUtils;
+/// M: Add for OP customization. @{
+import com.android.keyguard.EmergencyButton;
+/// @}
 import com.android.keyguard.KeyguardUpdateMonitor;
 import com.android.keyguard.KeyguardUpdateMonitorCallback;
 import com.android.systemui.EventLogConstants;
@@ -67,6 +70,11 @@ import com.android.systemui.statusbar.KeyguardIndicationController;
 import com.android.systemui.statusbar.policy.AccessibilityController;
 import com.android.systemui.statusbar.policy.FlashlightController;
 import com.android.systemui.statusbar.policy.PreviewInflater;
+
+/// M: Add for OP customization. @{
+import com.mediatek.keyguard.Plugin.KeyguardPluginFactory;
+import com.mediatek.keyguard.ext.IEmergencyButtonExt;
+/// @}
 
 /**
  * Implementation for the bottom area of the Keyguard, including camera/phone affordance and status
@@ -132,6 +140,11 @@ public class KeyguardBottomAreaView extends FrameLayout implements View.OnClickL
     private boolean mLeftIsVoiceAssist;
     private AssistManager mAssistManager;
 
+    /// M: Add for OP customization. @{
+    private EmergencyButton mEmergencyButton;
+    private IEmergencyButtonExt mEmergencyButtonExt;
+    /// @}
+
     public KeyguardBottomAreaView(Context context) {
         this(context, null);
     }
@@ -147,6 +160,10 @@ public class KeyguardBottomAreaView extends FrameLayout implements View.OnClickL
     public KeyguardBottomAreaView(Context context, AttributeSet attrs, int defStyleAttr,
             int defStyleRes) {
         super(context, attrs, defStyleAttr, defStyleRes);
+
+        /// M: Add for OP customization. @{
+        mEmergencyButtonExt = KeyguardPluginFactory.getEmergencyButtonExt(context);
+        /// @}
     }
 
     private AccessibilityDelegate mAccessibilityDelegate = new AccessibilityDelegate() {
@@ -196,6 +213,10 @@ public class KeyguardBottomAreaView extends FrameLayout implements View.OnClickL
         mLeftAffordanceView = (KeyguardAffordanceView) findViewById(R.id.left_button);
         mLockIcon = (LockIcon) findViewById(R.id.lock_icon);
         mIndicationText = (TextView) findViewById(R.id.keyguard_indication_text);
+        /// M: Add for OP customization. @{
+        mEmergencyButton = (EmergencyButton)
+                findViewById(R.id.notification_keyguard_emergency_call_button);
+        /// @}
         watchForCameraPolicyChanges();
         updateCameraVisibility();
         mUnlockMethodCache = UnlockMethodCache.getInstance(getContext());
@@ -224,15 +245,28 @@ public class KeyguardBottomAreaView extends FrameLayout implements View.OnClickL
         int indicationBottomMargin = getResources().getDimensionPixelSize(
                 R.dimen.keyguard_indication_margin_bottom);
         MarginLayoutParams mlp = (MarginLayoutParams) mIndicationText.getLayoutParams();
+
+        ///M: Since we need to add a ECC button below Indication Text,
+        ///   we remove this part code due to it will make a
+        /// significant/weird space between Indication Text & ECC Button.
+        /*
         if (mlp.bottomMargin != indicationBottomMargin) {
             mlp.bottomMargin = indicationBottomMargin;
             mIndicationText.setLayoutParams(mlp);
-        }
+        }*/
 
         // Respect font size setting.
         mIndicationText.setTextSize(TypedValue.COMPLEX_UNIT_PX,
                 getResources().getDimensionPixelSize(
                         com.android.internal.R.dimen.text_size_small_material));
+
+        /// M: Fix ALPS01868023, reload resources when locale changed.
+        getRightView().setContentDescription(
+            getResources().getString(R.string.accessibility_camera_button)) ;
+        getLockIcon().setContentDescription(
+            getResources().getString(R.string.accessibility_unlock_button)) ;
+        getLeftView().setContentDescription(
+            getResources().getString(R.string.accessibility_phone_button)) ;
 
         ViewGroup.LayoutParams lp = mCameraImageView.getLayoutParams();
         lp.width = getResources().getDimensionPixelSize(R.dimen.keyguard_affordance_width);
@@ -453,6 +487,8 @@ public class KeyguardBottomAreaView extends FrameLayout implements View.OnClickL
                     o.setRotationAnimationHint(
                             WindowManager.LayoutParams.ROTATION_ANIMATION_SEAMLESS);
                     try {
+                        //M: add clear top flag for ALPS02320925
+                        intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
                         result = ActivityManagerNative.getDefault().startActivityAsUser(
                                 null, getContext().getBasePackageName(),
                                 intent,
@@ -726,4 +762,12 @@ public class KeyguardBottomAreaView extends FrameLayout implements View.OnClickL
         updateLeftAffordance();
         inflateCameraPreview();
     }
+
+    /// M: Add for OP customization. @{
+    @Override
+    public void setAlpha(float alpha) {
+        super.setAlpha(alpha);
+        mEmergencyButtonExt.setEmergencyButtonVisibility(mEmergencyButton, alpha);
+    }
+    /// @}
 }
